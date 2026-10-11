@@ -19,64 +19,64 @@
 
 ## 🗺️ 目录
 
-| 章节 | 链接 |
-|---|---|
-| **序言** | |
-| 序言：AgentScope 2.0 与如何使用本书 | [chapters/preface.md](chapters/preface.md) |
-| **第一篇 起步** | |
-| 第 1 章 初识 AgentScope 2.0 | [chapters/01-overview.md](chapters/01-overview.md) |
-| 第 2 章 快速开始 | [chapters/02-quickstart.md](chapters/02-quickstart.md) |
-| 第 3 章 核心概念地图 | [chapters/03-concept-map.md](chapters/03-concept-map.md) |
-| **第二篇 核心构建块** | |
-| 第 4 章 Agent 与 ReAct 循环 | [chapters/04-agent.md](chapters/04-agent.md) |
-| 第 5 章 消息与事件 | [chapters/05-message-event.md](chapters/05-message-event.md) |
-| 第 6 章 模型接入 | [chapters/06-model.md](chapters/06-model.md) |
-| 第 7 章 工具 | [chapters/07-tool.md](chapters/07-tool.md) |
-| 第 8 章 上下文 | [chapters/08-context.md](chapters/08-context.md) |
-| 第 9 章 中间件 | [chapters/09-middleware.md](chapters/09-middleware.md) |
-| 第 10 章 权限系统与人工介入 | [chapters/10-permission.md](chapters/10-permission.md) |
-| **第三篇 Harness 工程能力** | |
-| 第 11 章 Harness 架构深入 | [chapters/11-architecture.md](chapters/11-architecture.md) |
-| 第 12 章 工作区与文件系统 | [chapters/12-workspace.md](chapters/12-workspace.md) |
-| 第 13 章 上下文管理 | [chapters/13-context-mgmt.md](chapters/13-context-mgmt.md) |
-| 第 14 章 记忆 | [chapters/14-memory.md](chapters/14-memory.md) |
-| 第 15 章 技能（Skill） | [chapters/15-skill.md](chapters/15-skill.md) |
-| 第 16 章 子 Agent 协作 | [chapters/16-subagent.md](chapters/16-subagent.md) |
-| 第 17 章 计划模式 | [chapters/17-plan-mode.md](chapters/17-plan-mode.md) |
-| 第 18 章 沙箱执行 | [chapters/18-sandbox.md](chapters/18-sandbox.md) |
-| 第 19 章 会话日志与恢复 | [chapters/19-session-log.md](chapters/19-session-log.md) |
-| 第 20 章 渠道（Channel） | [chapters/20-channel.md](chapters/20-channel.md) |
-| **第四篇 生态与集成** | |
-| 第 21 章 模型提供商精编 | [chapters/21-model-providers.md](chapters/21-model-providers.md) |
-| 第 22 章 RAG 集成 | [chapters/22-rag.md](chapters/22-rag.md) |
-| 第 23 章 长期记忆集成 | [chapters/23-memory-integrations.md](chapters/23-memory-integrations.md) |
-| 第 24 章 会话存储与分布式部署 | [chapters/24-storage-distributed.md](chapters/24-storage-distributed.md) |
-| 第 25 章 IM 渠道集成 | [chapters/25-im-channels.md](chapters/25-im-channels.md) |
-| 第 26 章 Agent 协议 | [chapters/26-protocols.md](chapters/26-protocols.md) |
-| 第 27 章 Skill 仓库 | [chapters/27-skill-repos.md](chapters/27-skill-repos.md) |
-| 第 28 章 基础设施与生态工具 | [chapters/28-infra-ecosystem.md](chapters/28-infra-ecosystem.md) |
-| **第五篇 AgentScope Service 平台** | |
-| 第 29 章 Service 概览与部署 | [chapters/29-service-deploy.md](chapters/29-service-deploy.md) |
-| 第 30 章 创建并运行托管 Agent | [chapters/30-managed-agents.md](chapters/30-managed-agents.md) |
-| 第 31 章 Session API：从调用到交付 | [chapters/31-session-api.md](chapters/31-session-api.md) |
-| 第 32 章 编排：Team 与 Workflow | [chapters/32-orchestration.md](chapters/32-orchestration.md) |
-| 第 33 章 运维与运营 | [chapters/33-operations.md](chapters/33-operations.md) |
-| 第 34 章 Service 实战案例 | [chapters/34-service-cases.md](chapters/34-service-cases.md) |
-| **第六篇 进阶：JEV 语义判断** | |
-| 第 35 章 JEV 概念 | [chapters/35-jev-concepts.md](chapters/35-jev-concepts.md) |
-| 第 36 章 接入方式 | [chapters/36-jev-integration.md](chapters/36-jev-integration.md) |
-| 第 37 章 核心能力 API | [chapters/37-jev-apis.md](chapters/37-jev-apis.md) |
-| 第 38 章 评估与运营 | [chapters/38-jev-evaluation.md](chapters/38-jev-evaluation.md) |
-| **第七篇 生产实践** | |
-| 第 39 章 如何构建 Agent Harness | [chapters/39-harness-series.md](chapters/39-harness-series.md) |
-| 第 40 章 最佳实践：可恢复会话聊天 | [chapters/40-session-chat.md](chapters/40-session-chat.md) |
-| 第 41 章 会话执行控制与结构化决策 | [chapters/41-execution-control.md](chapters/41-execution-control.md) |
-| 第 42 章 走向生产 | [chapters/42-production.md](chapters/42-production.md) |
-| 第 43 章 行业案例 | [chapters/43-cases.md](chapters/43-cases.md) |
-| 第 44 章 常见问题 FAQ | [chapters/44-faq.md](chapters/44-faq.md) |
-| **附录** | |
-| 附录 A：Release Notes（v2） | [chapters/appendix-a-release-notes.md](chapters/appendix-a-release-notes.md) |
-| 附录 B：术语表 | [chapters/appendix-b-glossary.md](chapters/appendix-b-glossary.md) |
+| 章节                                     | 链接                                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------- |
+| **序言**                           |                                                                             |
+| 序言：AgentScope 2.0 与如何使用本书      | [chapters/preface.md](chapters/preface.md)                                   |
+| **第一篇 起步**                    |                                                                             |
+| 第 1 章 初识 AgentScope 2.0              | [chapters/01-overview.md](chapters/01-overview.md)                           |
+| 第 2 章 快速开始                         | [chapters/02-quickstart.md](chapters/02-quickstart.md)                       |
+| 第 3 章 核心概念地图                     | [chapters/03-concept-map.md](chapters/03-concept-map.md)                     |
+| **第二篇 核心构建块**              |                                                                             |
+| 第 4 章 Agent 与 ReAct 循环              | [chapters/04-agent.md](chapters/04-agent.md)                                 |
+| 第 5 章 消息与事件                       | [chapters/05-message-event.md](chapters/05-message-event.md)                 |
+| 第 6 章 模型接入                         | [chapters/06-model.md](chapters/06-model.md)                                 |
+| 第 7 章 工具                             | [chapters/07-tool.md](chapters/07-tool.md)                                   |
+| 第 8 章 上下文                           | [chapters/08-context.md](chapters/08-context.md)                             |
+| 第 9 章 中间件                           | [chapters/09-middleware.md](chapters/09-middleware.md)                       |
+| 第 10 章 权限系统与人工介入              | [chapters/10-permission.md](chapters/10-permission.md)                       |
+| **第三篇 Harness 工程能力**        |                                                                             |
+| 第 11 章 Harness 架构深入                | [chapters/11-architecture.md](chapters/11-architecture.md)                   |
+| 第 12 章 工作区与文件系统                | [chapters/12-workspace.md](chapters/12-workspace.md)                         |
+| 第 13 章 上下文管理                      | [chapters/13-context-mgmt.md](chapters/13-context-mgmt.md)                   |
+| 第 14 章 记忆                            | [chapters/14-memory.md](chapters/14-memory.md)                               |
+| 第 15 章 技能（Skill）                   | [chapters/15-skill.md](chapters/15-skill.md)                                 |
+| 第 16 章 子 Agent 协作                   | [chapters/16-subagent.md](chapters/16-subagent.md)                           |
+| 第 17 章 计划模式                        | [chapters/17-plan-mode.md](chapters/17-plan-mode.md)                         |
+| 第 18 章 沙箱执行                        | [chapters/18-sandbox.md](chapters/18-sandbox.md)                             |
+| 第 19 章 会话日志与恢复                  | [chapters/19-session-log.md](chapters/19-session-log.md)                     |
+| 第 20 章 渠道（Channel）                 | [chapters/20-channel.md](chapters/20-channel.md)                             |
+| **第四篇 生态与集成**              |                                                                             |
+| 第 21 章 模型提供商精编                  | [chapters/21-model-providers.md](chapters/21-model-providers.md)             |
+| 第 22 章 RAG 集成                        | [chapters/22-rag.md](chapters/22-rag.md)                                     |
+| 第 23 章 长期记忆集成                    | [chapters/23-memory-integrations.md](chapters/23-memory-integrations.md)     |
+| 第 24 章 会话存储与分布式部署            | [chapters/24-storage-distributed.md](chapters/24-storage-distributed.md)     |
+| 第 25 章 IM 渠道集成                     | [chapters/25-im-channels.md](chapters/25-im-channels.md)                     |
+| 第 26 章 Agent 协议                      | [chapters/26-protocols.md](chapters/26-protocols.md)                         |
+| 第 27 章 Skill 仓库                      | [chapters/27-skill-repos.md](chapters/27-skill-repos.md)                     |
+| 第 28 章 基础设施与生态工具              | [chapters/28-infra-ecosystem.md](chapters/28-infra-ecosystem.md)             |
+| **第五篇 AgentScope Service 平台** |                                                                             |
+| 第 29 章 Service 概览与部署              | [chapters/29-service-deploy.md](chapters/29-service-deploy.md)               |
+| 第 30 章 创建并运行托管 Agent            | [chapters/30-managed-agents.md](chapters/30-managed-agents.md)               |
+| 第 31 章 Session API：从调用到交付       | [chapters/31-session-api.md](chapters/31-session-api.md)                     |
+| 第 32 章 编排：Team 与 Workflow          | [chapters/32-orchestration.md](chapters/32-orchestration.md)                 |
+| 第 33 章 运维与运营                      | [chapters/33-operations.md](chapters/33-operations.md)                       |
+| 第 34 章 Service 实战案例                | [chapters/34-service-cases.md](chapters/34-service-cases.md)                 |
+| **第六篇 进阶：JEV 语义判断**      |                                                                             |
+| 第 35 章 JEV 概念                        | [chapters/35-jev-concepts.md](chapters/35-jev-concepts.md)                   |
+| 第 36 章 接入方式                        | [chapters/36-jev-integration.md](chapters/36-jev-integration.md)             |
+| 第 37 章 核心能力 API                    | [chapters/37-jev-apis.md](chapters/37-jev-apis.md)                           |
+| 第 38 章 评估与运营                      | [chapters/38-jev-evaluation.md](chapters/38-jev-evaluation.md)               |
+| **第七篇 生产实践**                |                                                                             |
+| 第 39 章 如何构建 Agent Harness          | [chapters/39-harness-series.md](chapters/39-harness-series.md)               |
+| 第 40 章 最佳实践：可恢复会话聊天        | [chapters/40-session-chat.md](chapters/40-session-chat.md)                   |
+| 第 41 章 会话执行控制与结构化决策        | [chapters/41-execution-control.md](chapters/41-execution-control.md)         |
+| 第 42 章 走向生产                        | [chapters/42-production.md](chapters/42-production.md)                       |
+| 第 43 章 行业案例                        | [chapters/43-cases.md](chapters/43-cases.md)                                 |
+| 第 44 章 常见问题 FAQ                    | [chapters/44-faq.md](chapters/44-faq.md)                                     |
+| **附录**                           |                                                                             |
+| 附录 A：Release Notes（v2）              | [chapters/appendix-a-release-notes.md](chapters/appendix-a-release-notes.md) |
+| 附录 B：术语表                           | [chapters/appendix-b-glossary.md](chapters/appendix-b-glossary.md)           |
 
 每篇另有篇导读（`chapters/part-1-intro.md` … `part-7-intro.md`），概述本篇内容与阅读方式。
 
@@ -98,11 +98,11 @@ try (var agent = builder.build()) {
 
 **三条学习路线**（完整版见[序言](chapters/preface.md)）：
 
-| 你是 | 建议路线 |
-|---|---|
+| 你是            | 建议路线                                                                  |
+| --------------- | ------------------------------------------------------------------------- |
 | Java 应用开发者 | 第 1-20 篇主线 → 第 22 章（RAG）→ 第 24 章（存储）→ 第 42 章（上生产） |
-| 平台建设者 | 第 29-34 章（Service 平台）为主 |
-| 质量与评估方向 | 第 35-38 章（JEV 语义判断） |
+| 平台建设者      | 第 29-34 章（Service 平台）为主                                           |
+| 质量与评估方向  | 第 35-38 章（JEV 语义判断）                                               |
 
 ## 📖 如何阅读 / 导出 PDF
 
@@ -127,9 +127,9 @@ pandoc chapters/*.md -o book.pdf --pdf-engine=xelatex -V CJKmainfont="Microsoft 
 ## 📣 关于作者 / 交流
 
 <!-- TODO: 替换为你的真实信息 -->
-- **GitHub**：[@your-username](https://github.com/your-username)
-- **博客 / 公众号**：（填写你的博客或公众号链接/二维码）
-- **交流群**：（填写微信群 / 钉钉群 / Discord 入口）
+
+- **GitHub**：[github.com/ybak](https://github.com/ybak)
+- **交流群**：TBD
 
 如果这本书对你有帮助，欢迎点一个 ⭐ Star，或分享给身边正在做 Agent 开发的同学——这是我持续整理更新的最大动力。
 
