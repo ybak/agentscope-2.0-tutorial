@@ -1,0 +1,327 @@
+/* AgentScope Java 2.0 从入门到进阶 — 全书排版样式
+ * 结构：@page 与页眉页脚 → 封面/出版说明/目录 → 篇章结构 → 正文排版
+ * Paged.js 负责分页（book.html 由 build.mjs 生成，mermaid 先渲染、Paged.js 后分页） */
+
+/* =============================================================
+ * 1. 页面模型：A4 + 页眉（外侧章名）+ 页脚（居中页码）
+ * ============================================================= */
+@page {
+  size: A4;
+  margin: 20mm 17mm 22mm 17mm;
+
+  @top-center {
+    content: string(chapter-title);
+    font-size: 8pt;
+    color: #8b949e;
+    font-family: "Microsoft YaHei", sans-serif;
+  }
+
+  @bottom-center {
+    content: counter(page);
+    font-size: 9pt;
+    color: #6e7781;
+    font-family: "Microsoft YaHei", sans-serif;
+  }
+}
+
+/* 封面：满版页，不显示页眉页脚 */
+@page cover {
+  margin: 0;
+  @top-center { content: none; }
+  @bottom-center { content: none; }
+}
+
+.cover {
+  page: cover;
+  break-after: page;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+  height: 297mm; /* 满页（@page cover margin:0，内容区即整页 A4） */
+  box-sizing: border-box;
+  padding: 70mm 24mm 0;
+  text-align: center;
+  background: #f8fafc;
+  border-bottom: 6mm solid #0969da;
+}
+
+.cover-title {
+  font-size: 30pt;
+  font-weight: 700;
+  line-height: 1.35;
+  color: #1f2328;
+  border-bottom: none;
+  margin: 0 0 6mm;
+  padding: 0;
+}
+
+.cover-subtitle {
+  font-size: 14pt;
+  color: #57606a;
+  margin: 0 0 55mm;
+}
+
+.cover-rule {
+  width: 42mm;
+  border: none;
+  border-top: 2.5pt solid #0969da;
+  margin: 0 auto 55mm;
+}
+
+.cover-note {
+  font-size: 11pt;
+  color: #57606a;
+  margin: 0 0 3mm;
+}
+
+.cover-date {
+  font-size: 10pt;
+  color: #8b949e;
+  margin: 0;
+}
+
+/* =============================================================
+ * 2. 出版说明页（版权/来源声明）
+ * ============================================================= */
+.colophon {
+  break-after: page;
+  padding-top: 110mm;
+  font-size: 9.5pt;
+  line-height: 1.8;
+  color: #57606a;
+}
+
+.colophon-title {
+  font-size: 13pt;
+  color: #1f2328;
+  border-bottom: none;
+  margin: 0 0 6mm;
+}
+
+.colophon p { margin: 0 0 2.5mm; }
+.colophon strong { color: #1f2328; }
+
+/* =============================================================
+ * 3. 总目录（页码由 Paged.js target-counter 自动填充）
+ * ============================================================= */
+.toc {
+  break-after: page;
+  padding-top: 6mm;
+}
+
+.toc-title {
+  font-size: 18pt;
+  text-align: center;
+  border-bottom: 2px solid #0969da;
+  margin: 0 0 8mm;
+  padding-bottom: 3mm;
+}
+
+.toc-part {
+  font-weight: 700;
+  font-size: 11.5pt;
+  color: #1f2328;
+  margin: 5mm 0 2mm;
+  padding-bottom: 1mm;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.toc-entry { margin: 1.6mm 0 1.6mm 6mm; font-size: 10.5pt; }
+
+.toc-entry a {
+  text-decoration: none;
+  color: #1f2328;
+}
+
+.toc-entry a::after {
+  content: target-counter(attr(href), page);
+  float: right;
+  color: #57606a;
+}
+
+/* =============================================================
+ * 4. 篇与章结构：每章/每篇起新页
+ * ============================================================= */
+.chapter,
+.part-intro {
+  break-before: page;
+}
+
+/* 篇扉页：篇名居中 + 导读文字 */
+.part-intro .part-title {
+  text-align: center;
+  font-size: 22pt;
+  color: #1f2328;
+  border-bottom: none;
+  margin: 48mm 0 6mm;
+  padding: 0;
+}
+
+.part-intro .part-rule {
+  width: 30mm;
+  border: none;
+  border-top: 2pt solid #0969da;
+  margin: 0 auto 14mm;
+}
+
+/* 章名挂页眉字符串 */
+.chapter h1,
+.part-intro h1 {
+  string-set: chapter-title content();
+}
+
+/* =============================================================
+ * 5. 正文排版
+ * ============================================================= */
+body {
+  font-family: "Microsoft YaHei", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.65;
+  color: #1f2328;
+  overflow-wrap: break-word;
+}
+
+p { margin: 0.45em 0; orphans: 2; widows: 2; }
+
+h1 {
+  font-size: 19pt;
+  line-height: 1.4;
+  margin: 0 0 0.7em;
+  padding-bottom: 0.25em;
+  border-bottom: 2px solid #d0d7de;
+  break-after: avoid;
+}
+
+h2 {
+  font-size: 14.5pt;
+  margin: 1.4em 0 0.5em;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid #eaeef2;
+  break-after: avoid;
+}
+
+h3 { font-size: 12.5pt; margin: 1.2em 0 0.4em; break-after: avoid; }
+h4 { font-size: 11pt; margin: 1em 0 0.35em; break-after: avoid; }
+h5, h6 { font-size: 10.5pt; margin: 1em 0 0.3em; break-after: avoid; }
+
+ul, ol { margin: 0.4em 0; padding-left: 1.8em; }
+li { margin: 0.15em 0; }
+
+blockquote {
+  margin: 0.6em 0;
+  padding: 2px 12px;
+  border-left: 3px solid #0969da;
+  background: #f6f8fa;
+  color: #57606a;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+blockquote p { margin: 0.3em 0; }
+
+hr {
+  border: none;
+  border-top: 1px solid #d0d7de;
+  margin: 1.2em 0;
+}
+
+a { color: #0969da; text-decoration: none; }
+
+/* =============================================================
+ * 6. 代码（高亮主题为 highlight.js github，在 build.mjs 注入）
+ * ============================================================= */
+pre {
+  background: #f5f5f5;
+  border: 1px solid #e1e4e8;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 9pt;
+  line-height: 1.5;
+  page-break-inside: avoid;   /* 小代码块尽量不跨页（过长时 Paged.js 会强制分割） */
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+pre code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 9pt;
+  background: transparent;
+  border: none;
+  padding: 0;
+  white-space: pre-wrap;      /* 长行折行，防横向溢出 */
+  word-break: break-all;
+}
+
+/* hljs github 主题给 .hljs 设了白底，覆盖为透明以免盖住代码块灰底 */
+code.hljs, pre code.hljs { background: transparent; padding: 0; }
+
+/* 行内代码 */
+code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 9pt;
+  background: #f0f1f3;
+  padding: 1px 4px;
+  border-radius: 3px;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+/* =============================================================
+ * 7. 表格：允许跨页断行，单行不断
+ * ============================================================= */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0;
+  font-size: 9.5pt;
+  page-break-inside: auto;
+}
+
+th, td {
+  border: 1px solid #d0d7de;
+  padding: 3px 7px;
+  text-align: left;
+  vertical-align: top;
+  word-break: break-word;
+}
+
+th {
+  background: #f6f8fa;
+  font-weight: 600;
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+tr { page-break-inside: avoid; }
+tr:nth-child(even) td { background: #fafafa; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+
+td code, th code { word-break: break-all; }
+
+/* =============================================================
+ * 8. 图片与 mermaid 图：居中、限宽、不被分页截断
+ * ============================================================= */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.5em auto;
+}
+
+.mermaid {
+  margin: 0.8em 0;
+  text-align: center;
+  page-break-inside: avoid;
+}
+
+.mermaid svg {
+  max-width: 100% !important; /* 覆盖 mermaid 内联的 max-width: NNNpx */
+  max-height: 230mm !important; /* A4 内容区高约 255mm：限高保证整图必然放得下一页，
+                                   否则 Paged.js 找不到断点会以 "Layout repeated" 中止全书分页 */
+  width: auto;
+  height: auto;
+}
+
+/* 去掉 mermaid 节点/子图的 drop-shadow：Chromium 打印会把带 filter 的元素栅格化成位图贴片，
+   去掉后整图为纯矢量 */
+.mermaid svg * {
+  filter: none !important;
+}

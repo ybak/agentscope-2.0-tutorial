@@ -7,3 +7,12 @@ desktop.ini
 *.swp
 .idea/
 .vscode/
+
+# Build toolchain
+build/node_modules/
+# vendor 脚本由构建时 syncVendorAssets 从 node_modules 复制（自动同步，不入库）
+build/assets/vendor/
+
+# Build artifacts（book.html / PDF / .outline.json 均在 output/ 内）
+output/
+.page_*.png
