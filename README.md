@@ -126,10 +126,12 @@ pandoc chapters/*.md -o book.pdf --pdf-engine=xelatex -V CJKmainfont="Microsoft 
 
 ## 📣 关于作者 / 交流
 
-<!-- TODO: 替换为你的真实信息 -->
-
 - **GitHub**：[github.com/ybak](https://github.com/ybak)
-- **交流群**：TBD
+- **交流群**：打开小红书扫码加入「AgentScopeJava 学习群」 👇
+
+<p align="center">
+  <img src="assets/images/chatgroup/rednote-asj.jpg" alt="小红书「AgentScopeJava 学习群」二维码" width="360" />
+</p>
 
 如果这本书对你有帮助，欢迎点一个 ⭐ Star，或分享给身边正在做 Agent 开发的同学——这是我持续整理更新的最大动力。
 
