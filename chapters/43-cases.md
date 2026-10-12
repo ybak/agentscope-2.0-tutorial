@@ -12,6 +12,19 @@ source: blogs/usecases/logistics.md, blogs/usecases/finxscope.md, blogs/usecases
 >
 > 两点阅读提示：案例保留了大量阿里内部生态名词（Aone、HSF、Normandy、BUC、Sunfire、SchedulerX2 等），分别指代研发平台、服务调用框架、登录认证、监控告警与任务调度等内部基础设施，不影响理解工程主线；案例中评述的第三方项目（LangChain、Google ADK、Hermes、Open SWE 等）是原文观点的引用对象。各案例的框架机制细节可回查前面章节——相关位置在文中的"对照教材"指引里标出。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>Agent 从 demo 走进生产<br/>工程上要补哪些课"] --> B["四个行业案例<br/>视角互补 不必按序通读<br/>案例三为同稿说明"]
+    B --> C["案例一 自建运行引擎<br/>七类坏味道 · 配置驱动<br/>进化与灰度"]
+    B --> D["案例二 FinXScope<br/>金融级底座 · 六层架构<br/>十大核心能力"]
+    B --> E["案例四 组织级 Coding Agent<br/>五面墙 · 从单机到企业"]
+    C --> F["收益<br/>正文讲框架给了什么<br/>案例讲生产还要补什么"]
+    D --> F
+    E --> F
+```
+
+*本章导览图*
+
 ## 案例一 从配置驱动到业务原生：企业级 Agent 开发实践
 
 ### 01 背景

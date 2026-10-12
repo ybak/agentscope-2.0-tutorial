@@ -10,6 +10,21 @@ source: service/service-api.md, service/api-reference.md, service/agent-api-chat
 
 > **注意**：本章"执行参考：Session、Run 与 Attempt"、"Memory：维护共享知识"、"Vault：为工具提供凭据"与"接入消息渠道"四节基于预览文档，正式版本尚未发布，接口可能调整。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>把业务应用接进托管 Agent<br/>刷新断线也能接回结果"] --> B["Session API<br/>应用调用 Service 的统一入口"]
+    B --> C["接入最小路径<br/>凭据 · Session · Turn<br/>快照事件 · 待办答复 · 交付"]
+    B --> D["刷新与调整<br/>SSE 与事件续传 · 会话任务与预算"]
+    B --> E["运行资源<br/>Memory · Vault · 工具与 MCP"]
+    B --> F["交付与触达<br/>文件与产物 · 消息渠道"]
+    C --> G["收益<br/>业务应用完整接入 Service<br/>管理 Agent 运行所需资源"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 通过 Session API 接入应用
 
 在 Console 里点一次提交，就能看到 Agent 回答——但业务应用不能依赖人工打开页面。应用需要一个程序化的入口：把工作交给 Agent，在后台等它执行，随时回来查看进度，并在需要时替用户递入决定。这就是 Session API 的职责。

@@ -10,6 +10,21 @@ source: service/orchestration.md, service/create-team.md, service/team-configura
 
 > **注意**：本章 Team 与 Workflow 相关内容均为预览文档，正式版本尚未发布。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>一个 Agent 不够用<br/>要分工或要固定流程"] --> B["多 Agent 编排<br/>按局面选协作层次"]
+    B --> C["协作层次怎么选<br/>任务内 Subagent · Team 持续分工<br/>Workflow 固定流程"]
+    B --> D["创建与运行 Team<br/>Leader 成员与策略 · 就绪度"]
+    B --> E["编排 Workflow<br/>定义与 revision · approval 人工审批"]
+    B --> F["融入业务<br/>Session 调用与观察 · Issue 验收与触发"]
+    C --> G["收益<br/>扩展为可验收的团队协作<br/>或带人工审批的固定流程"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 多 Agent 编排概览
 
 假设你已经有一个能独立完成任务的 Agent，现在接到一项需要不同专业能力配合的工作。按工程习惯，你会把它拆成职责和交付明确的部分，再让多个 Agent 共同推进——真正的困难在于：这些能力从哪里来，协作按什么规则进行。AgentScope Service 支持在托管任务内部委派子 Agent，也支持通过 Team 组织独立成员，或者通过 Workflow 规定步骤与依赖。选择哪种方式，取决于这项工作需要临时分工、持续协作，还是明确的执行流程。

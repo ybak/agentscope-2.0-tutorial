@@ -8,6 +8,19 @@ source: blogs/session-execution-control.md, blogs/jev-structured-decision-for-ag
 
 > 本章导读：两篇互为补充的运行时实践。前半篇解决"任务怎么排队、怎么引导、怎么中断续做"：通过 `agent.session(context)` 取得 `AgentSession`，用 `submit` / `steer` / `inject` / `interrupt` / `resume` / `respond` 表达用户意图，理解 session → turn → run 三层结构，掌握断线续传与应用重启的恢复方式，并对照 AgentScope Service 的对应入口。后半篇回答"高频小判断交给谁"：Jev 结构化决策模型以 Noul / Choice / Score 三类问题返回类型化答案与校准概率，配合模型路由、工具选择、执行守卫三个中间件覆盖 Agent 循环的关键判断点，同时划清边界——需要深度推理与文本输出的场景仍属于主模型。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>任务怎么排队引导中断续做<br/>高频小判断交给谁"] --> B["两篇互补的运行时实践"]
+    B --> C["会话执行控制<br/>submit · steer · inject<br/>interrupt · resume · respond"]
+    B --> D["session turn run 三层结构<br/>断线续传 · 对照 Service 入口"]
+    B --> E["Jev 结构化决策<br/>三类问题返回类型化答案<br/>三个中间件覆盖判断点"]
+    C --> F["收益<br/>后台执行的任务可控可恢复<br/>分清判断与主模型的边界"]
+    D --> F
+    E --> F
+```
+
+*本章导览图*
+
 ## 会话操作：提交、引导、中断与恢复
 
 用户点击“停止生成”后又输入一条要求，应用需要继续原任务，还是提交新任务？Agent 正在调用工具时补充“预算改为 5000 元”，模型什么时候能看到？浏览器断开 SSE，后台是否继续执行？

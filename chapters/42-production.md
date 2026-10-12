@@ -8,6 +8,19 @@ source: docs/others/going-to-production.md
 
 > 本章导读：把 `HarnessAgent` 在笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本章只讲单机 → 分布式生产的差异：哪些组件必须换、换成什么、为什么 builder 会在漏配时直接抛 `IllegalStateException`。主线是 `DistributedStore` 一键配置：一行代码同时覆盖 Agent 状态、工作区 KV、沙箱快照与执行锁；随后按组件展开——`AgentStateStore` 与租户隔离、Filesystem 三种模式与 `IsolationScope`、Skill 仓库选型、沙箱与快照，最后汇总为多副本部署 checklist、完整 builder 模板与常见坑位。组件细节可回查第 24 章（会话存储与分布式部署）。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>单机跑通的 Agent<br/>搬到多副本生产环境"] --> B["单机到分布式的差异<br/>哪些组件必须换"]
+    B --> C["DistributedStore 一键配置<br/>状态 · 工作区 KV<br/>沙箱快照 · 执行锁"]
+    B --> D["按组件展开<br/>状态与租户隔离 · 文件系统模式<br/>Skill 仓库 · 沙箱与快照"]
+    B --> E["生产落地<br/>多副本 checklist<br/>builder 模板 · 常见坑位"]
+    C --> F["收益<br/>多副本共享会话 · 隔离用户<br/>重启后接着上次跑"]
+    D --> F
+    E --> F
+```
+
+*本章导览图*
+
 ## 快速上手：DistributedStore 一键配置
 
 **最快上手方式**：用 `DistributedStore` 一键配置所有分布式组件：

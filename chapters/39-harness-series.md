@@ -8,6 +8,21 @@ source: blogs/how-to-build-agent-harness/01-patterns.md, blogs/how-to-build-agen
 
 > 本章导读：本章完整收录"如何构建 Agent Harness"系列四篇博文，依次对应本章四节，节内小节编号（1.1、2.1、3.1、4.1）延续原系列编号。第一篇建立 Model、Harness、Runtime、Sandbox 与 Agent Platform 的责任边界，并给出 `HarnessAgent` 的四种运行形态（本地工作区、嵌入式应用、长任务服务、平台化交付）；第二篇讲执行与编排——Agent Loop 与任务状态机、Planning 与阶段门禁、Subagent 委派契约、异步续行与完成验证；第三篇讲信息工程——Context 构建管线与 Manifest、压缩与 Continuation、Session/Task/Workspace 边界、Memory 与 Knowledge 治理、Skill 资产化；第四篇讲行动与反馈——Action Plane 统一行动契约、Tool/MCP/A2A 职责边界、Environment Contract 与 Sandbox、Permission/HITL（Human-in-the-Loop，人工介入）、Streaming 交互协议，以及从 Trace 到 Harness Patch 的评估闭环。全系列以"生产服务漏洞修复与变更发布 Agent"为贯穿案例；原文中"本系列第 N 篇"的交叉引用已改写为本章内的小节引用，各篇末尾的系列导航因合并入同一章而移除；文中偶见的"构建（Build）/运行（Run）/治理（Governance）篇"指 AgentScope 官方文档的篇章划分，非本书各篇。四篇按 1→4 的顺序读即是推荐路径：先定责任边界，再补执行与编排，然后处理信息组织，最后收紧行动与反馈；只想深入某一主题的读者可以按节跳读，每篇开头都交代了它从前一节承接的问题，与前面章节重复的 SDK 细节也在对应小节标注了出处。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>让模型能力经过工程化 Harness<br/>稳定转化为任务结果"] --> B["如何构建 Agent Harness<br/>系列四篇完整收录"]
+    B --> C["第一篇 责任边界<br/>Model Harness Runtime Sandbox<br/>四种运行形态"]
+    B --> D["第二篇 执行与编排<br/>Agent Loop · Planning<br/>Subagent 委派 · 异步续行"]
+    B --> E["第三篇 信息工程<br/>Context 管线与压缩<br/>状态边界 · Memory · Skill"]
+    B --> F["第四篇 行动与反馈<br/>统一行动契约 · 权限与 HITL<br/>Trace 到评估闭环"]
+    C --> G["收益<br/>按 1 到 4 顺序读是推荐路径<br/>也可按主题按节跳读"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 第一篇 架构范式与责任边界
 
 这是“如何构建 Agent Harness”系列的第一篇。本节先建立 Model、Harness、Runtime、Sandbox 与 Agent Platform 的责任边界，再以 AgentScope Java 的 `HarnessAgent` 为统一入口，说明同一套 Harness 如何从本地工作区逐步演进为嵌入式服务、长任务 Worker 和多租户平台。
