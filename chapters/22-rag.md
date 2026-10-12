@@ -8,7 +8,7 @@ source: integration/rag/index.md, integration/rag/overview.md, integration/rag/s
 
 > 本章导读：讲解 AgentScope 接入外部知识库的统一接口 `Knowledge`——Agent 在推理时通过它检索文档片段，再交给模型生成。先以一张扩展选型表比较五种实现（自建链路的 Simple、阿里云百炼、Dify、HayStack、RAGFlow），说明"接入方式都是同一套"的设计；再逐个展开各实现的依赖、快速上手、检索参数与限制。读完本章，你可以为 Agent 选配任意一种 RAG 后端，并理解"除 Simple 外只负责检索"的管控分离设计。
 
-`io.agentscope.core.rag.Knowledge` 是 AgentScope 用于"接入外部知识库"的接口。Agent 在推理时通过它检索文档片段，再交给模型用于生成。`agentscope-extensions-*` 仓库下提供了多种实现：
+RAG（Retrieval-Augmented Generation，检索增强生成）——先从外部知识库检索资料，再让模型据此作答——就是本章要接入的能力。`io.agentscope.core.rag.Knowledge` 是 AgentScope 用于"接入外部知识库"的接口。Agent 在推理时通过它检索文档片段，再交给模型用于生成。`agentscope-extensions-*` 仓库下提供了多种实现：
 
 | 扩展 | 类型 | 适合场景 |
 | --- | --- | --- |
@@ -515,3 +515,29 @@ BailianConfig config = BailianConfig.builder()
 | `indexId` | 知识库索引 ID（必填） |
 | `rerankConfig` | rerank 开关与参数 |
 | `rewriteConfig` | query rewrite 开关与参数 |
+
+## 本章小结
+
+这一章把给 Agent 接知识库变成了一道选型题——接入方式都是同一套（`knowledge(...)` + `ragMode(...)`，或包装为 `KnowledgeRetrievalTools`），真正要选的是后端：
+
+1. **Simple**：自己掌控全部链路，自带读取器、分块、Embedding 适配与 5 个向量库适配器，是唯一支持写入文档（`addDocuments`）的实现；
+2. **Bailian**：embedding、索引、检索全由百炼托管，可选 rerank / rewrite 增强（延迟与费用上升，按需打开）；
+3. **Dify**：复用 Dify 上已维护的数据集，检索模式有关键词 / 语义 / 混合 / 全文四种，支持 metadata 过滤；
+4. **HayStack**：复用已落地的 HayStack 检索服务，文档管理与索引留在 HayStack 侧；
+5. **RAGFlow**：解析能力深（OCR、表格识别、知识图谱增强），适合扫描件与复杂排版 PDF 为主的场景。
+
+记住那条管控分离的设计：**除 Simple 外，其余实现只负责检索**——文档导入/更新走对应平台的控制台或服务侧 API，换来的是多个 Knowledge 在使用侧完全可替换。拿不准时回到本章"选型建议"表，按链路掌控权、已有平台、文档复杂度三个维度对号入座。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 用 `.knowledge(knowledge)` 加 `.ragMode(...)` 把任一种 Knowledge 挂入 ReActAgent，或包装为 `KnowledgeRetrievalTools` 让 Agent 自主决定是否检索；
+- ☐ 对照"选型建议"表，为自己的团队说出选哪个实现、为什么；
+- ☐ 解释除 Simple 外 `addDocuments(...)` 为什么不可用，以及文档导入/更新分别应走哪里；
+- ☐ 在 Simple 中完成读取器 → 分块 → Embedding → 向量库的组装，并说出切换向量库时换的是哪个组件；
+- ☐ 为 Dify 设置检索模式与 metadata 过滤，为百炼打开 rerank / rewrite，并说清各自的代价。
+
+## 延伸阅读
+
+- 第 23 章（长期记忆集成）—— 知识检索之外，另一种跨会话外部状态的接入：`LongTermMemory` 的三个后端
+- 第 28 章（基础设施与生态工具）—— 集成扩展全览表，本章五种实现的一览入口
+- 第 44 章（常见问题）—— "2.0 还会提供 RAG 和 long-term memory 吗"

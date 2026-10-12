@@ -15,7 +15,7 @@ source: docs/building-blocks/permission-system.md
 - **人在场的产品形态。** 写工作目录内的文件可以自动放行，敏感操作必须问一句——`DEFAULT` / `ACCEPT_EDITS` 两种模式加上若干规则就能表达“哪些操作要人审批”。
 - **只读调研。** 让 Agent 只查不改：`EXPLORE` 模式放行读、拒绝一切写与命令，适合代码探索与规划。
 - **无人值守。** CI、定时任务里没人点确认：`DONT_ASK` 把所有询问静默降级为拒绝，不会阻塞等待。
-- **完全可信的沙箱。** `BYPASS` 放行一切，但 deny 规则与危险路径检查仍然不可绕过——最后一道底线始终在。
+- **完全可信的沙箱。** `BYPASS` 放行一切——但即使在这里，也有一道绕不过去的底线，下文会看到它在哪里。
 
 与已学内容的关系和边界：第 7 章定义了工具“能做什么”，本章决定“准不准做”——第 7 章每个工具自带的 `checkPermissions` 就是本章的第三层检查。人工审批的界面交互（暂停、恢复）在第 4 章“人机交互”一节演示过，本章补上判定侧的完整规则；第 9 章的 middleware 可以观察“全部工具被拒绝”事件来决定是否停止 Agent，但判定本身不归它管。
 
@@ -23,11 +23,11 @@ source: docs/building-blocks/permission-system.md
 
 Permission system（`io.agentscope.core.permission`）拦截 agent 的每一次工具调用，给出三种决策之一：**允许（ALLOW）** 执行、**拒绝（DENY）** 执行，或者**询问用户（ASK）** 确认。
 
-它把静态配置与动态运行时分析组合起来。三个组件共同决定结果：
+它把静态配置与动态运行时分析组合起来。三个组件各自回答一个不同的问题，共同决定结果：
 
-- **Rules** —— 针对每个 tool 与命令的显式 allow / deny / ask 模式，最高优先级。规则有两种来源：在 `PermissionContextState` 中静态预配置，或在 ASK 提示中由用户接受**建议规则**而动态加入。建议规则由本次工具调用自动生成 —— 一旦接受，将来相同的调用便会被自动处理，不再询问。
-- **Mode** —— 配置阶段设定的全局静态策略；决定所有不命中任何规则的调用的默认行为（例如 `EXPLORE` 让 agent 进入只读；`DONT_ASK` 静默拒绝未命中的调用）。
-- **Built-in Checks** —— 由 tool 自身在运行时基于真实输入做的动态分析（在 `ToolBase#checkPermissions` 中实现）。这些是运行时检查而非预配置模式，因此**不可绕过**，不受 mode 或 rules 覆盖。
+- **Rules** —— 有没有明文规定？针对每个 tool 与命令的显式 allow / deny / ask 模式，最高优先级。规则有两种来源：在 `PermissionContextState` 中静态预配置，或在 ASK 提示中由用户接受**建议规则**而动态加入。建议规则由本次工具调用自动生成 —— 一旦接受，将来相同的调用便会被自动处理，不再询问。
+- **Mode** —— 没规定时按什么默认办？配置阶段设定的全局静态策略；决定所有不命中任何规则的调用的默认行为（例如 `EXPLORE` 让 agent 进入只读；`DONT_ASK` 静默拒绝未命中的调用）。
+- **Built-in Checks** —— 工具自己怎么看？由 tool 自身在运行时基于真实输入做的动态分析（在 `ToolBase#checkPermissions` 中实现）。这些是运行时检查而非预配置模式，因此**不可绕过**，不受 mode 或 rules 覆盖。
 
 ```mermaid
 sequenceDiagram
@@ -154,15 +154,7 @@ Mode 管默认值，规则管例外。
 
 `PermissionRule`（record）把某个 tool 与具体的调用模式映射到三种行为之一：`ALLOW`、`DENY`、`ASK`。
 
-每条规则由下述字段组成。当权限引擎评估一条规则时，它会用 `ruleContent` 与实际调用入参调用该 tool 的 `matchRule()` 方法，判断规则是否命中。
-
-- **`toolName` · `String` · *required*** — 规则适用的 tool 名：内置 `todo_write`，或任意自定义 tool 名。
-
-- **`ruleContent` · `String | null` · *optional*** — 匹配模式 —— 语义随 `toolName` 变化，由该 tool 的 `matchRule()` 方法解释。`null` 表示对该 tool 的所有调用均匹配。
-
-- **`behavior` · `PermissionBehavior` · *required*** — `ALLOW`、`DENY`、`ASK` 或 `PASSTHROUGH`
-
-- **`source` · `String` · *required*** — 规则来源：`"userSettings"`、`"projectSettings"`、`"session"`、`"suggested"` 等。
+当权限引擎评估一条规则时，它会用 `ruleContent` 与实际调用入参调用该 tool 的 `matchRule()` 方法，判断规则是否命中。每条规则由工具名、匹配模式、行为、来源四个字段组成，字段全表见本章末参考速查一节；其中 `ruleContent` 为 `null` 表示对该 tool 的所有调用均匹配。
 
 ### 配置规则
 
@@ -510,3 +502,38 @@ PermissionContextState bypassWithDeny =
                 .build();
 // 除显式拒绝的工具外，其余均放行（deny 规则不可绕过）
 ```
+
+## 本章小结
+
+这一章给 Agent 装上了一道闸门，路线回顾：
+
+1. **三层决策**：Built-in Checks（工具自带的运行时检查，不可绕过）、Rules（显式规则，最高优先级）、Mode（未命中规则时的全局默认）共同给出 ALLOW / DENY / ASK 三种结论；
+2. **五种模式**：`DEFAULT` 最稳、`ACCEPT_EDITS` 服务于用户在场的开发、`EXPLORE` 只读、`BYPASS` 供可信沙箱全放行、`DONT_ASK` 面向无人值守；
+3. **规则与建议**：`PermissionRule` 把工具名与匹配模式映射到行为；ASK 时自动生成的建议规则一经接受，相同的调用今后自动放行；
+4. **底线**：deny 规则与危险路径检查即使在 `BYPASS` 模式下也照常生效；
+5. **HITL**：ASK 让 agent 暂停并返回 `PERMISSION_ASKING`，调用方收集决策后用 `ConfirmResult` 恢复；流式场景经 `RequireUserConfirmEvent` 获取待确认工具，恢复方式相同。
+
+到这里，第二篇的核心构建块就拆完了：第 4 章的 Agent 与 ReAct 循环，加上消息与事件、模型接入、工具、上下文、中间件和本章的权限。它们如何组合成面向生产的 `HarnessAgent`——一次执行怎么读写状态、十余项能力挂在时序的哪个位置——是第 11 章（Harness 架构深入）的主题。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出三层决策各自回答什么问题、以什么优先级组合出 ALLOW / DENY / ASK；
+- ☐ 为人在场开发、只读调研、无人值守、可信沙箱四种场景各选一个 `PermissionMode` 并说明理由；
+- ☐ 写出一条 allow / deny / ask 规则，并解释 `ruleContent` 为 `null` 时的匹配范围；
+- ☐ 解释为什么 `BYPASS` 模式下 deny 规则与危险路径检查仍然生效；
+- ☐ 完成 ASK 暂停 → 展示待确认工具 → `ConfirmResult` 恢复的完整人工介入流程；
+- ☐ 区分 blocking 与 streaming 两种模式下获取待确认工具的途径。
+
+## 参考速查
+
+本节收拢 `PermissionRule` 的字段定义，供配置规则时查阅；正文主线不依赖本节。
+
+### PermissionRule 字段
+
+- **`toolName` · `String` · *required*** — 规则适用的 tool 名：内置 `todo_write`，或任意自定义 tool 名。
+
+- **`ruleContent` · `String | null` · *optional*** — 匹配模式 —— 语义随 `toolName` 变化，由该 tool 的 `matchRule()` 方法解释。`null` 表示对该 tool 的所有调用均匹配。
+
+- **`behavior` · `PermissionBehavior` · *required*** — `ALLOW`、`DENY`、`ASK` 或 `PASSTHROUGH`
+
+- **`source` · `String` · *required*** — 规则来源：`"userSettings"`、`"projectSettings"`、`"session"`、`"suggested"` 等。

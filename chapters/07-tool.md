@@ -6,7 +6,7 @@ source: docs/building-blocks/tool.md
 
 # 第 7 章 工具
 
-> 本章导读：当你的 Agent 不再只是聊天——要查订单、写工单、跑脚本、读文件，也就是要操作真实业务系统时，给它的每一项能力都要在本章登记。本章讲解工具体系的三个概念——Tool（单个能力）、Toolkit（注册并分发工具的容器）与 Tool Group（成组启停的工具集合）；三者的完整定义见下一节。本章覆盖 `@Tool` 注解（把一个 Java 方法声明为模型可调用的工具）与 `ToolBase`（显式建模工具的抽象基类）两种自定义方式、外部执行工具（由人工或外部系统代为执行）、Context 注入、MCP 接入、Skill 热加载与 meta tool 自我管理。读完本章，你可以系统地为 Agent 扩展安全、可控的行动能力。
+> 本章导读：当你的 Agent 不再只是聊天——要查订单、写工单、跑脚本、读文件，也就是要操作真实业务系统时，给它的每一项能力都要在本章登记。本章讲解工具体系的三个概念——Tool（单个能力）、Toolkit（注册并分发工具的容器）与 Tool Group（成组启停的工具集合）；三者的完整定义见下一节。本章覆盖 `@Tool` 注解（把一个 Java 方法声明为模型可调用的工具）与 `ToolBase`（显式建模工具的抽象基类）两种自定义方式、外部执行工具（由人工或外部系统代为执行）、Context 注入、MCP 接入、Skill 热加载与 meta tool 自我管理。读完本章，你可以系统地为 Agent 扩展安全、可控的行动能力。`ToolBase` 的完整方法表与 `@Tool` 的完整属性表收拢在章末参考速查。
 
 ## 你什么时候需要它
 
@@ -21,11 +21,13 @@ source: docs/building-blocks/tool.md
 
 Tool 是 agent 与外部世界交互的方式 —— 执行业务操作、调用 API、读写数据等。每个 tool 通过 JSON Schema（描述参数名、类型与是否必填的 JSON 规范）暴露给 LLM，agent 通过统一接口完成调用。
 
-AgentScope 把 tool 相关的构件组织成三个概念：
+把这个交互动作落到框架里，AgentScope 用三个概念依次回答三个递进的问题：一个能力怎么声明、一批能力放在哪里管理、能力多到上下文装不下时怎么办。
 
-- **Tool** —— 任意实现 `AgentTool` 接口（通常通过继承 `ToolBase`）或在普通类的方法上标注 `@Tool` 注解的对象。Java 端把后者称为 *reflective function tool*，由 `Toolkit#registerTool(Object)` 自动反射注册。
-- **Toolkit** —— 容器，负责注册 tool、MCP 客户端与 skill，向模型暴露它们的 JSON schema，并把每次工具调用分发到对应的 tool 对象。
-- **Tool Group** —— 一组带名称的 tool / MCP / skill 集合，可以作为整体激活或停用。Agent 在运行时通过内置 meta tool 切换 group，让上下文保持聚焦。
+**第一个问题：一个能力怎么声明。** Tool 是任意实现 `AgentTool` 接口（通常通过继承 `ToolBase`）或在普通类的方法上标注 `@Tool` 注解的对象；Java 端把后者称为 *reflective function tool*，由 `Toolkit#registerTool(Object)` 自动反射注册。一个 tool 就是一项可被模型调用的能力——查一次订单、写一张工单。
+
+**第二个问题：一批能力放在哪里管理。** 工具是一个个写出来的，但注册、暴露与分发不该散落在业务代码里。Toolkit 是容器，负责注册 tool、MCP 客户端与 skill，向模型暴露它们的 JSON schema，并把每次工具调用分发到对应的 tool 对象。
+
+**第三个问题：能力多到上下文装不下怎么办。** 工具继续增多，全部 schema 一起暴露会挤占上下文。Tool Group 是一组带名称的 tool / MCP / skill 集合，可以作为整体激活或停用——Agent 在运行时通过内置 meta tool 切换 group，让上下文保持聚焦。
 
 ```java
 import io.agentscope.core.tool.Toolkit;
@@ -44,30 +46,11 @@ Java tool 是任意满足 `AgentTool` 契约的对象。AgentScope 同时提供�
 
 ### AgentTool / ToolBase 接口
 
-`ToolBase` 是 `AgentTool` 的抽象实现，下表列出其属性与方法。
+`ToolBase` 是 `AgentTool` 的抽象实现。每个 tool 都要向 agent 与运行时回答两类问题。
 
-向 agent 与运行时描述 tool 的属性：
+一类是**描述自己**：名称、面向 agent 的功能描述、参数的 JSON Schema，外加一组行为标记——是否可并发调用（`isConcurrencySafe()`）、是否只读（`isReadOnly()`）、是否外部执行（`isExternalTool()`，见本章「定义外部执行 Tool」一节）、是否注入 `AgentState`（`isStateInjected()`）、是否来自 MCP 服务（`isMcp()`）等。这些属性决定工具如何暴露给模型、如何被权限系统与调度对待。
 
-| 方法 | 类型 | 说明 |
-|---|---|---|
-| `getName()` | `String` | 暴露给 agent 的 tool 名称 |
-| `getDescription()` | `String` | 面向 agent 的功能描述 |
-| `getParameters()` | `Map<String, Object>` | 定义参数的 JSON Schema |
-| `isConcurrencySafe()` | `boolean` | 是否可并发调用 |
-| `isReadOnly()` | `boolean` | 是否只读、不产生副作用 |
-| `isExternalTool()` | `boolean` | 为 `true` 时执行委派给外部（见本章“定义外部执行 Tool”一节） |
-| `isStateInjected()` | `boolean` | 为 `true` 时框架注入 `AgentState` 参数 |
-| `isMcp()` | `boolean` | 是否来自 MCP 服务 |
-| `getMcpName()` | `String` | `isMcp()` 为 `true` 时所属 MCP 服务名 |
-
-接入执行流程与权限系统的方法：
-
-| 方法 | 必需 | 说明 |
-|---|---|---|
-| `checkPermissions(toolInput, context)` | 是 | 执行前的运行时权限检查；返回 `Mono<PermissionDecision>` |
-| `matchRule(ruleContent, toolInput)` | 可选 | 权限系统中的自定义规则匹配；返回 `boolean` |
-| `generateSuggestions(toolInput)` | 可选 | 基于本次工具调用生成建议规则；返回 `List<PermissionRule>` |
-| `callAsync(param)` | 可选 | tool 的执行逻辑；返回 `Mono<ToolResultBlock>`。外部执行 tool 不需要实现。 |
+另一类是**接入执行流程与权限系统**：`checkPermissions(toolInput, context)` 是每个工具执行前的运行时权限检查，返回 `Mono<PermissionDecision>`——第 10 章的权限判定正是构建在它之上；`callAsync(param)` 承载执行逻辑、返回 `Mono<ToolResultBlock>`；`matchRule` 与 `generateSuggestions` 两个可选方法分别服务权限规则的自定义匹配与建议生成。完整的方法与属性表见本章末参考速查。
 
 ### 使用内置 Tool
 
@@ -117,17 +100,7 @@ Toolkit toolkit = new Toolkit();
 toolkit.registerTool(new SimpleTools());
 ```
 
-`@Tool` 常用属性：
-
-| 属性 | 类型 | 说明 |
-|------|------|------|
-| `name` | `String` | tool 名（默认取方法名） |
-| `description` | `String` | 面向 agent 的描述 |
-| `readOnly` | `boolean` | 是否只读（默认 `false`） |
-| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
-| `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
-| `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
-| `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |
+`@Tool` 还有几个常用属性：`readOnly` 标记只读（默认 `false`）；`concurrencySafe` 声明可并发调用（默认 `true`）；`stateInjected` 让框架在调用时注入 `AgentState`；`converter` 指定自定义返回值到 `ToolResultBlock` 的转换器；`dangerousFiles` / `dangerousDirectories` 追加自定义危险路径列表。完整属性表见本章末参考速查。
 
 #### 显式返回执行状态
 
@@ -602,9 +575,9 @@ ReActAgent agent =
 
 前面的注册与激活都是 Agent 级的；单次请求还可以有更细的工具视图。
 
-Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
+先看 Agent 级的隔离语义：Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
 
-调用期间不要通过修改共享 Toolkit 注入外部工具或切换会话的工具组。使用 `io.agentscope.core.tool.ToolRequestConfig` 描述本次请求的工具视图：
+正因为注册表是构建时复制的，调用期间不要通过修改共享 Toolkit 注入外部工具或切换会话的工具组——需要为某次请求调整工具面时，使用 `io.agentscope.core.tool.ToolRequestConfig` 描述本次请求的工具视图：
 
 ```java
 ToolRequestConfig tools = new ToolRequestConfig(
@@ -618,9 +591,35 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 
 外部工具只包含 schema，执行时返回 suspended，由调用方执行后提交结果。同名外部工具覆盖后端工具；`EXTERNAL_ONLY` 隐藏全部后端工具，即使外部列表为空或 Toolkit 禁止删除工具也一样，因为请求视图不会删除注册。`AGENT_ONLY` 不允许同时配置外部工具。
 
+### 会话中的工具状态与动态 Skill 仓库
+
 `Toolkit.callTool` 和 `callTools` 同样读取显式传入的 RuntimeContext。无配置的 `getTool(name)` 查看原始注册表；需要请求视图时使用 `getTool(name, config)`。工具组激活状态保存在会话的 `ToolContextState`，流式工具回调绑定本次调用。
 
 需要按用户或会话加载技能的仓库实现 Core 中的 `io.agentscope.core.skill.repository.RuntimeContextSkillRepository`。Core 和 Harness 都将当前上下文传给仓库。动态 Skill 视图按内容签名缓存，并发缓存未命中共享一次完整的资源物化；淘汰后重建视图使用新目录，保留运行中执行所引用的文件。缓存淘汰只限制保留的 SkillBox 数量，不限制磁盘占用：自动生成的目录保留到 JVM 退出时清理。调用方指定的工作目录由调用方负责清理；不要在仍有执行引用资源时删除它。
+
+## 本章小结
+
+这一章给 Agent 装上了操作真实系统的手，走过的路线是：
+
+1. **三个概念**：Tool 声明单个能力（`@Tool` 注解或继承 `ToolBase`）；Toolkit 负责注册、向模型暴露 JSON schema 并分发调用；Tool Group 把工具成组启停，保住上下文聚焦；
+2. **两种自定义方式**：注解式最轻量，框架自动推导 schema；需要自定义权限策略、外部执行或复杂 schema 时继承 `ToolBase`，实现 `checkPermissions` 与 `callAsync`；
+3. **执行结果**：用 `ToolResultBlock.success` / `error` 显式表达成败与终态，不要靠文本前缀判断；
+4. **Context 注入**：`@Tool` 方法里没有 `@ToolParam` 的参数按类型自动注入（`ToolEmitter`、`AgentState`、`RuntimeContext`、自定义 POJO 等），`ToolBase.callAsync` 通过 `ToolCallParam` 取用；
+5. **工具生态**：MCP 以 STDIO、SSE、Streamable HTTP 三种连接方式把现成服务器整组接入；Skill 用 Markdown 指令包装已有工具，agent 经 `load_skill_through_path` 读取即激活；
+6. **自我管理与请求级视图**：`reset_tools` meta tool 让 Agent 运行时切换 Tool Group（整体覆盖语义）；单次请求可用 `ToolRequestConfig` 定制工具视图，激活状态保存在会话的 `ToolContextState`。
+
+工具让 Agent 能做，准不准做由权限系统判定（第 10 章）。而工具执行中产生的状态、工具组的激活状态都挂在会话与上下文上——下一章就看这些状态放在哪里、如何在实例与机器之间延续。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 写一个 `@Tool` 注解式工具注册进 Toolkit，并让模型成功调用它；
+- ☐ 继承 `ToolBase` 实现自定义 `checkPermissions` 的工具；
+- ☐ 定义一个外部执行工具，并描述 `RequireExternalExecutionEvent` 暂停与回传的流程；
+- ☐ 通过 `RuntimeContext` 把调用方自定义 POJO 注入 `@Tool` 方法；
+- ☐ 注册一个 MCP 客户端（STDIO 或 HTTP/SSE），整组接入现成工具；
+- ☐ 挂载 skill 仓库，并解释 `load_skill_through_path` 初始化与运行两阶段的工作方式；
+- ☐ 创建 Tool Group 并用 `reset_tools` 让 Agent 自管激活状态，说出整体覆盖语义的坑；
+- ☐ （选做）用 `ToolRequestConfig` 为单次请求定制工具视图。
 
 ## 延伸阅读
 
@@ -628,3 +627,44 @@ agent.streamEvents(messages, ctx).subscribe(this::handleEvent);
 - **权限系统（见第 10 章）**——精细控制哪个 tool 可以执行、何时执行。
 - **中间件（见第 9 章）**——用洋葱式 middleware 拦截并改写 tool 调用。
 - **Human-in-the-Loop（见第 4 章）**——外部执行 tool 与人工审批工作流。
+
+## 参考速查
+
+本节收拢正文引用过的方法与属性全表，供实施时查阅；主线讲解不依赖本节。
+
+### ToolBase 属性与方法
+
+向 agent 与运行时描述 tool 的属性：
+
+| 方法 | 类型 | 说明 |
+|---|---|---|
+| `getName()` | `String` | 暴露给 agent 的 tool 名称 |
+| `getDescription()` | `String` | 面向 agent 的功能描述 |
+| `getParameters()` | `Map<String, Object>` | 定义参数的 JSON Schema |
+| `isConcurrencySafe()` | `boolean` | 是否可并发调用 |
+| `isReadOnly()` | `boolean` | 是否只读、不产生副作用 |
+| `isExternalTool()` | `boolean` | 为 `true` 时执行委派给外部（见本章“定义外部执行 Tool”一节） |
+| `isStateInjected()` | `boolean` | 为 `true` 时框架注入 `AgentState` 参数 |
+| `isMcp()` | `boolean` | 是否来自 MCP 服务 |
+| `getMcpName()` | `String` | `isMcp()` 为 `true` 时所属 MCP 服务名 |
+
+接入执行流程与权限系统的方法：
+
+| 方法 | 必需 | 说明 |
+|---|---|---|
+| `checkPermissions(toolInput, context)` | 是 | 执行前的运行时权限检查；返回 `Mono<PermissionDecision>` |
+| `matchRule(ruleContent, toolInput)` | 可选 | 权限系统中的自定义规则匹配；返回 `boolean` |
+| `generateSuggestions(toolInput)` | 可选 | 基于本次工具调用生成建议规则；返回 `List<PermissionRule>` |
+| `callAsync(param)` | 可选 | tool 的执行逻辑；返回 `Mono<ToolResultBlock>`。外部执行 tool 不需要实现。 |
+
+### @Tool 注解属性
+
+| 属性 | 类型 | 说明 |
+|------|------|------|
+| `name` | `String` | tool 名（默认取方法名） |
+| `description` | `String` | 面向 agent 的描述 |
+| `readOnly` | `boolean` | 是否只读（默认 `false`） |
+| `concurrencySafe` | `boolean` | 是否可并发调用（默认 `true`） |
+| `stateInjected` | `boolean` | 是否在调用时注入 `AgentState` 作为额外参数（默认 `false`） |
+| `dangerousFiles` / `dangerousDirectories` | `String[]` | 追加自定义危险路径列表 |
+| `converter` | `Class<? extends ToolResultConverter>` | 自定义返回值到 `ToolResultBlock` 的转换器 |

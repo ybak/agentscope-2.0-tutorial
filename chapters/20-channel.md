@@ -6,9 +6,11 @@ source: docs/harness/channel.md
 
 # 第 20 章 渠道（Channel）
 
-> 本章导读：讲解应用代码与 agent 之间的 Gateway——会话管理、per-session 并发控制与多 agent 路由，以及把消息平台适配成这套路由模型的 Channel：SendOptions 的用法、流式事件与 SSE Controller、与暴露子 Agent 的双向对话、GatewayBootstrap 多 agent 接线、自定义 Channel 接口与内置 IM 适配器。读完本章，你可以把同一个 agent 稳定地接到 HTTP、SSE 或任意消息平台上。
+> 本章导读：同一个 agent 要接到网页、命令行和即时通讯工具上，每接一个平台都要重新回答同一组问题——这条消息来自哪个用户、属于哪个对话、两条消息同时到达谁先谁后、注册了多个 agent 时交给谁。本章讲 AgentScope 对这组问题的回答：应用代码与 agent 之间的 Gateway——会话管理、per-session 并发控制与多 agent 路由，以及把消息平台适配成这套路由模型的 Channel：SendOptions 的用法、流式事件与 SSE Controller、与暴露子 Agent 的双向对话、GatewayBootstrap 多 agent 接线、自定义 Channel 接口与内置 IM 适配器。读完本章，你可以把同一个 agent 稳定地接到 HTTP、SSE 或任意消息平台上。
 
 ## 它们做什么
+
+先看没有这层抽象时会撞上的问题。用户双击发送按钮，两条相同的消息同时进入同一个对话，agent 和自己竞争；同一个用户从网页和命令行各发一条，应用对不上这是不是同一段对话；接入第二个平台时，会话与路由的逻辑要再写一遍。
 
 **Gateway** 位于你的应用代码和 agent 之间，负责：
 
@@ -21,6 +23,8 @@ source: docs/harness/channel.md
 大多数场景下你不需要直接和 Gateway 或 Channel 打交道——`agent.channel(...)` 会在后台自动完成所有接线。
 
 ## 快速开始
+
+两层各管什么清楚了，直接看最短路径——一个 agent、一个 channel、三次发送：
 
 ```java
 HarnessAgent agent = HarnessAgent.builder()
@@ -117,7 +121,7 @@ ChatUiChannel chat = gw.chatUiChannel();
 
 ## 流式事件 + SSE
 
-`sendStream()` 返回 `Flux<AgentEvent>`，和 `agent.streamEvents()` 一样的细粒度事件流，但经过 gateway 路由并带有会话管理。
+同步的 `send` 拿到的是完整回复，聊天界面要的是边生成边显示。`sendStream()` 返回 `Flux<AgentEvent>`，和 `agent.streamEvents()` 一样的细粒度事件流，但经过 gateway 路由并带有会话管理。
 
 ```java
 chat.sendStream(SendOptions.userId("user-1"), "北京今天天气怎么样？")
@@ -333,6 +337,29 @@ AgentScope 提供了多个开箱即用的 Channel 适配器作为扩展模块：
 - 企业微信 — 加密回调
 
 各适配器的接入配置详见第 25 章（IM 渠道集成）。
+
+## 本章小结
+
+把同一个 agent 稳定接到多个入口，这一章的机制按接入顺序串起来：
+
+1. **分工**：Gateway 管会话映射、per-session 并发与 agent 路由；Channel 负责把具体消息平台适配到这套模型，`agent.channel(...)` 自动完成接线；
+2. **说清谁在说话**：`SendOptions` 用 userId、session、`withAgentId`、属性与完整 `RuntimeContext` 表达来源与去向；纯文本之外传预构建的 `Msg`，业务属性不要写进 `MsgContext.extra`；
+3. **流式输出**：`sendStream()` 提供与 `streamEvents` 同粒度、经 gateway 路由的事件流，SSE Controller 把它映射成 `ServerSentEvent`；
+4. **子 Agent 直连**：`SubagentExposedEvent` 携带 `subagentId` 句柄，`sendToSubagent` / `sendToSubagentStream` 让用户绕过父 agent 与子 agent 对话；
+5. **多 agent**：`GatewayBootstrap` 注册多个实例并指定默认，`withAgentId` 显式路由；GatewayBootstrap 模式下 `expose_to_user` 需要接 `gatewayBridge`，单 agent 的 `agent.channel(...)` 则自动完成；
+6. **自定义与内置**：实现 `Channel` 接口即可接入新平台；钉钉、飞书 / Lark、GitHub、GitLab、企业微信适配器开箱即用，接入配置在第 25 章。
+
+下一站把这套接入方式落到具体的消息平台——第 25 章（IM 渠道集成）逐个讲五个内置适配器的认证、签名校验与消息解析。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出 Gateway 的三项职责，并解释用户连发两条消息时 per-session 并发控制会发生什么；
+- ☐ 用 `agent.channel(...)` 接入 `ChatUiChannel`，向两个不同用户分别发消息并验证 session 隔离；
+- ☐ 对照 `SendOptions` 的五个工厂方法，为你的接入场景选出发送方式；
+- ☐ 用 `sendStream()` 实现一个 SSE Controller，把文本增量持续推给前端；
+- ☐ 捕获 `SubagentExposedEvent`，并用 `sendToSubagent` 与暴露的子 agent 直接对话；
+- ☐ 用 `GatewayBootstrap` 接线两个 agent，并用 `withAgentId` 把消息路由到指定 agent；
+- ☐ （选做）实现一个自定义 `Channel`，接入一个本章未覆盖的消息平台。
 
 ## 相关文档
 

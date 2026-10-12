@@ -429,3 +429,35 @@ gw.start();
 **入站：** `GitLabWebhookController` → note.id 去重 → bot 自身 note 过滤 → `GitLabInboundMapper` → 防循环 → Gateway。
 
 **出站：** `GitLabOutboundClient` 通过 GitLab Notes API 发送回复。
+
+## 本章小结
+
+五个适配器接的是五个平台，走的是同一条管线：入站解析为 `InboundMessage`、幂等去重、防循环、经 Gateway 分发给 Agent，出站调用平台 API 投递回复。`IdempotencyStore`、`BotLoopGuard`、`AccessTokenStore` 三个通用组件分别防重试重复、防 bot 死循环、缓存出站凭据；多副本部署时通过 `fromProperties` 重载传入共享存储，让去重与 token 在所有实例间生效。
+
+各适配器的接收机制与选型依据如下（均出自本章各节的适用场景与配置说明）：
+
+| 平台 | 接收机制 | 什么时候选它 |
+| --- | --- | --- |
+| 钉钉 | Stream 持久 WebSocket（默认，断线指数退避重连）或加签 HTTP 回调 | 响应钉钉机器人消息；无公网端点条件选 Stream，已暴露回调端点或多租户动态增删选 HTTP 回调 |
+| 飞书 | 事件订阅 v2 回调（HTTP），可选 AES-256-CBC 载荷解密 | 响应飞书机器人消息；应用已运行 Spring Boot，回调控制器自动注册 |
+| 企业微信 | 加密回调（HTTP），所有回调强制加密 | 响应企业微信机器人消息；应用已运行 Spring Boot |
+| GitHub | Webhook（HTTP），HMAC-SHA256 签名校验 | 响应 issue / PR 评论，需要 bot 自身回复检测与按线程独立的 session |
+| GitLab | Webhook（Note hook） | 响应 issue / merge request 评论；SaaS 与自建实例都支持 |
+
+选好平台后，接入动作是固定的四步：添加依赖 → 开发者后台创建应用并配置回调 → `fromProperties` 构造适配器 → 挂入 `GatewayBootstrap` 启动。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出一条入站消息从平台到 Agent 要经过哪几步，以及三个通用组件各自防什么；
+- ☐ 为钉钉在 Stream 与 HTTP 回调之间做选择，并说出两者对公网端点与 Spring 应用的要求差异；
+- ☐ 解释多实例部署时为什么要共享 `InboundEventDeduplicator` 与 `AccessTokenStore`；
+- ☐ 说明面向公网的钉钉 HTTP 回调为什么建议开启消息体加密；
+- ☐ 描述 GitHub 与 GitLab 各自如何识别并丢弃 bot 自身的评论；
+- ☐ 解释 GitHub 的 `THREAD` peer 模型给 Agent 带来的对话历史边界。
+
+## 延伸阅读
+
+- 第 20 章（渠道）—— Channel 接口与 Gateway 分发机制，本章五个适配器的共同基础
+- 第 28 章（基础设施与生态工具）—— 集成扩展全览表，本章五个适配器的一览入口
+- 第 31 章（Session API）—— Service 平台内的 Channel 资源：与本章应用内适配器的定位差异
+- 第 43 章（案例）—— 多入口通道接入在组织级场景中的组合用法

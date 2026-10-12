@@ -6,7 +6,7 @@ source: docs/harness/plan-mode.md
 
 # 第 17 章 计划模式
 
-> 本章导读：讲解 Plan Mode——动手前先"把意图想清楚 + 写下来"的只读阶段：九个白名单工具、`plan_enter` / `plan_write` / `plan_exit` 三件套、HITL 确认退出、四种运行终态的判断、按需放开 shell 的取舍、运行期权限模式切换与跨重启的状态持久化。读完本章，你可以把"设计 → 写计划 → 人确认 → 执行"固化进长任务流程，降低"边想边改"的风险。
+> 本章导读：长任务最怕的不是做不完，而是边想边改、改坏一片——动手之前缺一个把意图想清楚并写下来的环节。本章讲解 Plan Mode——动手前先"把意图想清楚 + 写下来"的只读阶段：九个白名单工具、`plan_enter` / `plan_write` / `plan_exit` 三件套、HITL 确认退出、四种运行终态的判断、按需放开 shell 的取舍、运行期权限模式切换与跨重启的状态持久化。读完本章，你可以把"设计 → 写计划 → 人确认 → 执行"固化进长任务流程，降低"边想边改"的风险。
 
 ## 作用
 
@@ -203,6 +203,27 @@ agent.streamEvents(message)
     })
     .subscribe();
 ```
+
+## 本章小结
+
+这一章把一条四步流程固化进 agent 的运行：设计 → 写计划 → 人确认 → 执行。
+
+1. **只读阶段**：`.enablePlanMode()` 开启后，agent 只能调只读工具与九个白名单工具，其余调用即时拒绝，模型看到的是 `PlanModeMiddleware.DENY_MESSAGE` 原文；
+2. **三件套**：`plan_enter` 进入、`plan_write` 写计划文件（避开把通用 `write_file` 放进白名单的风险）、`plan_exit` 退出并走 HITL 确认（程序入口不触发）；
+3. **判断终态**：从未进入、进入并退出、仍在 plan mode 且有 `PLAN.md`、仍在 plan mode 且无 `PLAN.md`——不能只看 `isPlanModeActive()`；
+4. **shell 取舍**：`allowShellInPlanMode()` 放开调查用的 shell，但只读保证变弱，建议配合沙箱；
+5. **权限与持久化**：`setPermissionMode` 运行期切 mode（`BYPASS` 慎用，无人值守用 `DONT_ASK`）；plan 阶段状态随 `AgentState` 持久化，计划文件在工作区 `plans/` 下；
+6. **协作**：plan 期间 spawn 的子 agent 自动继承只读限制；执行阶段用 `todo_write` 把 PLAN 拆成清单逐条推进。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出 plan 阶段的九个白名单工具，并解释为什么需要专门的 `plan_write`；
+- ☐ 跑通一次完整流程：`plan_write` 写出计划、`plan_exit` 经 HITL 批准后进入执行；
+- ☐ 区分一次运行的四种终态，并知道如何借助 `plan_enter` / `plan_write` 的调用记录消除歧义；
+- ☐ 解释默认拒绝 shell 的原因，以及放开后只读保证弱在哪里；
+- ☐ 在运行期切换 `PermissionMode`，并说出 `BYPASS` 与 `DONT_ASK` 的差别；
+- ☐ 解释进程重启后 plan 阶段与 `plans/PLAN.md` 各自如何恢复；
+- ☐ （选做）通过 admin HTTP 接口读取某 session 的计划与任务列表。
 
 ## 相关文档
 

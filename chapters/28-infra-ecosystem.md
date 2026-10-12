@@ -12,6 +12,8 @@ AgentScope Java 与第三方系统、生态服务的集成扩展都是 `agentsco
 
 ## 集成扩展全景
 
+先用这张全景表回答一个选章问题：想接入的能力属于哪一组、该翻哪一章。
+
 | 分组 | 内容 | 详见 |
 | --- | --- | --- |
 | 模型提供商 | 十家提供商的独立模型扩展模块，`agentscope-core` 只保留共享模型契约；完整模型创建方式、Spring Boot 配置、formatter、credential 和高级 registry 行为另见第 6 章 | 第 21 章 |
@@ -597,3 +599,11 @@ TrainingRunner runner = TrainingRunner.builder()
 ### 与 Studio 配合
 
 可以同时挂载 `StudioMessageHook`，在 Studio 上实时看到哪些会话被采样进训练；reward 也可以写入 Studio 用于可视化分析。
+
+## 本章小结
+
+十组集成扩展至此全部有了归宿。前八组在各自章节成体系展开：模型提供商（第 21 章）回答"模型从哪里来"，RAG 知识库（第 22 章）回答"知识从哪里检索"，长期记忆（第 23 章）回答"记忆存在哪里"，分布式存储（第 24 章）回答"状态如何跨副本共享"，IM 渠道（第 25 章）回答"消息从哪些平台进来"，Agent 协议（第 26 章）回答"Agent 之间如何标准对话"，Skill 仓库（第 27 章）回答"技能放在哪个仓库"，沙箱执行（第 18 章）提供隔离的代码执行环境。
+
+本章补上最后两组。**基础设施**三件：Higress 把网关上以 MCP 发布的工具引入 Toolkit，鉴权、限流、路由等治理留在网关侧；Nacos 充当统一控制面，同时承担 A2A 注册发现、Prompt 配置中心与 Skill 仓库；Scheduler 让 Agent 按 CRON 或固定速率定时执行——Quartz 适合单机或小集群，XXL-Job 适合需要可视化控制台的分布式调度。**生态扩展**三件：Chat Completions Web 把 Agent 暴露成 OpenAI 兼容接口，让 OpenAI SDK、LangChain 等现有客户端无需改代码即可接入；Studio 提供可视化调试、链路回放与 Human-in-the-Loop 输入；Training 把生产流量按策略采样喂给 Trinity 训练后端，形成在线训练闭环。
+
+到这里，第四篇的集成扩展讲完。当 Agent 需要从"跑在一个应用里"变成"多个业务应用共享的能力"时，就进入了第五篇 Service 的领域——第 29 章从用 Docker Compose 把平台跑起来开始。

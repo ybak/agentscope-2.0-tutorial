@@ -28,7 +28,17 @@ AgentScope 在 Java 侧提供了多种"让 Agent 与外部交互"的协议适配
 
 > 分层：AG-UI 面向用户；Agent Protocol 是内部远程子 agent / 任务 HTTP 面；A2A 用于外部互操作。
 
+AgentScope 用不同协议覆盖不同信任边界 / 交互面：
+
+| 层级 | 角色 |
+| --- | --- |
+| **AG-UI** | 面向用户的聊天 UI 事件流（浏览器 ↔ 应用） |
+| **Agent Protocol** | 内部远程子 agent / 任务 HTTP API（父 harness ↔ 远程 agent 服务） |
+| **A2A** | 外部 agent 间互操作（独立扩展；不属于本次远程子 agent 流式 / HITL 改动） |
+
 ## A2A
+
+A2A 解决的是 Agent 之间互相调用、组成工作流的问题：当你需要调用别的系统暴露的 A2A Agent，或者要把自己的 Agent 能力以 A2A 协议开放给其他 Agent 系统消费时，使用这个适配器。
 
 `agentscope-extensions-a2a` 实现了 [A2A 协议](https://a2aproject.github.io/A2A/)，包含两个子模块：
 
@@ -172,15 +182,7 @@ sequenceDiagram
 
 *图 26-1：Agent Protocol 的任务提交与恢复时序*
 
-### 协议分层
-
-AgentScope 用不同协议覆盖不同信任边界 / 交互面：
-
-| 层级 | 角色 |
-| --- | --- |
-| **AG-UI** | 面向用户的聊天 UI 事件流（浏览器 ↔ 应用） |
-| **Agent Protocol** | 内部远程子 agent / 任务 HTTP API（父 harness ↔ 远程 agent 服务） |
-| **A2A** | 外部 agent 间互操作（独立扩展；不属于本次远程子 agent 流式 / HITL 改动） |
+三种协议的信任边界与交互面分层见章首怎么选一节。
 
 ### 添加依赖
 
@@ -207,7 +209,7 @@ agentscope:
     # task-store-path: ${user.dir}/.agentscope/agent-protocol
 ```
 
-随后会自动注册 `/tasks` 系列 REST 接口。
+随后会自动注册 `/tasks` 系列 REST 接口。全部配置项、默认值与完整配置示例收拢在章末参考速查。
 
 #### 控制面 vs 执行 workspace
 
@@ -251,19 +253,7 @@ AgentFactory agentFactory(Map<String, HarnessAgent> agentsByName) {
 }
 ```
 
-`AgentRequest` 字段：
-
-| 字段 | 说明 |
-| --- | --- |
-| `taskId()` | 任务标识，同时作为 agent 的 session id |
-| `agentId()` | 提交时请求的 `agent_id` |
-| `input()` | 用户输入；resume 运行时为空 |
-| `userId()` / `parentSessionId()` | 解析自 `context.user_id` / `context.parent_session_id` |
-| `resume()` | 为 `true` 表示这是等待工具确认后的续跑 |
-| `context()` | 原样保留的提交 `context` map（含自定义键）；可用 `contextValue(key)` / `contextString(key)` 取值 |
-| `attributes()` | 仅 `context.attributes` 这层 map；可用 `attributeString(key)` 取值 |
-
-工厂每次运行调用一次——提交时一次，之后每次 `/resume` 再调用一次，且拿到的仍是最初的提交上下文，因此 HITL 暂停前后的路由结果保持一致。
+`AgentRequest` 各字段的完整说明表收拢在章末参考速查。工厂每次运行调用一次——提交时一次，之后每次 `/resume` 再调用一次，且拿到的仍是最初的提交上下文，因此 HITL 暂停前后的路由结果保持一致。
 
 任务并发执行时请每次返回独立实例（例如 prototype 作用域 bean）。返回 `null` 会让任务以错误状态结束。
 
@@ -369,15 +359,7 @@ RuntimeContext.builder()
 
 成功响应：`{ "task_id", "status": "pending" }`。
 
-#### 轮询 / 等待 / 取消
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/tasks/{taskId}` | 快照（`status`、结果、错误、待确认项） |
-| `GET` | `/tasks/{taskId}/wait?timeout_seconds=7200` | 阻塞直到终态（或 `awaiting_confirm`） |
-| `POST` | `/tasks/{taskId}/cancel` | 请求取消 |
-
-远程 agent 等待工具确认时，快照会报告 `status: awaiting_confirm`，但存储的 `TaskStatus` 仍为 `RUNNING`，因此父侧 barrier 会继续等待。
+任务提交后，轮询快照、阻塞等待终态与请求取消三个端点收拢在章末参考速查。
 
 #### 事件流（SSE）
 
@@ -392,26 +374,7 @@ RuntimeContext.builder()
 
 每条 SSE 消息以事件序号为 `id`、远程事件类型为 `event`、JSON 正文为 `data`。
 
-##### 事件流详细度
-
-提交时的 `context.detail` 决定订阅方能收到多少事件，每一档都是前一档的超集：
-
-| `detail` | 事件流中的类型 |
-|----------|----------------|
-| `status`（默认） | `RUN_STARTED`、`RUN_FINISHED`、`RUN_ERROR`、`TOOL_CALL_START`、`TOOL_CALL_END`、`TOOL_RESULT`、`REQUIRE_CONFIRM`、`STATUS` |
-| `full` | 再加 `TEXT_DELTA`、`THINKING_DELTA` |
-| `verbose` | 再加 `AGENT_EVENT`——其余所有 agent 事件，包括块边界、工具入参与工具输出增量、带 token usage 的模型调用、agent 结果、自定义事件 |
-
-只有 `verbose` 能完整复现 agent 自身的事件流。无法识别的取值按 `status` 处理。
-
-除各类型专属字段外，每个事件正文还带两个字段：
-
-| 字段 | 含义 |
-|------|------|
-| `eventType` | 源 `AgentEventType` 的名字，如 `MODEL_CALL_END`。客户端可据此过滤或打日志，无需解析 `payload` |
-| `payload` | 源 `AgentEvent` 的完整序列化。可还原出原始事件，id、时间戳与 metadata 都保留；也是 `AGENT_EVENT` 的唯一表示形式 |
-
-两者都是增量字段：忽略它们的客户端照旧读扁平字段（`text`、`toolCallId`、`status` 等），早于 `AGENT_EVENT` 的客户端则直接跳过这类消息。
+提交时的 `context.detail` 决定订阅方能收到多少事件，每一档都是前一档的超集；三档（`status` / `full` / `verbose`）的完整对照，以及每个事件正文都携带的 `eventType` / `payload` 两个增量字段，收拢在章末参考速查。
 
 #### HITL 恢复
 
@@ -430,35 +393,17 @@ RuntimeContext.builder()
 
 与调用方父 harness 的 HITL 交互见第 16 章（远程授权）。
 
-### 配置项
-
-| `application.yml` 键 | 类型 | 默认 | 说明 |
-| --- | --- | --- | --- |
-| `agentscope.agent-protocol.enabled` | boolean | `false` | 是否注册 `/tasks` REST 端点 |
-| `agentscope.agent-protocol.streaming-enabled` | boolean | `true` | 是否暴露 SSE `GET /tasks/{id}/events` |
-| `agentscope.agent-protocol.hitl-enabled` | boolean | `true` | 是否因工具确认暂停任务并接受 `/resume` |
-| `agentscope.agent-protocol.sse-replay-buffer-size` | int | `256` | 每个任务的 SSE 回放缓冲区大小 |
-| `agentscope.agent-protocol.sse-timeout-ms` | long | `10800000` | SSE 订阅最长持续时间（毫秒） |
-
-示例：
-
-```yaml
-agentscope:
-  agent-protocol:
-    enabled: true
-    streaming-enabled: true
-    hitl-enabled: true
-    sse-replay-buffer-size: 256
-    sse-timeout-ms: 10800000
-```
-
-> 关闭 `enabled` 时（默认）即使引入依赖也不会暴露任何 REST 接口，可放心打包。
-
 ### 与 Workspace 配合
 
 每个 task 都会拿到 `WorkspaceManager` 分配的隔离工作目录；任务结束后，工作区里的产物（文件、日志）会通过 Agent Protocol 的标准接口暴露出来，外部客户端可以直接拉取。
 
 ## AG-UI
+
+### 何时使用
+
+- 需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。
+- 需要以 SSE 流式输出 `RUN_*`、`TEXT_MESSAGE_*`、`TOOL_CALL_*`、`CUSTOM` 等 AG-UI 事件。
+- 需要前端工具、用户审批中断、运行上下文或自定义事件转换扩展。
 
 ### 兼容性说明
 
@@ -473,12 +418,6 @@ agentscope:
 这一保护仅针对 `RUN_ERROR` 的错误消息，不针对整个事件流。此前的 `RUN_STARTED.input` 保留原始请求，包括被拒绝的文档内容。记录日志或转发事件的使用方需要自行对敏感输入脱敏。
 
 `AguiMessageConverter.toAguiMessage()` 目前只保留文本和工具调用字段；image、audio、video、document 内容块不会被序列化回 AG-UI message content。
-
-### 何时使用
-
-- 需要把 AgentScope agent 接入 AG-UI 兼容前端或自研 Chat UI。
-- 需要以 SSE 流式输出 `RUN_*`、`TEXT_MESSAGE_*`、`TOOL_CALL_*`、`CUSTOM` 等 AG-UI 事件。
-- 需要前端工具、用户审批中断、运行上下文或自定义事件转换扩展。
 
 ### 添加依赖
 
@@ -652,18 +591,7 @@ agentscope:
 
 `AguiAgentAdapter.run(input, runtimeContext)` 支持调用方传入自定义 `RuntimeContext`。适配器会先复制调用方 context，再覆盖 AG-UI 协议元数据，确保默认元数据不会因为自定义 context 丢失。
 
-| RuntimeContext 内容 | 来源 |
-| --- | --- |
-| `sessionId` | `RunAgentInput.threadId` |
-| `RunAgentInput.class` | 完整 `RunAgentInput` |
-| `agui.threadId` | `RunAgentInput.threadId` |
-| `agui.runId` | `RunAgentInput.runId` |
-| `agui.messages` | `RunAgentInput.messages` |
-| `agui.tools` | `RunAgentInput.tools` |
-| `agui.context` | `RunAgentInput.context` |
-| `agui.state` | `RunAgentInput.state` |
-| `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
-| `agui.resume` | `RunAgentInput.resume` |
+适配器注入的 RuntimeContext 内容对照表收拢在章末参考速查。
 
 `sessionId` 来自 `threadId`。沿用相同的用户、thread 和持久存储配置，新实例可以继续原会话；不同 thread 使用各自的会话身份。
 
@@ -813,3 +741,109 @@ mvn spring-boot:run -Dspring-boot.run.mainClass=io.agentscope.examples.documenta
 ```
 
 启动后访问 http://localhost:8080 查看默认前端示例。该示例展示了多 agent 路由、自定义 converter、自定义 enricher、token usage 和 HITL interrupt。
+
+## 本章小结
+
+这一章把同一个 Agent 通过三种协议开放给三类调用方：
+
+1. **怎么选**：三种协议覆盖不同信任边界——AG-UI 面向用户的聊天 UI 事件流，Agent Protocol 是内部远程子 agent / 任务 HTTP 面，A2A 用于外部 agent 间互操作；另有 Chat Completions Web（第 28 章）提供 OpenAI 兼容接口；
+2. **A2A**：client 子模块把远端 A2A Agent 包装成本地 `Agent`（可直接组合进 Pipeline、MsgHub、Subagent），server 子模块把本地 `ReActAgent` 暴露成 A2A Server——server 本身不监听端口，由你的 Web 框架完成监听；
+3. **Agent Protocol**：Spring Boot 自动配置暴露 `/tasks` REST 端点，`AgentFactory` 按 `agent_id` 与提交上下文路由，自定义数据走 `context.attributes` 命名空间键，SSE 事件流可断线续订，工具确认通过 `/resume` 恢复；
+4. **AG-UI**：`AguiAgentAdapter` 把 `AgentEvent` 流映射为 AG-UI 事件，子 agent 事件默认收进 `subagent.*` 命名空间，工具审批以官方 interrupt outcome 输出、用 `resume[]` 恢复。
+
+所有端点、配置项与字段对照表收拢在章末参考速查。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 按调用方类型（前端 UI / 内部任务调度 / 外部 Agent 系统）为场景选对协议；
+- ☐ 用 `A2aAgent` 调用远端 A2A Agent，并说出 server 为什么要配合自己的 Web 框架使用；
+- ☐ 在 Spring Boot 里启用 Agent Protocol，写出按 `agent_id` 路由的 `AgentFactory`；
+- ☐ 解释 `context.attributes` 为什么挂在命名空间键下，以及哪些保留键不能占用；
+- ☐ 说出 AG-UI 事件映射中子 agent 事件的默认行为，以及 `RUN_ERROR` 与 `RUN_FINISHED` 的互斥关系；
+- ☐ 描述一次工具审批从 `RUN_FINISHED` interrupt 到 `resume[]` 恢复的完整往返。
+
+## 参考速查
+
+本节收拢本章各节引用过的端点、配置项与字段对照表，供实施时查阅；正文主线中的最小路径不依赖本节。
+
+### Agent Protocol 配置项
+
+| `application.yml` 键 | 类型 | 默认 | 说明 |
+| --- | --- | --- | --- |
+| `agentscope.agent-protocol.enabled` | boolean | `false` | 是否注册 `/tasks` REST 端点 |
+| `agentscope.agent-protocol.streaming-enabled` | boolean | `true` | 是否暴露 SSE `GET /tasks/{id}/events` |
+| `agentscope.agent-protocol.hitl-enabled` | boolean | `true` | 是否因工具确认暂停任务并接受 `/resume` |
+| `agentscope.agent-protocol.sse-replay-buffer-size` | int | `256` | 每个任务的 SSE 回放缓冲区大小 |
+| `agentscope.agent-protocol.sse-timeout-ms` | long | `10800000` | SSE 订阅最长持续时间（毫秒） |
+
+示例：
+
+```yaml
+agentscope:
+  agent-protocol:
+    enabled: true
+    streaming-enabled: true
+    hitl-enabled: true
+    sse-replay-buffer-size: 256
+    sse-timeout-ms: 10800000
+```
+
+> 关闭 `enabled` 时（默认）即使引入依赖也不会暴露任何 REST 接口，可放心打包。
+
+### Agent Protocol 轮询 / 等待 / 取消
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/tasks/{taskId}` | 快照（`status`、结果、错误、待确认项） |
+| `GET` | `/tasks/{taskId}/wait?timeout_seconds=7200` | 阻塞直到终态（或 `awaiting_confirm`） |
+| `POST` | `/tasks/{taskId}/cancel` | 请求取消 |
+
+远程 agent 等待工具确认时，快照会报告 `status: awaiting_confirm`，但存储的 `TaskStatus` 仍为 `RUNNING`，因此父侧 barrier 会继续等待。
+
+### Agent Protocol 事件流详细度
+
+提交时的 `context.detail` 决定订阅方能收到多少事件，每一档都是前一档的超集：
+
+| `detail` | 事件流中的类型 |
+|----------|----------------|
+| `status`（默认） | `RUN_STARTED`、`RUN_FINISHED`、`RUN_ERROR`、`TOOL_CALL_START`、`TOOL_CALL_END`、`TOOL_RESULT`、`REQUIRE_CONFIRM`、`STATUS` |
+| `full` | 再加 `TEXT_DELTA`、`THINKING_DELTA` |
+| `verbose` | 再加 `AGENT_EVENT`——其余所有 agent 事件，包括块边界、工具入参与工具输出增量、带 token usage 的模型调用、agent 结果、自定义事件 |
+
+只有 `verbose` 能完整复现 agent 自身的事件流。无法识别的取值按 `status` 处理。
+
+除各类型专属字段外，每个事件正文还带两个字段：
+
+| 字段 | 含义 |
+|------|------|
+| `eventType` | 源 `AgentEventType` 的名字，如 `MODEL_CALL_END`。客户端可据此过滤或打日志，无需解析 `payload` |
+| `payload` | 源 `AgentEvent` 的完整序列化。可还原出原始事件，id、时间戳与 metadata 都保留；也是 `AGENT_EVENT` 的唯一表示形式 |
+
+两者都是增量字段：忽略它们的客户端照旧读扁平字段（`text`、`toolCallId`、`status` 等），早于 `AGENT_EVENT` 的客户端则直接跳过这类消息。
+
+### AgentRequest 字段
+
+| 字段 | 说明 |
+| --- | --- |
+| `taskId()` | 任务标识，同时作为 agent 的 session id |
+| `agentId()` | 提交时请求的 `agent_id` |
+| `input()` | 用户输入；resume 运行时为空 |
+| `userId()` / `parentSessionId()` | 解析自 `context.user_id` / `context.parent_session_id` |
+| `resume()` | 为 `true` 表示这是等待工具确认后的续跑 |
+| `context()` | 原样保留的提交 `context` map（含自定义键）；可用 `contextValue(key)` / `contextString(key)` 取值 |
+| `attributes()` | 仅 `context.attributes` 这层 map；可用 `attributeString(key)` 取值 |
+
+### AG-UI RuntimeContext 注入内容
+
+| RuntimeContext 内容 | 来源 |
+| --- | --- |
+| `sessionId` | `RunAgentInput.threadId` |
+| `RunAgentInput.class` | 完整 `RunAgentInput` |
+| `agui.threadId` | `RunAgentInput.threadId` |
+| `agui.runId` | `RunAgentInput.runId` |
+| `agui.messages` | `RunAgentInput.messages` |
+| `agui.tools` | `RunAgentInput.tools` |
+| `agui.context` | `RunAgentInput.context` |
+| `agui.state` | `RunAgentInput.state` |
+| `agui.forwardedProps` | `RunAgentInput.forwardedProps` |
+| `agui.resume` | `RunAgentInput.resume` |

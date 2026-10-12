@@ -18,9 +18,7 @@ source: docs/building-blocks/context.md
 
 ## 本章与上下文管理的关系
 
-本章介绍 **会话状态放在哪里、如何保存恢复，以及工具如何访问本次调用状态**。
-每轮推理如何组织模型输入、接入动态业务材料、跟进任务和压缩历史，见
-第 13 章（上下文管理）。
+分工在上一节已经点明：本章管 **会话状态放在哪里、如何保存恢复，以及工具如何访问本次调用状态**；每轮推理如何组织模型输入、接入动态业务材料、跟进任务和压缩历史，见第 13 章（上下文管理）。容易混淆的是 AgentState、RuntimeContext、模型请求上下文这三个概念——职责与去向各不相同：
 
 | 概念 | 职责 | 是否直接发给模型 |
 | --- | --- | --- |
@@ -78,7 +76,7 @@ TaskContextState 的 Todo 由 todo_write 或应用更新；任务目标由应用
 框架保存这些字段，不代表会自动从用户消息、PLAN.md 或工具文本推断它们。
 Todo 完成、要求已确认、限定检查通过是不同含义，都不自动代表整体完成。
 Harness 是否展示这些信息由 taskContext 配置控制；字段与更新入口的完整对照见
-第 13 章（上下文管理）“可选任务信息”一节。
+第 13 章（上下文管理）“工具执行之后：持续跟进长程任务”一节。
 
 ### Session Log 与 AgentStateStore 的关系
 
@@ -318,18 +316,7 @@ RuntimeContext ctx = RuntimeContext.builder()
 Msg result = agent.call(List.of(new UserMessage("Hi")), ctx).block();
 ```
 
-可用字段：
-
-| 方法 | 说明 |
-|------|------|
-| `getSessionId()` / `getUserId()` | 内置字段，用于路由状态槽位与租户 |
-| `getRunId()` | 每次调用的稳定关联 ID（见下方“runId 关联”一节），恒非 null |
-| `getAgentState()` / `setAgentState(AgentState)` | call-scoped 的 `AgentState`，由框架在 call 入口注入。中间件和工具应从这里读状态，而非 `agent.getAgentState()` |
-| `resolveAgentState(ctx, agent)` | 静态辅助方法：优先返回 `ctx.getAgentState()`，回退到 `agent.getAgentState()`。执行期间应确保当前调用已注入状态；回退不保证选中正确业务会话 |
-| `get(String)` / `put(String, Object)` | 字符串键存取 |
-| `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取（typed singleton） |
-| `getExtra()` | 直接拿到字符串属性 map（可变视图） |
-| `RuntimeContext.empty()` | 空上下文 |
+可用字段的全表（含 `resolveAgentState` 静态辅助方法与按类型存取）收拢在本章末参考速查一节；主线只需要记住两点：`sessionId` / `userId` 路由状态槽位，`getAgentState()` 取本次调用的状态。
 
 ### runId 关联
 
@@ -362,6 +349,46 @@ assert run.runId().equals(ctx.getRunId());
 > **提示**：**在中间件和工具中访问 `AgentState`：** 在 call 执行期间，始终使用 `RuntimeContext.resolveAgentState(ctx, agent)` 而非 `agent.getAgentState()`。无参 `agent.getAgentState()` 已弃用，返回匿名用户的默认 session 槽位，不是最后活跃会话。`ctx.getAgentState()` 才是本次调用的状态；resolveAgentState 在该值缺失时仍会回退，不能把回退当成会话路由保证。
 
 最后收拢一下两章的分工：本章解决“会话状态放在哪里、如何保存恢复”，第 13 章讲 Harness 层的上下文管理策略——每轮模型输入如何组织、历史如何压缩。两边合起来，才是“上下文”这个词的完整含义。
+
+## 本章小结
+
+这一章回答了一个问题：会话状态放在哪里，如何在实例与机器之间延续。
+
+1. **无状态引擎**：实例不保存会话——共享 Builder、每次请求独立 Agent，状态按 `(userId, sessionId)` 存取；
+2. **AgentState**：一份可持久化的完整快照，覆盖对话历史、压缩摘要、权限规则、Plan Mode、任务与工具组激活状态；
+3. **持久化与恢复**：配置共享状态存储后，另一个节点用相同身份即可接续最近成功保存的快照；未保存的进度与工具的外部副作用仍需业务核对；
+4. **多用户隔离**：`sessionId` 决定哪段对话是哪段，`userId` 决定这段对话归谁、文件落到谁的命名空间；
+5. **中断与并发**：`InterruptControl` 每次执行独立、不随会话持久化；同一会话的并发请求由应用调度或 `AgentSession` 排队；
+6. **RuntimeContext**：per-call 元数据容器——`sessionId` / `userId` 路由状态槽位，`runId` 把一次执行在执行层与产品层串起来。
+
+下一步看第 9 章：横切逻辑如何在不修改 agent 代码的前提下挂进执行流程；本章状态里保存的权限规则如何判定每一次工具调用，则见第 10 章。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 解释一次 `call` 的状态读写路径（按身份加载 → 推理更新 → 保存）；
+- ☐ 说出 `AgentState` 保存了哪几类状态、`RuntimeContext` 的哪些属性不自动持久化；
+- ☐ 为多副本生产选择并配置共享状态存储（Redis / JDBC）；
+- ☐ 用相同 `(userId, sessionId)` 在第二个节点接续第一个节点的会话；
+- ☐ 区分 `sessionId` 与 `userId` 各自解决什么问题；
+- ☐ 在中间件或工具里用 `ctx.getAgentState()` 取本次调用的状态；
+- ☐ 用 `runId` 把一次调用在日志、`AgentRun` 与事件流之间关联起来。
+
+## 参考速查
+
+本节收拢本章出现过的接口全表，供实施时查阅；正文主线不依赖本节。
+
+### RuntimeContext 可用字段
+
+| 方法 | 说明 |
+|------|------|
+| `getSessionId()` / `getUserId()` | 内置字段，用于路由状态槽位与租户 |
+| `getRunId()` | 每次调用的稳定关联 ID（见正文“runId 关联”一节），恒非 null |
+| `getAgentState()` / `setAgentState(AgentState)` | call-scoped 的 `AgentState`，由框架在 call 入口注入。中间件和工具应从这里读状态，而非 `agent.getAgentState()` |
+| `resolveAgentState(ctx, agent)` | 静态辅助方法：优先返回 `ctx.getAgentState()`，回退到 `agent.getAgentState()`。执行期间应确保当前调用已注入状态；回退不保证选中正确业务会话 |
+| `get(String)` / `put(String, Object)` | 字符串键存取 |
+| `get(Class<T>)` / `put(Class<T>, T)` | 按类型存取（typed singleton） |
+| `getExtra()` | 直接拿到字符串属性 map（可变视图） |
+| `RuntimeContext.empty()` | 空上下文 |
 
 ## 相关文档
 

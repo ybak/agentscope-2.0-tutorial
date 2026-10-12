@@ -6,7 +6,7 @@ source: docs/building-blocks/model.md
 
 # 第 6 章 模型接入
 
-> 本章导读：当你要把 Agent 接到公司实际在用的模型上——也许是通义千问或 OpenAI，也许是内网 Ollama、OpenAI 兼容的自建网关，而且以后还可能切换供应商——本章就是动手的地方。本章先讲模型层的两层结构（鉴权凭证与模型实现分离）和各提供商扩展模块，再讲字符串 model id 与显式 builder 两种创建方式、`ModelRegistry` 的解析与缓存策略、Formatter、结构化输出的路径选择，最后走一遍自定义模型提供商的步骤。读完本章，你可以把主流 LLM 接入 Agent，并按需深度定制。
+> 本章导读：当你要把 Agent 接到公司实际在用的模型上——也许是通义千问或 OpenAI，也许是内网 Ollama、OpenAI 兼容的自建网关，而且以后还可能切换供应商——本章就是动手的地方。本章先讲模型层的两层结构（鉴权凭证与模型实现分离）和各提供商扩展模块，再讲字符串 model id 与显式 builder 两种创建方式、`ModelRegistry` 的解析与缓存策略、Formatter、结构化输出的路径选择，最后走一遍自定义模型提供商的步骤。读完本章，你可以把主流 LLM 接入 Agent，并按需深度定制。各 starter 的 customizer 类型与各提供商的 formatter 类名等查阅内容，收拢在章末参考速查。
 
 ## 你什么时候需要它
 
@@ -132,21 +132,9 @@ agentscope:
 
 #### Builder customizer
 
-各模型提供商的 Spring Boot starter 还提供了有序的 builder customizer bean。它适合用于
-`application.yml` 已覆盖常见配置、但仍需要设置 builder 专属能力的场景，例如自定义
-formatter、默认生成参数、代理/client 配置，或其他提供商专属开关。
+各模型提供商的 Spring Boot starter 还提供了有序的 builder customizer bean。它适合用于 `application.yml` 已覆盖常见配置、但仍需要设置 builder 专属能力的场景，例如自定义 formatter、默认生成参数、代理/client 配置，或其他提供商专属开关。每个 starter 对应的 customizer 类型，见本章末参考速查。
 
-| Starter | Customizer 类型 |
-|---------|-----------------|
-| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
-| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
-| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
-| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
-| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
-| `agentscope-ollama-spring-boot-starter` | `OllamaChatModelBuilderCustomizer` |
-
-这些 customizer 会在 starter 属性绑定之后、调用 `builder.build()` 之前执行。可以注册多个
-customizer，并通过 Spring 的 `@Order` 或 `Ordered` 控制执行顺序。
+这些 customizer 会在 starter 属性绑定之后、调用 `builder.build()` 之前执行。可以注册多个 customizer，并通过 Spring 的 `@Order` 或 `Ordered` 控制执行顺序。
 
 ```java
 import io.agentscope.core.model.GenerateOptions;
@@ -470,16 +458,7 @@ DashScopeChatModel model =
                 .build();
 ```
 
-各模型提供商的 formatter 类现在随对应模型扩展模块一起提供：
-
-| 模型提供商 | Chat | MultiAgent |
-|---|---|---|
-| DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
-| OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
-| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
-| Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
-| Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
-| Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |
+各模型提供商的 formatter 类现在随对应模型扩展模块一起提供，每个提供商都有 Chat 与 MultiAgent 两个变体（OpenAI Official 例外，只有 MultiAgent 变体 `ResponsesMultiAgentFormatter`）。完整的类名对照表见本章末参考速查。
 
 如果提供商的载荷格式不属于以上几种，开发者可以实现 `Formatter<TReq, TResp, TParams>` 接口（位于 `io.agentscope.core.formatter`），并通过同一个 `formatter(...)` 字段传入。
 
@@ -615,3 +594,57 @@ Class<? extends io.agentscope.core.model.ChatModelBase> modelCls = cred.getChatM
 这种设计让前端只需一个 credential，就能发现该模型提供商下的可用模型 —— 无需任何硬编码的提供商逻辑。
 
 各提供商的具体依赖与环境变量见第 21 章。
+
+## 本章小结
+
+这一章把 Agent 的推理引擎接到了真实世界的模型服务上，走过了这样一条路线：
+
+1. **两层结构**：Credential 承载提供商的 API 鉴权字段，Chat Model 是在其上对接具体推理模型的实现；共享契约留在 `agentscope-core`，各提供商实现拆进独立扩展模块；
+2. **引入方式**：加一个 `agentscope-extensions-model-<provider>` 依赖（Spring Boot 则换用对应 starter），import 路径随之迁移；
+3. **创建方式**：简单场景用 `provider:model` 字符串 id 交给 `ModelRegistry` 解析（SPI 自动发现 + 标准环境变量）；需要精细控制时显式构造 `Model` 实例；`ModelCreationContext` 服务多租户等动态解析场景；
+4. **Registry 行为**：解析按命名实例、自定义工厂、SPI 提供商的优先级依次尝试；简单 id 默认缓存，带 context 的解析默认不缓存，`CachePolicy` 可显式开关；
+5. **调用与输出**：统一的 `stream(messages, tools, options)` 返回 `Flux<ChatResponse>`；结构化输出有 Native 与 Fallback 两条路径，native 失败自动降级，是否可用由各提供商的 `supportsNativeStructuredOutput` 行为决定；
+6. **Formatter**：ChatFormatter 保持消息 1:1 映射，MultiAgentFormatter 聚合多 agent 消息，都通过 `formatter(...)` 字段替换，也可实现 `Formatter` 接口完全自定义；
+7. **扩展与发现**：自定义提供商只需 `CredentialBase` + `ChatModelBase` 两个子类（可选注册 factory 换来字符串 id 解析）；`ModelCard` 让前端从一个凭证发现该提供商的全部模型。
+
+模型接通后，Agent 还缺另一半：操作真实系统的能力——工具是 ReAct 循环的另一端，下一章展开。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 引入一个提供商扩展模块，用 `dashscope:qwen-plus` 这样的字符串 id 跑通一次对话；
+- ☐ 用显式 builder 构造模型，自定义 base URL、formatter 或默认生成参数；
+- ☐ 说出 `ModelRegistry` 的三种解析来源，以及哪类解析结果默认不缓存；
+- ☐ 在 Spring Boot 应用中换用提供商 starter，并用 customizer 设置默认生成参数；
+- ☐ 用 `agent.call(..., WeatherInfo.class, ...)` 拿到结构化输出，并解释 Native 与 Fallback 两条路径如何选择；
+- ☐ 对照默认行为表判断你的模型在带工具调用时会走哪条结构化输出路径；
+- ☐ （选做）实现 `CredentialBase` + `ChatModelBase` 接入一个自定义提供商，或用 `listModels()` 拉取 ModelCard 列表。
+
+## 参考速查
+
+本节收拢正文主线引用过的类名对照表，供实施时查阅；主线讲解不依赖本节。
+
+### Spring Boot starter 的 Builder customizer 类型
+
+| Starter | Customizer 类型 |
+|---------|-----------------|
+| `agentscope-openai-spring-boot-starter` | `OpenAIChatModelBuilderCustomizer` |
+| `agentscope-openai-official-spring-boot-starter` | `OpenAIResponsesChatModelBuilderCustomizer` |
+| `agentscope-dashscope-spring-boot-starter` | `DashScopeChatModelBuilderCustomizer` |
+| `agentscope-gemini-spring-boot-starter` | `GeminiChatModelBuilderCustomizer` |
+| `agentscope-anthropic-spring-boot-starter` | `AnthropicChatModelBuilderCustomizer` |
+| `agentscope-ollama-spring-boot-starter` | `OllamaChatModelBuilderCustomizer` |
+
+customizer 的执行时机（starter 属性绑定之后、`builder.build()` 之前）与 `@Order` 排序见正文"选择模型创建方式"一节。
+
+### 各提供商 formatter 类名
+
+formatter 类位于对应扩展模块的 formatter 包（`io.agentscope.extensions.model.<provider>.formatter`）：
+
+| 模型提供商 | Chat | MultiAgent |
+|---|---|---|
+| DashScope | `DashScopeChatFormatter` | `DashScopeMultiAgentFormatter` |
+| OpenAI | `OpenAIChatFormatter` | `OpenAIMultiAgentFormatter` |
+| OpenAI Official | — | `ResponsesMultiAgentFormatter` |
+| Anthropic | `AnthropicChatFormatter` | `AnthropicMultiAgentFormatter` |
+| Gemini | `GeminiChatFormatter` | `GeminiMultiAgentFormatter` |
+| Ollama | `OllamaChatFormatter` | `OllamaMultiAgentFormatter` |

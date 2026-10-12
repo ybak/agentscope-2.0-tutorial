@@ -33,11 +33,11 @@ AgentScope Java 中，可以在 6 个位置上设置 hook，覆盖了从外层 r
 | `onSystemPrompt` | Transformer | 在每次组装 system prompt 时触发；多个 middleware 串行接力，每一个把上一个的输出再做一次变换 |
 | `onAgentStateReady` | Notification | 每次调用触发一次：本次调用的 `AgentState` 就绪时——早于输入进入流水线（pre-call 钩子、记忆、推理） |
 
-三种类型的差别：
+为什么 hook 不止一种形态？因为往执行流程里挂逻辑有三种不同的需求，各自对应一种类型：
 
-- **Onion**（洋葱式）—— middleware 包裹下一层 handler，可以在 `next.apply(input)` 前后插入逻辑、观察中间事件流。
-- **Transformer**（变换式）—— middleware 之间串成流水线，前一个的输出作为后一个的输入，不存在「内层」概念。
-- **Notification**（通知式）—— 单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。
+- **想包裹一段流程**——在它前后插入逻辑、观察中间事件流。机制是 middleware 包裹下一层 handler，在 `next.apply(input)` 前后各做各的事。这就是 **Onion**（洋葱式），`onAgent`、`onReasoning`、`onActing`、`onModelCall` 四个位置都属于它。
+- **想接力变换一个值**——上一步的输出作为下一步的输入。机制是 middleware 之间串成流水线，前一个的输出作为后一个的输入，不存在「内层」概念。这就是 **Transformer**（变换式），`onSystemPrompt` 是唯一的代表。
+- **只想在某个时点被通知一声**——不需要改变流程。机制是单向同步通知，没有 `next` 委托；多个 middleware 在固定的生命周期点位按序执行。这就是 **Notification**（通知式），`onAgentStateReady` 属于它。
 
 下图展示这些 hook 在 agent 生命周期中的嵌套关系。`onSystemPrompt` 嵌入在 `onReasoning` 内部，因为它在 reasoning 步骤组装 system prompt 时被触发；`onAgentStateReady` 在本次调用的 `AgentState` 绑定到 `RuntimeContext` 之后、输入进入流水线之前触发：
 
@@ -313,18 +313,7 @@ public class FullObservabilityMiddleware implements MiddlewareBase {
 }
 ```
 
-每个 hook 的 input 类型（均位于 `io.agentscope.core.middleware`）：
-
-| Hook | Input record | 字段 |
-|------|--------------|------|
-| `onAgent` | `AgentInput` | `msgs: List<Msg>` |
-| `onReasoning` | `ReasoningInput` | `messages: List<Msg>`, `tools: List<ToolSchema>`, `options: GenerateOptions` |
-| `onActing` | `ActingInput` | `toolCalls: List<ToolUseBlock>` |
-| `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
-| `onSystemPrompt` | `String` | 当前 prompt |
-| `onAgentStateReady` | —（直接参数） | `state: AgentState`, `inputMessages: List<Msg>` |
-
-需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
+每个 hook 的 input 类型与字段全表见本章末参考速查一节。需要替换流入下一层的字段时，构造一个新的 input record 后再调用 `next.apply(...)`。
 
 完整可运行示例：`agentscope-examples/documentation/.../middleware/CustomizedMiddlewareExample.java`、`middleware/ModelCallMiddlewareExample.java`、`middleware/SystemPromptMiddlewareExample.java`。
 
@@ -675,3 +664,41 @@ ReActAgent agent =
                 .middlewares(List.of(new StopOnAllDeniedMiddleware()))
                 .build();
 ```
+
+## 本章小结
+
+这一章走了一条从观察到改写的路线：
+
+1. **机制**：六个扩展点、三种 hook 形态——Onion 包裹（`onAgent` / `onReasoning` / `onActing` / `onModelCall`）、Transformer 串行接力（`onSystemPrompt`）、Notification 单向通知（`onAgentStateReady`）；
+2. **装备**：实现 `MiddlewareBase`，把实例交给 `middlewares(...)`；未实现的位置自动跳过；
+3. **参与与顺序**：`activePoints()` 声明参与哪些扩展点——覆写即接管、空集合可作运行开关；`order()` 决定洋葱层级，数值越大越外层；
+4. **内置优先**：链路追踪（`OtelTracingMiddleware`）、任务提醒（`TaskReminderMiddleware`）、最终答案过滤（`FinalAnswerFilterMiddleware`），不少需求不必自己写；
+5. **实操**：计时、限速、动态 system prompt、模型回退、全部工具被拒时停止——五个可直接照抄的示例。
+
+middleware 适合做权限之外的横切增强；每一次工具调用本身准不准执行，是下一章权限系统的判定。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出六个扩展点各自覆盖哪段流程；
+- ☐ 解释 Onion、Transformer、Notification 三种 hook 形态的机制差别；
+- ☐ 装备一个自定义 middleware，并用 `activePoints()` 只激活需要的扩展点；
+- ☐ 预言两个 `order()` 不同的 middleware 在一次 reply 中的执行顺序；
+- ☐ 优先复用内置中间件，而不是重写追踪与过滤逻辑；
+- ☐ 照抄实用示例，写出一个 `onModelCall` 计时 middleware。
+
+## 参考速查
+
+本节收拢各 hook 的 input 类型与字段，供实现时查阅；正文主线不依赖本节。
+
+### Hook input 类型
+
+每个 hook 的 input 类型均位于 `io.agentscope.core.middleware`：
+
+| Hook | Input record | 字段 |
+|------|--------------|------|
+| `onAgent` | `AgentInput` | `msgs: List<Msg>` |
+| `onReasoning` | `ReasoningInput` | `messages: List<Msg>`, `tools: List<ToolSchema>`, `options: GenerateOptions` |
+| `onActing` | `ActingInput` | `toolCalls: List<ToolUseBlock>` |
+| `onModelCall` | `ModelCallInput` | `messages`, `tools`, `options`, `model: Model` |
+| `onSystemPrompt` | `String` | 当前 prompt |
+| `onAgentStateReady` | —（直接参数） | `state: AgentState`, `inputMessages: List<Msg>` |

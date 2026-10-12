@@ -8,7 +8,7 @@ source: integration/memory/index.md, integration/memory/overview.md, integration
 
 > 本章导读：讲解 AgentScope 在多轮、多会话之间持久化用户偏好、事实与要点的接口 `LongTermMemory`，以及三种开箱即用的后端实现：通用语义记忆 Mem0（支持多租户三层 ID 与 metadata 过滤）、云端托管的百炼记忆（rerank / judge / rewrite 检索增强）、基于对话轨迹抽取的 ReMe（workspace 级隔离）。三者实现同一接口，通过 `longTermMemory(...)` 直接挂入 Agent，本章末尾各自的 Builder 参数表可以直接对照选型。读完本章，你可以为 Agent 加上跨会话的长期记忆，并按隔离与检索质量需求选择后端。
 
-`LongTermMemory` 是 AgentScope 用来在多轮、多会话之间持久化用户偏好、事实、要点的接口。`agentscope-extensions-*` 仓库下提供了对接主流记忆服务的开箱即用实现：
+`LongTermMemory` 是 AgentScope 用来在多轮、多会话之间持久化用户偏好、事实、要点的接口。它与第 14 章的 Harness 内置记忆分工不同：后者基于工作区文件、由框架内置的 hook 维护；本章的三种实现走外部服务路线，记忆的抽取与检索交给所选后端。`agentscope-extensions-*` 仓库下提供了对接主流记忆服务的开箱即用实现：
 
 | 扩展 | 后端 | 适合场景 |
 | --- | --- | --- |
@@ -295,3 +295,27 @@ ReActAgent agent = ReActAgent.builder()
 | `timeout(Duration)` | ❌ | `60s` | HTTP 请求超时 |
 
 > ReMe 暂未提供更细粒度的 metadata 过滤；如果需要按业务标签切分，建议在 `userId` 里编码命名空间（例如 `tenant-a:project-1`）。
+
+## 本章小结
+
+这一章给 Agent 补上了跨会话的记忆——三种后端实现同一个 `LongTermMemory` 接口，用 `longTermMemory(...)` 挂入 Agent，对 Agent 侧完全透明：
+
+1. **Mem0**：通用语义记忆，向量检索 + LLM 抽取，支持 `PLATFORM` / `SELF_HOSTED` 两种部署模式、`agentName / userId / runName` 三层租户隔离与自定义 metadata 过滤（至少提供三层 ID 之一）；
+2. **百炼记忆**：云端托管，rerank / judge / rewrite 三个增强开关默认关闭、按需打开（减少延迟和费用），按 `userId` + `memoryLibraryId` + `projectId` 隔离，实例实现了 `AutoCloseable`，建议 try-with-resources；
+3. **ReMe**：自托管轻量服务，基于对话轨迹（trajectory）整体抽取记忆，`userId` 实际映射为 `workspace_id`，暂无更细粒度的 metadata 过滤。
+
+两个贯穿全章的行为值得记住：百炼与 ReMe 写入时遵循同一套过滤策略——只保留 `USER` 与 `ASSISTANT` 的自然对话，跳过工具调用请求与 `<compressed_history>` 压缩历史；想让工具结果进入记忆，需要自己用上层逻辑调用 `record(...)`。选型拿不准时回到本章"选型建议"四条：本地快速起步选 Mem0 或 ReMe，已有百炼记忆库选 Bailian，按业务维度过滤选 Mem0，关注轨迹摘要选 ReMe。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 用 `.longTermMemory(memory)` 与 `.longTermMemoryMode(...)` 把任一后端挂入 ReActAgent，并说出 `BOTH` 模式的含义；
+- ☐ 按隔离与检索质量需求，在三个后端中为自己的场景选型并说明理由；
+- ☐ 为 Mem0 配置三层 ID 中的至少一个，并解释全部为空时 `build()` 的行为；
+- ☐ 说清百炼三个增强开关各自做什么、默认是否开启，以及哪几类消息不会进入记忆；
+- ☐ 解释 ReMe 里 `userId` 实际映射到什么，以及需要按业务标签切分时的变通做法。
+
+## 延伸阅读
+
+- 第 14 章（记忆）—— Harness 内置记忆：基于工作区文件的另一条路线，与本章外部服务路线分工互补
+- 第 28 章（基础设施与生态工具）—— 集成扩展全览表，本章三个后端的一览入口
+- 第 44 章（常见问题）—— "2.0 还会提供 RAG 和 long-term memory 吗"

@@ -277,6 +277,8 @@ Memory 的记录边界为一行，Session 的记录边界为一条 entry，不�
 
 所有阈值都可以通过 `.memory(MemoryConfig.builder()...)` 调，绝大多数项目不需要碰。
 
+旧 JSONL 清理任务及 `sessionRetentionDays` 已移除；原生日志目前没有自动清理策略，已有旧档案也不会由记忆维护任务删除。
+
 ## 完全关掉
 
 如果你想自己接管记忆 / 自己写工具：
@@ -294,12 +296,30 @@ HarnessAgent.builder()
 
 `disableMemoryHooks()` 是核选项；只想节流不想关，用 `.memory(MemoryConfig.builder().flushTrigger(...).build())`。
 
+## 本章小结
+
+这一章回答两个问题：怎么让 agent 记住跨会话的事实，以及怎么控制这套管线带来的成本：
+
+1. **两层记忆**：日流水账 `memory/YYYY-MM-DD.md` 只追加不去重；`MEMORY.md` 由后台周期性合并去重，每次 call 作为参考资料注入 `HARNESS_CONTEXT`；
+2. **三处 LLM 调用**：Flush 抽事实进日流水账、Consolidation 合并成 `MEMORY.md`、Compaction summary 蒸馏对话前缀——前两个由 `MemoryConfig` 管，第三个由 `CompactionConfig` 管，都可指定小模型；
+3. **Flush 三个触发点**：每次 `call()` 结束、压缩前预提取、上下文溢出兜底，共用同一份 `flushPrompt`；
+4. **压缩与卸载**：压缩按条数或 token 阈值摘要历史、保留尾部，溢出报错时自动强制压缩并重试一次；大工具结果超过 80K 字符整段落盘，上下文里只留首尾预览与路径；
+5. **成本旋钮**：`flushTrigger` 节流或关掉 per-call flush，`consolidationMinGap` 控制后台节奏，`disableMemoryHooks()` 是全关的核选项；
+6. **agent 自己的工具**：`memory_search` / `memory_get` / `memory_save` / `session_search`，多关键词场景用 `matchMode` 的 `all` / `any`。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出两层记忆各存什么、谁来写、何时被读取；
+- ☐ 对照三处 LLM 调用，说清各自的写入目标与定制入口；
+- ☐ 把 per-call flush 节流到固定间隔，并解释压缩前与兜底 flush 为何不受影响；
+- ☐ 为压缩设置触发阈值与保留策略，并说清 `keepTokens` 三个取值域的含义；
+- ☐ 在默认 flush prompt 上追加项目规则，并记住 consolidation prompt 的两个 `%d` 占位符约束；
+- ☐ 解释一条几千行的工具结果去哪了、agent 如何找回原文；
+- ☐ （选做）用 `.disableMemoryHooks()` 接管记忆，或给记忆操作换上小模型。
+
 ## 相关文档
 
 - 第 12 章（工作区与文件系统）—— `MEMORY.md` / `memory/` 在工作区的位置
+- 第 13 章（上下文管理）—— 消息位置、刷新时机和最终预算
 - 第 19 章（会话日志与恢复）—— 完整历史、checkpoint 与历史检索
 - 第 11 章（Harness 架构深入）—— 长会话事实如何沉淀进 `MEMORY.md`
-
-消息位置、刷新时机和最终预算见第 13 章（上下文管理）。
-
-旧 JSONL 清理任务及 `sessionRetentionDays` 已移除；原生日志目前没有自动清理策略，已有旧档案也不会由记忆维护任务删除。

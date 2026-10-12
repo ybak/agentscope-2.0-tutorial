@@ -200,56 +200,21 @@ sequenceDiagram
 | `getSource()` | `String` | 事件来源路径。顶层 Agent 为 `null`；子 Agent 事件为斜杠分隔的路径（如 `"main/researcher"`），用于区分父子 Agent 事件 |
 | `getMetadata()` | `Map<String, Object>` | 可选键值元数据。远程子 agent 转发时会写入 `taskId`（`AgentEvent.METADATA_TASK_ID`，对应 harness / Agent Protocol 任务 id）与 `parentSessionId`（`AgentEvent.METADATA_PARENT_SESSION_ID`，对应父 session） |
 
-事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息。
+事件按类别分组如下。除特别说明外，每个事件还携带 `getReplyId()`，关联到正在构建的消息；各事件的完整方法与类型表，统一收在本章末的参考速查。
 
 #### 生命周期事件
 
-**AgentStartEvent** — 智能体开始新的回复。
+**AgentStartEvent** — 智能体开始新的回复：`getReplyId()` 是回复消息 ID，`getSessionId()` 与 `getName()` 分别给出会话 ID 与智能体名称，`getRole()` 是智能体角色（默认 `"assistant"`）。
 
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getSessionId()` | `String` | 会话 ID |
-| `getName()` | `String` | 智能体名称 |
-| `getRole()` | `String` | 智能体角色（默认 `"assistant"`） |
+**AgentEndEvent** — 智能体完成回复，携带 `getReplyId()`。
 
-**AgentEndEvent** — 智能体完成回复。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-
-**ExceedMaxItersEvent** — 智能体达到最大推理-执行迭代次数。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
+**ExceedMaxItersEvent** — 智能体达到最大推理-执行迭代次数，携带 `getReplyId()`。
 
 **RequestStopEvent** — 中间件或工具发起的提前停止请求。
 
 #### 文本流式事件
 
-**TextBlockStartEvent** — 新的文本块开始。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
-
-**TextBlockDeltaEvent** — 增量文本内容到达。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
-| `getDelta()` | `String` | 增量文本内容 |
-
-**TextBlockEndEvent** — 文本块完成。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
+**TextBlockStartEvent** — 新的文本块开始；**TextBlockEndEvent** — 文本块完成。两者都携带 `getReplyId()` 与 `getBlockId()`（文本块在当前回复中的关联键）。**TextBlockDeltaEvent** — 增量文本内容到达，在此之上多一个 `getDelta()`，返回增量文本内容。
 
 #### 思考流式事件
 
@@ -264,13 +229,7 @@ sequenceDiagram
 
 #### 工具调用流式事件
 
-**ToolCallStartEvent** — 智能体开始一次工具调用。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getToolCallId()` | `String` | 工具调用唯一标识符 |
-| `getToolCallName()` | `String` | 被调用的工具名称 |
+**ToolCallStartEvent** — 智能体开始一次工具调用，携带 `getReplyId()`、`getToolCallId()`（工具调用唯一标识符）与 `getToolCallName()`（被调用的工具名称）。
 
 **ToolCallDeltaEvent** — 增量工具调用参数到达；`getDelta()` 返回 JSON 参数片段。
 
@@ -284,13 +243,7 @@ sequenceDiagram
 
 **ToolResultDataDeltaEvent** — 工具的二进制数据输出；与 `DataBlockDeltaEvent` 类似，包含 `mediaType` / `data` / `url` 字段。
 
-**ToolResultEndEvent** — 工具执行完成。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getToolCallId()` | `String` | 对应工具调用的 ID |
-| `getState()` | `ToolResultState` | 最终状态：`SUCCESS`、`ERROR`、`INTERRUPTED`、`DENIED`、`RUNNING`、`SUSPENDED` |
+**ToolResultEndEvent** — 工具执行完成，携带 `getReplyId()`、`getToolCallId()`（对应工具调用的 ID）与 `getState()`（最终状态，类型为 `ToolResultState`：`SUCCESS`、`ERROR`、`INTERRUPTED`、`DENIED`、`RUNNING`、`SUSPENDED`）。
 
 #### 模型调用事件
 
@@ -300,54 +253,19 @@ sequenceDiagram
 
 #### 人工介入事件
 
-**RequireUserConfirmEvent** — 智能体暂停等待用户确认。
+**RequireUserConfirmEvent** — 智能体暂停等待用户确认，携带 `getReplyId()` 与 `getToolCalls()`（待用户确认的工具调用列表，类型为 `List<ToolUseBlock>`）。
 
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getToolCalls()` | `List<ToolUseBlock>` | 待用户确认的工具调用列表 |
+**RequireExternalExecutionEvent** — 智能体暂停等待外部执行。挂起的工具调用不会产生 `ToolResult*` 事件：工具尚未执行，真实结果由调用方回传后通过 `ExternalExecutionResultEvent` 表达。事件携带 `getReplyId()` 与 `getToolCalls()`（待外部执行的工具调用列表）。
 
-**RequireExternalExecutionEvent** — 智能体暂停等待外部执行。挂起的工具调用不会产生 `ToolResult*` 事件：工具尚未执行，真实结果由调用方回传后通过 `ExternalExecutionResultEvent` 表达。
+**UserConfirmResultEvent** — 用户提供确认结果。携带 `List<ConfirmResult>`，`replyId` 与最初暂停智能体的 `RequireUserConfirmEvent` 相同；`getConfirmResults()` 返回本次恢复接受的确认结果。
 
-| 方法 | 类型 | 描述 |
-|------|------|------|
-| `getReplyId()` | `String` | 回复消息 ID |
-| `getToolCalls()` | `List<ToolUseBlock>` | 待外部执行的工具调用列表 |
+**ExternalExecutionResultEvent** — 后续 `call()` 恢复外部执行暂停时发出。携带一个或多个 `ToolResultBlock`，且 `replyId` 与之前的 `RequireExternalExecutionEvent` 相同；`getToolResults()` 返回本次恢复接受的外部执行结果。
 
-**UserConfirmResultEvent** — 用户提供确认结果。携带 `List<ConfirmResult>`，`replyId` 与最初暂停智能体的 `RequireUserConfirmEvent` 相同。
-
-| 方法 | 类型 | 描述 |
-|------|------|------|
-| `getReplyId()` | `String` | 关联的 `RequireUserConfirmEvent` 的回复 ID |
-| `getConfirmResults()` | `List<ConfirmResult>` | 本次恢复接受的确认结果 |
-
-**ExternalExecutionResultEvent** — 后续 `call()` 恢复外部执行暂停时发出。携带一个或多个 `ToolResultBlock`，且 `replyId` 与之前的 `RequireExternalExecutionEvent` 相同。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getReplyId()` | `String` | 关联的 `RequireExternalExecutionEvent` 的回复 ID |
-| `getToolResults()` | `List<ToolResultBlock>` | 本次恢复接受的外部执行结果 |
-
-**AllToolsDeniedEvent** — 用户通过 HITL 确认拒绝了最近一轮推理产出的全部工具调用。该事件通过 `onActing` middleware 链发出，middleware 可据此发出 `RequestStopEvent` 停止 agent。若无 middleware 处理，agent 默认继续下一轮推理（向后兼容）。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getDeniedToolCalls()` | `List<ToolUseBlock>` | 被拒绝的工具调用列表 |
+**AllToolsDeniedEvent** — 用户通过 HITL 确认拒绝了最近一轮推理产出的全部工具调用。该事件通过 `onActing` middleware 链发出，middleware 可据此发出 `RequestStopEvent` 停止 agent。若无 middleware 处理，agent 默认继续下一轮推理（向后兼容）。`getDeniedToolCalls()` 返回被拒绝的工具调用列表。
 
 #### 子 Agent 事件
 
-**SubagentExposedEvent** — 通过 `agent_spawn(expose_to_users=true)` 生成的子 Agent 被暴露为用户可寻址的入口点。SSE（Server-Sent Events，服务器向浏览器单向持续推送事件流的 HTTP 方式）/ 流式消费端可据此在 UI 上渲染新的会话入口。
-
-| 方法 | 类型 | 说明 |
-|------|------|------|
-| `getSubagentId()` | `String` | 子 Agent 的唯一标识 |
-| `getAgentId()` | `String` | 子 Agent 的 agent 类型 ID |
-| `getSessionId()` | `String` | 子 Agent 的会话 ID |
-| `getLabel()` | `String` | 用户可见的标签名（可选） |
-
-## AgentEvent 与持久 SessionEvent
-
-本章的 AgentEvent 是实时交互事件，不等同于原生 SessionEvent 或 Service 公共 SSE。原生日志记录已提交模型请求、工具边界和 checkpoint，Service 再投影为面向用户的 turn/item/action 事件；三者格式和游标独立。详见第 19 章（会话日志与恢复）。
+**SubagentExposedEvent** — 通过 `agent_spawn(expose_to_users=true)` 生成的子 Agent 被暴露为用户可寻址的入口点。SSE（Server-Sent Events，服务器向浏览器单向持续推送事件流的 HTTP 方式）/ 流式消费端可据此在 UI 上渲染新的会话入口。事件携带 `getSubagentId()`（子 Agent 的唯一标识）、`getAgentId()`（子 Agent 的 agent 类型 ID）、`getSessionId()`（子 Agent 的会话 ID），以及可选的 `getLabel()`（用户可见的标签名）。
 
 ## 从事件流重建消息
 
@@ -413,11 +331,151 @@ agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
         .blockLast();
 ```
 
-## 与持久 SessionEvent 的关系
+## AgentEvent 与持久 SessionEvent
 
-AgentEvent 是实时强类型事件，SessionEvent 是不可变的持久执行事实，不是一一对应的两个副本。标准运行时通过 `event.getExecution()` 暴露 agentId/sessionId/turnId/runId；其中 runId 对应原生日志的 executionRunId。子事件保留子执行身份。event.id、native seq 和公共 SSE cursor 仍独立，实时事件到达不代表已提交。
+本章的 `AgentEvent` 是实时强类型事件，`SessionEvent` 是不可变的持久执行事实，两者不是一一对应的两个副本。原生日志记录已提交模型请求、工具边界和 checkpoint，Service 再投影为面向用户的 turn/item/action 事件；三者格式和游标独立。标准运行时通过 `event.getExecution()` 暴露 agentId/sessionId/turnId/runId；其中 runId 对应原生日志的 executionRunId。子事件保留子执行身份。event.id、native seq 和公共 SSE cursor 仍独立，实时事件到达不代表已提交。
 
-逻辑 turn 可以包含多个恢复执行；AgentEndEvent 只说明本次调用结束。完整生命周期及用法见第 19 章（会话日志与恢复）。
+逻辑 turn 可以包含多个恢复执行；`AgentEndEvent` 只说明本次调用结束。完整生命周期及用法见第 19 章（会话日志与恢复）。
+
+## 本章小结
+
+这一章从界面与管道的典型处境出发，讲清了 Agent 输出的两套数据结构：
+
+1. **消息是完整轮次**：`Msg` 按 role 组织，内容是类型化的 `ContentBlock` 列表；文本、多模态数据、思维链、工具调用与结果各有对应块，角色约束在构造时强制执行；
+2. **事件是增量片段**：智能体执行时持续产出 `AgentEvent`，遵循 start → delta → end 生命周期；`replyId` 关联一次回复，`blockId` / `toolCallId` 关联块与工具调用的生命周期；
+3. **事件分类别**：生命周期、文本 / 思考 / 数据流式、工具调用与结果、模型调用、人工介入、子 Agent 事件各有分工；确认与外部执行事件是第 4 章人机交互暂停与恢复机制的数据载体；
+4. **事件可还原消息**：单次 `call` 的事件序列汇聚成恰好一条 assistant `Msg`，凭 `replyId` / `blockId` / `toolCallId` 聚合即可重建完整结果；
+5. **实时不等于持久**：`AgentEvent` 是实时通知，`SessionEvent` 是持久执行事实，需要可靠重放时以 Session Log 的已提交内容为准（第 19 章）。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出 `Msg` 与 `AgentEvent` 各自的定位，以及单次 `call` 的事件序列与 assistant 消息的对应关系；
+- ☐ 按 role 判断一条消息允许包含哪些内容块；
+- ☐ 用 `getTextContent()` 与 `getContentBlocks(Class)` 从 `Msg` 中提取所需数据；
+- ☐ 解释事件生命周期中 `replyId`、`blockId`、`toolCallId` 三个关联键的作用；
+- ☐ 在 `streamEvents` 的事件流里区分文本增量、工具调用开始与工具结果结束，并聚合出完整回复；
+- ☐ 说出 `RequireUserConfirmEvent` 与 `RequireExternalExecutionEvent` 暂停后如何恢复；
+- ☐ 解释 `AgentEvent` 与持久 `SessionEvent` 的区别，知道断线补齐历史该读哪一套。
+
+## 参考速查
+
+本节收拢本章各事件的完整方法表，供解析与聚合事件流时查阅；正文按类别讲解了每类事件的用途与关键字段，理解主线不依赖本节。思考流式、数据流式与模型调用事件没有独立字段表，已完整出现在正文。
+
+### 生命周期事件
+
+**AgentStartEvent** — 智能体开始新的回复。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getSessionId()` | `String` | 会话 ID |
+| `getName()` | `String` | 智能体名称 |
+| `getRole()` | `String` | 智能体角色（默认 `"assistant"`） |
+
+**AgentEndEvent** — 智能体完成回复。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+
+**ExceedMaxItersEvent** — 智能体达到最大推理-执行迭代次数。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+
+**RequestStopEvent** — 中间件或工具发起的提前停止请求。
+
+### 文本流式事件
+
+**TextBlockStartEvent** — 新的文本块开始。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
+
+**TextBlockDeltaEvent** — 增量文本内容到达。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
+| `getDelta()` | `String` | 增量文本内容 |
+
+**TextBlockEndEvent** — 文本块完成。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getBlockId()` | `String` | 文本块在当前回复中的关联键 |
+
+### 工具调用流式事件
+
+**ToolCallStartEvent** — 智能体开始一次工具调用。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getToolCallId()` | `String` | 工具调用唯一标识符 |
+| `getToolCallName()` | `String` | 被调用的工具名称 |
+
+### 工具结果流式事件
+
+**ToolResultEndEvent** — 工具执行完成。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getToolCallId()` | `String` | 对应工具调用的 ID |
+| `getState()` | `ToolResultState` | 最终状态：`SUCCESS`、`ERROR`、`INTERRUPTED`、`DENIED`、`RUNNING`、`SUSPENDED` |
+
+### 人工介入事件
+
+**RequireUserConfirmEvent** — 智能体暂停等待用户确认。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getToolCalls()` | `List<ToolUseBlock>` | 待用户确认的工具调用列表 |
+
+**RequireExternalExecutionEvent** — 智能体暂停等待外部执行。挂起的工具调用不会产生 `ToolResult*` 事件：工具尚未执行，真实结果由调用方回传后通过 `ExternalExecutionResultEvent` 表达。
+
+| 方法 | 类型 | 描述 |
+|------|------|------|
+| `getReplyId()` | `String` | 回复消息 ID |
+| `getToolCalls()` | `List<ToolUseBlock>` | 待外部执行的工具调用列表 |
+
+**UserConfirmResultEvent** — 用户提供确认结果。携带 `List<ConfirmResult>`，`replyId` 与最初暂停智能体的 `RequireUserConfirmEvent` 相同。
+
+| 方法 | 类型 | 描述 |
+|------|------|------|
+| `getReplyId()` | `String` | 关联的 `RequireUserConfirmEvent` 的回复 ID |
+| `getConfirmResults()` | `List<ConfirmResult>` | 本次恢复接受的确认结果 |
+
+**ExternalExecutionResultEvent** — 后续 `call()` 恢复外部执行暂停时发出。携带一个或多个 `ToolResultBlock`，且 `replyId` 与之前的 `RequireExternalExecutionEvent` 相同。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getReplyId()` | `String` | 关联的 `RequireExternalExecutionEvent` 的回复 ID |
+| `getToolResults()` | `List<ToolResultBlock>` | 本次恢复接受的外部执行结果 |
+
+**AllToolsDeniedEvent** — 用户通过 HITL 确认拒绝了最近一轮推理产出的全部工具调用。该事件通过 `onActing` middleware 链发出，middleware 可据此发出 `RequestStopEvent` 停止 agent。若无 middleware 处理，agent 默认继续下一轮推理（向后兼容）。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getDeniedToolCalls()` | `List<ToolUseBlock>` | 被拒绝的工具调用列表 |
+
+### 子 Agent 事件
+
+**SubagentExposedEvent** — 通过 `agent_spawn(expose_to_users=true)` 生成的子 Agent 被暴露为用户可寻址的入口点。SSE（Server-Sent Events，服务器向浏览器单向持续推送事件流的 HTTP 方式）/ 流式消费端可据此在 UI 上渲染新的会话入口。
+
+| 方法 | 类型 | 说明 |
+|------|------|------|
+| `getSubagentId()` | `String` | 子 Agent 的唯一标识 |
+| `getAgentId()` | `String` | 子 Agent 的 agent 类型 ID |
+| `getSessionId()` | `String` | 子 Agent 的会话 ID |
+| `getLabel()` | `String` | 用户可见的标签名（可选） |
 
 ## 延伸阅读
 

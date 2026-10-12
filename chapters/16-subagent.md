@@ -6,7 +6,7 @@ source: docs/harness/subagent.md
 
 # 第 16 章 子 Agent 协作
 
-> 本章导读：讲解主 agent 如何把"可独立处理、上下文重、可并行"的任务委派出去——三类声明方式（内置 general-purpose、工作区 spec、编程式）、ISOLATED 与 SHARED 工作区、同步与后台调用及自动反向通知、持久会话、向用户暴露子 Agent、远程子 Agent（Agent Protocol）与流式转发，以及权限继承、Plan Mode 传播等行为细节。读完本章，你可以用一套声明文件把主 agent 从重上下文任务中解放出来。
+> 本章导读：主 agent 的上下文是稀缺资源，而一块分析、一次评审、一份调研往往可以独立完成——硬塞进主线程只会让上下文膨胀、任务变慢。本章讲解主 agent 如何把"可独立处理、上下文重、可并行"的任务委派出去——三类声明方式（内置 general-purpose、工作区 spec、编程式）、ISOLATED 与 SHARED 工作区、同步与后台调用及自动反向通知、持久会话、向用户暴露子 Agent、远程子 Agent（Agent Protocol）与流式转发，以及权限继承、Plan Mode 传播等行为细节。读完本章，你可以用一套声明文件把主 agent 从重上下文任务中解放出来。
 
 ## 作用
 
@@ -98,28 +98,20 @@ HarnessAgent.builder()
 
 三种来源互斥：`workspace(...)`、`inlineAgentsBody(...)`、`url(...)` **三选一**。
 
-框架自动构建的本地子 agent（包括 `general-purpose`）会继承父级
-`HarnessAgent.Builder.enablePendingToolRecovery(...)` 配置，默认关闭。声明中可用
-`.enablePendingToolRecovery(true)` 或 `.enablePendingToolRecovery(false)` 显式覆盖，
-`null` 表示继承。工作区 spec 支持 `enable_pending_tool_recovery`，也兼容
-`enablePendingToolRecovery` 写法。开启后，新的普通消息会为悬空工具调用补充错误结果，
-也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、
-调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
-
 ### 内置 `general-purpose`
 
 不需要写声明文件，总是可用。它的角色是"通用兜底"——能力和主 agent 一致（同样的模型、工具、技能），共享主工作区。适合"主 agent 想隔离上下文跑一个子任务但又懒得专门写 spec"。
 
 ## ISOLATED vs SHARED
 
-`workspaceMode` 决定子 agent 的工作区怎么算：
+回看上一节的最小例子：声明里没有配任何工作区字段，那 reviewer 读写文件时用的是哪份目录？`workspaceMode` 决定子 agent 的工作区怎么算：
 
 - **ISOLATED**（默认）：子 agent 有自己独立的工作区（如果声明里 `workspace.path` 没写，框架会自动开一个子目录）。子 agent 的运行时状态按"父 sessionId × 用户"分桶——同一用户在不同对话里 spawn 同名子 agent 也互不污染。
 - **SHARED**：子 agent 直接用主工作区。适合子 agent 的输出会被父立即读到的情况（例如 `general-purpose`）。
 
 ## 同步还是后台？
 
-主 agent 通过 `agent_spawn` 创建子 agent，关键是 `timeout_seconds`：
+委派发出之后，主 agent 是原地等结果，还是先去推进别的步骤？主 agent 通过 `agent_spawn` 创建子 agent，关键是 `timeout_seconds`：
 
 - `timeout_seconds > 0`（默认 30，最大 600）—— **同步**调用，主 agent 在这一步 block 等待结果，结果作为工具结果返回。默认超时后会 **promote** 成后台任务（`status: timeout_promoted` + `task_id`），子 agent 继续跑。
 - `timeout_seconds = 0` —— **后台**调用，立即返回一个 `task_id`，子 agent 在后台跑。
@@ -341,6 +333,8 @@ ChatUiChannel chat = agent.channel(ChatUiChannel.create());  // 恢复能力自�
 - **权限继承**：父的所有 DENY 权限规则会自动传给子。如果父被禁用了某个工具，子也一样被禁——安全边界不会因为委派被绕过。在声明里设 `inheritParentPermissions(false)` 可以关闭这个行为。
 - **流式转发**：父 agent `stream()` 时，同步子 agent 的中间事件会实时流回父的 `Flux`（带来源标记），见下文"子 Agent 流式"一节。
 
+还有一条与声明写法相关的恢复配置，单独说明：框架自动构建的本地子 agent（包括 `general-purpose`）会继承父级 `HarnessAgent.Builder.enablePendingToolRecovery(...)` 配置，默认关闭。声明中可用 `.enablePendingToolRecovery(true)` 或 `.enablePendingToolRecovery(false)` 显式覆盖，`null` 表示继承。工作区 spec 支持 `enable_pending_tool_recovery`，也兼容 `enablePendingToolRecovery` 写法。开启后，新的普通消息会为悬空工具调用补充错误结果，也适用于从失败会话中重新加载的工具调用。等待人工审批的工具仍须提供审批结果；空输入恢复执行、调用方补交工具结果的行为保持原有语义。远端 agent 和自定义工厂需自行配置恢复策略。
+
 ## 远程子 agent
 
 声明里只填 `url` + 可选 `headers`，子 agent 就走远程 HTTP 服务（Agent Protocol，协议概览见第 26 章）执行：
@@ -507,6 +501,27 @@ public Flux<ServerSentEvent<String>> chat(@RequestParam String message,
 ### 错误处理
 
 子 agent 内部出错时，框架会把错误捕获并写成一条 `TOOL_RESULT` 给父，**不会**把 `onError` 传播到父流——父流不会被子 agent 的失败打断。如果父流本身出错（比如模型调用失败），按标准 Reactor 语义处理（`onErrorResume` 等）。
+
+## 本章小结
+
+这一章回答一个问题：主 agent 上下文放不下的工作，怎么交出去、还能收回来：
+
+1. **声明**：三类来源构建时合并——内置 `general-purpose` 通用兜底、工作区 spec（`workspace/subagents/<id>.md`，文件名即 agent_id）、编程式 `SubagentDeclaration`（远程、动态参数等跑时才能确定的场景）；
+2. **工作区**：ISOLATED（默认，独立工作区，运行状态按父 sessionId × 用户分桶）与 SHARED（直接用主工作区）；
+3. **调用**：`timeout_seconds > 0` 同步等待（默认 30，最大 600，超时 promote 成后台任务）；`= 0` 直接后台；
+4. **收结果**：后台完成自动反向通知（无需轮询）；`task_output` 主动查单个任务；`wait_async_results` 用 `task_ids` 或 `wait_all=true` 等齐一组——多数时候不需要显式调任务工具；
+5. **暴露与远程**：`expose_to_user` 把子 agent 变成用户可交互入口（需绑定 Channel）；声明 `url` 即走 Agent Protocol 远程执行，`remoteAskPolicy` 决定远程工具确认转发还是自动拒绝；
+6. **边界**：递归保护最多 3 层、父 DENY 权限规则自动继承、Plan Mode 只读限制随委派传播、userId 透传不断隔离链。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 用一份 `workspace/subagents/reviewer.md` 声明子 agent，并说出 description 在委派决策中的作用；
+- ☐ 说出 ISOLATED 与 SHARED 各自适合的场景，以及同一用户在不同对话里 spawn 同名子 agent 是否互不污染；
+- ☐ 解释 `timeout_seconds` 默认值超时后发生什么，以及 `= 0` 与 `CTX_FORCE_SYNC` 强制同步的区别；
+- ☐ 用 `wait_async_results` 等齐一组后台任务，并解释为什么多数时候不需要显式调任务工具；
+- ☐ 用 `expose_to_user` 把子 agent 暴露给用户，并知道没绑定 Channel 时会发生什么；
+- ☐ 声明一个远程 `url` 子 agent，并说出 `remoteAskPolicy=DENY` 时待确认项的下场；
+- ☐ （选做）为跨重启可寻址的暴露子 agent 配置 `distributedStore(...)`。
 
 ## 相关文档
 

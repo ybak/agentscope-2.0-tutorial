@@ -375,3 +375,29 @@ repo.delete("calculator");
 | `resourcesTableName(String)` | 默认 `agentscope_skill_resources` |
 | `createIfNotExist(boolean)` | `true` 时自动 `CREATE SCHEMA` + `CREATE TABLE`，默认 `true` |
 | `writeable(boolean)` | 是否允许写操作，默认 `true` |
+
+## 本章小结
+
+这一章回答的是技能放在哪、怎么组合的问题。接入动作对三种来源是同一套：`getAllSkills()` 取出、`registerSkill` 注册，或直接 `skillRepository(...)` 挂入 Agent；真正要选的是存储与更新方式：
+
+1. **Git 技能仓库**：远程仓库 + 轻量 remote ref 检查，只在远端 HEAD 变化时才 pull；凭证复用系统级 Git 配置（HTTPS credential helper / SSH），`autoSync` 可关、改用 `repo.sync()` 手动刷新；
+2. **MySQL 技能仓库**（**已废弃**）：数据库 CRUD，控制台/业务系统编辑保存、Agent 立即可读，库名表名可自定义；
+3. **PostgreSQL 技能仓库**（**已废弃**）：与 MySQL 版同构，以 **schema**（而非 database）为命名空间隔离边界，支持 Builder 配置与 `writeable` 只读模式。
+
+两个数据库仓库都已标记废弃——统一 JDBC 模块（第 24 章）的 `JdbcAgentSkillRepository` 一套实现覆盖 MySQL、PostgreSQL、H2、SQLite 及后续方言，本模块建的表原样可用。
+
+最后回到章首的两条使用契约，它们比选哪个实现更容易被忽略：**作用域隔离**——每个仓储实例只服务一个作用域，多作用域用多个仓储组合（后注册的优先级更高），不让一个仓储跨作用域查询；**实例复用**——同来源共享一个实例（Spring 下声明为单例 Bean），重复构造的代价是 Nacos 多一条客户端连接、Git 各自 clone 一份仓库。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 用 `getAllSkills()` 加 `registerSkill` 把任一来源的技能注册进 Toolkit，或用 `skillRepository(...)` 直接挂入 Agent；
+- ☐ 按选型建议三条，为自己的场景在 Git 与数据库来源之间做选择并说明理由；
+- ☐ 解释每个仓储实例只服务一个作用域的含义，并说出 Git 仓储表达作用域的三个维度；
+- ☐ 解释同来源为什么要共享仓储实例，说出 Nacos 与 Git 仓储各自重复构造的代价；
+- ☐ 复述 MySQL / PostgreSQL 仓库的废弃状态与迁移目标，说出旧表升级到完整模式要补哪一列。
+
+## 延伸阅读
+
+- 第 15 章（技能）—— `AgentSkill` 格式与 `Toolkit` 的技能注册机制，本章三种仓储加载的就是它
+- 第 24 章（会话存储与分布式部署）—— 统一 JDBC 模块 `JdbcAgentSkillRepository`、作用域隔离（namespace）与迁移要点
+- 第 28 章（基础设施与生态工具）—— Nacos 技能仓库与集成扩展全览表

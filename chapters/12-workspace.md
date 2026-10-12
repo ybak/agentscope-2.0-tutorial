@@ -88,6 +88,8 @@ source: docs/harness/workspace.md, docs/harness/filesystem.md
 
 ## 工作区目录布局
 
+四条设计线索落到磁盘上，就是下面这棵目录树。
+
 ```
 .agentscope/workspace/
 ├── AGENTS.md                    ← 静态：人格 + 行为约定
@@ -282,6 +284,8 @@ workspace/
 
 ## 运行时数据与 Memory 怎么存
 
+到目前为止讲的都是读；下面换一个方向，看运行时数据写进哪里、如何恢复。
+
 默认 EVENT_LOG 下，AgentState 的 checkpoint 与完整执行事实保存在原生 Session Log 中；文件产物和长期记忆仍各有生命周期。
 
 | 数据 | 存储与恢复 |
@@ -451,6 +455,8 @@ knowledge/
 
 ## 写入工作区的安全规则
 
+目录拆完了；往工作区写文件，还有一条绕不开的安全规则。
+
 `additionalContextFile`、`writeUtf8WorkspaceRelative`、`memory_get` 这些接口接受**工作区相对路径**。框架做基本的 path-traversal 校验（拒绝 `../../etc/passwd` 这种逃出工作区的写法）。
 
 需要写文件时，**通过 `HarnessAgent#getWorkspaceManager()` 而不是 `java.nio.Files`**——后者在沙箱或共享存储模式下会写到错的地方（写到了宿主磁盘而不是沙箱里 / KV 里）。例外：builder 装配时的初始化脚本（例如 `initWorkspaceIfAbsent` 这种生成 `AGENTS.md` 种子），那时还没有运行时上下文，用 `java.nio.Files` 是 OK 的——它本来就是要落本地模板。
@@ -501,14 +507,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-#### 所有配置项
-
-| 方法 | 说明 | 默认值 |
-|------|------|-------|
-| `isolationScope(IsolationScope)` | 命名空间隔离维度（详见下文 IsolationScope 一节） | `USER` |
-| `anonymousUserId(String)` | `userId` 为空时使用的兜底标识 | `"_default"` |
-| `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
-| `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
+`RemoteFilesystemSpec` 的全部配置项与默认值见本章末参考速查。
 
 #### 内置路由规则
 
@@ -582,24 +581,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-`DockerFilesystemSpec` 所有配置项：
-
-| 方法 | 说明 | 默认值 |
-|------|------|-------|
-| `image(String)` | Docker 镜像 | 必填 |
-| `isolationScope(IsolationScope)` | 隔离维度 | `USER` |
-| `memorySizeBytes(Long)` | 容器内存限制 | Docker 默认 |
-| `cpuCount(Long)` | CPU 限制 | Docker 默认 |
-| `network(String)` | Docker network | Docker 默认 |
-| `exposedPorts(int...)` | 暴露端口 | 无 |
-| `environment(Map)` | 容器环境变量 | 无 |
-| `workspaceRoot(String)` | 容器内工作区挂载点 | `/workspace` |
-| `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
-| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
-| `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
-| `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
-| `workspaceProjectionEnabled(boolean)` | 是否启用宿主→沙箱的静态资产投影 | `true` |
-| `workspaceProjectionRoots(List)` | 投影包含的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
+`DockerFilesystemSpec` 的全部配置项与默认值见本章末参考速查。
 
 #### Kubernetes 沙箱（agent-sandbox）
 
@@ -617,19 +599,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-`KubernetesFilesystemSpec` 主要配置项：
-
-| 方法 | 说明 | 默认值 |
-|------|------|-------|
-| `namespace(String)` | SandboxClaim 所在 namespace | `default` |
-| `warmPoolName(String)` | `SandboxWarmPool` 名称 | 必填 |
-| `workspaceRoot(String)` | 沙箱内工作区根目录，**必须落在模板声明的 PVC 挂载点上** | `/workspace` |
-| `fileApiBaseDir(String)` | 运行时文件 API 根目录，须与 `workspaceRoot` 一致；置空则退回 base64-over-exec 传输 | `/workspace` |
-| `apiUrl(String)` | 直连运行时 API 的 URL（配置后优先生效） | 无 |
-| `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | 经 Gateway API 访问沙箱 | 无 |
-| `serverPort(int)` | 运行时 HTTP API 端口 | `8888` |
-| `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
-| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见第 18 章） | `NoopSnapshotSpec` |
+`KubernetesFilesystemSpec` 的主要配置项与默认值见本章末参考速查；其中 `workspaceRoot` 必须落在模板声明的 PVC 挂载点上。
 
 `apiUrl` / `gateway*` 都不配时，默认用 `kubectl port-forward` 方式建立本地隧道（适合开发环境）。运行时镜像必须满足运行时镜像约束（见第 18 章"运行时镜像约束"一节）；**工作区持久化依赖模板里的 PVC 配置**，详见第 18 章"Kubernetes 后端的状态保存：PVC 是第一层"一节。
 
@@ -683,27 +653,11 @@ HarnessAgent agent = HarnessAgent.builder()
     .build();
 ```
 
-#### 所有沙箱后端的公共配置（继承自 `SandboxFilesystemSpec`）
-
-| 方法 | 说明 | 默认值 |
-|------|------|-------|
-| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（默认 `USER`） |
-| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
-| `executionGuard(SandboxExecutionGuard)` | AGENT/GLOBAL scope 下的并发串行化守卫 | 无 |
-| `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |
-| `workspaceProjectionRoots(List)` | 投影的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
+所有沙箱后端继承自 `SandboxFilesystemSpec` 的公共配置（隔离维度、快照策略、并发守卫、工作区投影开关）见本章末参考速查。
 
 #### 快照策略
 
-沙箱可以做快照，使下一次 `call()` 恢复之前的环境状态（安装的依赖、生成的文件等）：
-
-| 实现 | 说明 |
-|------|------|
-| `NoopSnapshotSpec` | 不快照（默认） |
-| `LocalSnapshotSpec(Path)` | 快照存宿主本地磁盘 |
-| `RedisSnapshotSpec` | 快照存 Redis |
-| `OssSnapshotSpec` | 快照存对象存储（阿里云 OSS） |
-| `RemoteSnapshotSpec` | 快照存 `BaseStore` |
+沙箱可以做快照，使下一次 `call()` 恢复之前的环境状态（安装的依赖、生成的文件等）；快照实现的完整对照表见本章末参考速查。
 
 #### 示例场景：编程助手（Docker + 本地快照）
 
@@ -769,17 +723,7 @@ HarnessAgent agent = HarnessAgent.builder()
     .addRoot(Paths.get("/extra/dir"))) // 额外可访问目录
 ```
 
-| 方法 | 说明 | 默认值 |
-|------|------|-------|
-| `executeTimeoutSeconds(int)` | 单条 shell 命令超时（秒） | 120 |
-| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数 | 100,000 |
-| `env(String, String)` | 添加 shell 环境变量 | 无 |
-| `inheritEnv(boolean)` | 是否继承父进程环境 | `false` |
-| `mode(LocalFsMode)` | 路径解析策略 | `ROOTED` |
-| `project(Path)` | 项目根目录（overlay 下层 + shell cwd） | `System.getProperty("user.dir")` |
-| `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
-| `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
-| `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
+每一项的精确默认值见本章末参考速查。
 
 #### 路径解析策略（`LocalFsMode`）
 
@@ -951,6 +895,107 @@ HarnessAgent.builder()
 ```
 
 通常不需要——三种模式覆盖了 95% 的场景。
+
+## 本章小结
+
+这一章沿着数据是什么、怎么被读、怎么隔离、落在哪里四步走完了一条主线：
+
+1. **工作区是什么**：智能体定义与进化的 source of truth，内容按生命周期分为静态资产、运行时文件、长期记忆三类；你真正需要写的只有 `AGENTS.md`，其余目录随能力启用自动出现；
+2. **怎么被读**：材料按指令 / 参考资料分层进入每轮请求；关键文件走两层读——filesystem 后端优先、本地模板兜底，写入永远走后端层；
+3. **怎么隔离**：`IsolationScope` 把记忆、会话、任务、技能按 SESSION / USER / AGENT / GLOBAL 分桶，USER 缺 `userId` 时降级为 SESSION；静态资产靠 `<userId>/` 覆盖目录实现按用户定制，定义与进化两层多租户同时生效；
+4. **落在哪里**：本机 + shell、共享存储、沙箱三种文件系统模式不改代码切换——共享存储不提供 shell、沙箱隔离执行并支持快照恢复、本机模式直读直写但别用来跑不可信代码。
+
+按部署形态往下读：多副本共享记忆先看模式 1 与 IsolationScope 一节；要隔离执行不可信代码，直接进第 18 章的沙箱运行时细节。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 画出工作区的逻辑目录树，并把每个目录归入静态资产、运行时文件、长期记忆三类之一；
+- ☐ 说出 `workspace` 目录的四层解析顺序，并用环境变量在容器部署中重定向工作区；
+- ☐ 解释两层读架构：读取时哪层优先、写入落到哪层、共享存储模式下模板与远端覆盖各扮演什么角色；
+- ☐ 用 `<userId>/skills/` 为单个用户覆盖共享技能，并说出重名与独有时各自的可见性；
+- ☐ 按部署形态在三种文件系统模式中做出选择，说出每种模式是否提供 shell、在哪里执行；
+- ☐ 为多副本共享记忆选出正确的 `IsolationScope`，说出 USER scope 在 `userId` 缺失时的降级行为；
+- ☐ 解释为什么沙箱或共享存储模式下必须通过 `getWorkspaceManager()` 读写文件，而不是 `java.nio.Files`。
+
+## 参考速查
+
+本节收拢本章各文件系统后端的配置项全表与快照策略，供实施时查阅；正文主线中的机制讲解与最小示例不依赖本节。
+
+### `RemoteFilesystemSpec` 配置项（模式 1 · 共享存储）
+
+| 方法 | 说明 | 默认值 |
+|------|------|-------|
+| `isolationScope(IsolationScope)` | 命名空间隔离维度（详见 IsolationScope 一节） | `USER` |
+| `anonymousUserId(String)` | `userId` 为空时使用的兜底标识 | `"_default"` |
+| `addSharedPrefix(String)` | 额外的工作区相对路径前缀也路由到 KV（例如 `"prompts/"` / `"configs/"`） | 无 |
+| `workspaceIndex(WorkspaceIndex)` | 加速远端 ls/glob/grep 的 SQLite 索引 | 不加索引，走全量扫描 |
+
+### `DockerFilesystemSpec` 配置项（模式 2 · Docker 沙箱）
+
+| 方法 | 说明 | 默认值 |
+|------|------|-------|
+| `image(String)` | Docker 镜像 | 必填 |
+| `isolationScope(IsolationScope)` | 隔离维度 | `USER` |
+| `memorySizeBytes(Long)` | 容器内存限制 | Docker 默认 |
+| `cpuCount(Long)` | CPU 限制 | Docker 默认 |
+| `network(String)` | Docker network | Docker 默认 |
+| `exposedPorts(int...)` | 暴露端口 | 无 |
+| `environment(Map)` | 容器环境变量 | 无 |
+| `workspaceRoot(String)` | 容器内工作区挂载点 | `/workspace` |
+| `additionalRunArgs(String...)` | 额外的 `docker run` 参数 | 无 |
+| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec`（不快照） |
+| `workspaceSpec(WorkspaceSpec)` | 工作区挂载规则 | 默认 |
+| `executionGuard(SandboxExecutionGuard)` | 并发执行守卫（用于 AGENT / GLOBAL scope） | 无 |
+| `workspaceProjectionEnabled(boolean)` | 是否启用宿主→沙箱的静态资产投影 | `true` |
+| `workspaceProjectionRoots(List)` | 投影包含的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
+
+### `KubernetesFilesystemSpec` 主要配置项（模式 2 · K8s 沙箱）
+
+| 方法 | 说明 | 默认值 |
+|------|------|-------|
+| `namespace(String)` | SandboxClaim 所在 namespace | `default` |
+| `warmPoolName(String)` | `SandboxWarmPool` 名称 | 必填 |
+| `workspaceRoot(String)` | 沙箱内工作区根目录，**必须落在模板声明的 PVC 挂载点上** | `/workspace` |
+| `fileApiBaseDir(String)` | 运行时文件 API 根目录，须与 `workspaceRoot` 一致；置空则退回 base64-over-exec 传输 | `/workspace` |
+| `apiUrl(String)` | 直连运行时 API 的 URL（配置后优先生效） | 无 |
+| `gatewayName(String)` / `gatewayNamespace(String)` / `gatewayScheme(String)` | 经 Gateway API 访问沙箱 | 无 |
+| `serverPort(int)` | 运行时 HTTP API 端口 | `8888` |
+| `kubernetesClient(KubernetesClient)` | 自定义 fabric8 客户端 | 自动加载 kubeconfig |
+| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略（与 PVC 的取舍见第 18 章） | `NoopSnapshotSpec` |
+
+### 沙箱后端的公共配置（继承自 `SandboxFilesystemSpec`）
+
+| 方法 | 说明 | 默认值 |
+|------|------|-------|
+| `isolationScope(IsolationScope)` | 隔离维度 | 后端默认（默认 `USER`） |
+| `snapshotSpec(SandboxSnapshotSpec)` | 快照策略 | `NoopSnapshotSpec` |
+| `executionGuard(SandboxExecutionGuard)` | AGENT/GLOBAL scope 下的并发串行化守卫 | 无 |
+| `workspaceProjectionEnabled(boolean)` | 是否从宿主投影静态资产到沙箱 | `true` |
+| `workspaceProjectionRoots(List)` | 投影的根路径列表 | `AGENTS.md`, `skills`, `subagents`, `knowledge`, `.skills-cache` |
+
+### `LocalFilesystemSpec` 配置项（模式 3 · 本机 + shell）
+
+| 方法 | 说明 | 默认值 |
+|------|------|-------|
+| `executeTimeoutSeconds(int)` | 单条 shell 命令超时（秒） | 120 |
+| `maxOutputBytes(int)` | 单条命令最大捕获输出字节数 | 100,000 |
+| `env(String, String)` | 添加 shell 环境变量 | 无 |
+| `inheritEnv(boolean)` | 是否继承父进程环境 | `false` |
+| `mode(LocalFsMode)` | 路径解析策略 | `ROOTED` |
+| `project(Path)` | 项目根目录（overlay 下层 + shell cwd） | `System.getProperty("user.dir")` |
+| `addRoot(Path)` | 额外允许访问的宿主目录 | 无 |
+| `additionalRoots(Collection)` | 批量设置额外目录 | 无 |
+| `projectWritable(boolean)` | 文件工具写项目文件时直接落到项目目录，而非 workspace | `false` |
+
+### 快照策略
+
+| 实现 | 说明 |
+|------|------|
+| `NoopSnapshotSpec` | 不快照（默认） |
+| `LocalSnapshotSpec(Path)` | 快照存宿主本地磁盘 |
+| `RedisSnapshotSpec` | 快照存 Redis |
+| `OssSnapshotSpec` | 快照存对象存储（阿里云 OSS） |
+| `RemoteSnapshotSpec` | 快照存 `BaseStore` |
 
 ## 相关文档
 

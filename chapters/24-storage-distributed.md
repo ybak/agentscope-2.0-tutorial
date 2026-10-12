@@ -6,7 +6,19 @@ source: integration/session/index.md, integration/session/overview.md, integrati
 
 # 第 24 章 会话存储与分布式部署
 
-> 本章导读：讲解 Agent 状态的持久化与多副本部署的存储底座。前半部分是 `AgentStateStore` 接口参考——`(userId, sessionId)` 寻址、与原生 Session Log 的区别，以及 MySQL、Redis、OSS 三个 legacy 状态存储模块；后半部分是生产推荐的 `DistributedStore` 一键配置——一行代码同时覆盖 Agent 状态、工作区文件系统 KV、沙箱快照与并发锁，四个后端（Redis、JDBC、MongoDB、阿里云 OSS）可以混合搭配。读完本章，你可以让多个 Agent 副本共享同一份状态与工作区，并按现有基础设施选择后端组合。
+> 本章导读：Agent 在单机上跑通之后，第一个分布式问题往往不是流量，而是状态——两个应用副本各写各的本地文件，同一个用户的会话在两台机器上就是两份互不相通的记忆。本章把 Agent 状态的持久化与多副本部署的存储底座整理成一份完整参考：先说清 `AgentStateStore` 接口本身——`(userId, sessionId)` 寻址、与原生 Session Log 的区别；然后进入生产推荐的 `DistributedStore` 一键配置——一行代码同时覆盖 Agent 状态、工作区文件系统 KV、沙箱快照与并发锁，四个后端（Redis、JDBC、MongoDB、阿里云 OSS）可以混合搭配；最后是 MySQL、Redis、OSS 三个 legacy 状态存储模块——它们已由分布式存储的对应模块取代，保留作为存量维护参考。读完本章，你可以让多个 Agent 副本共享同一份状态与工作区，并按现有基础设施选择后端组合。
+
+## 从单机到多副本：存储要解决什么
+
+前二十章的所有示例都默认 Agent 运行在单个进程里。只要部署第二个副本，三件事立刻出现：
+
+- **会话不共享**。单机默认的 `JsonFileAgentStateStore` 把状态写在本进程的本地磁盘；下一个请求被负载均衡到另一台机器时，它读不到上一台机器写的状态，用户面对的同一个 Agent 在两台机器上是两份记忆。
+- **重启丢状态**。pod 重建、进程重启后，本地文件随之消失，恢复无从谈起。
+- **副本间互相看不见**。沙箱快照要能让任意副本接续执行，两个副本同时执行同一个沙箱任务还需要谁来加锁。
+
+框架的答案分两层：`AgentStateStore` 接口约定状态存到哪里（本章前半的接口参考）；`DistributedStore` 把所有需要分布式持久化的组件——Agent 状态、工作区文件系统 KV、沙箱快照、并发锁——统一到同一个后端入口（生产推荐，本章主体）。三个 legacy 状态存储模块诞生于统一入口之前，如今只在维护存量代码时才会遇到。
+
+本章与第 42 章（走向生产）是分工关系：第 42 章以 `DistributedStore` 一键配置为主线讲单机到分布式必须换哪些组件，是快速上手路径；本章是存储底座的完整参考——每个组件的定位、四个后端各自的接入方式与参数、legacy 模块的存量维护。首次配置可先读第 42 章跑通主线，选型与排障时回到本章查阅。
 
 ## Agent 状态存储概览
 
@@ -43,358 +55,11 @@ ReActAgent agent = ReActAgent.builder()
     .build();
 ```
 
-详细用法和代码示例见本章后半部分各后端的文档：Redis（`RedisAgentStateStore`）、JDBC（`JdbcAgentStateStore`）、OSS（`OssAgentStateStore`）。
-
-## MySQL 状态存储
-
-> **注意**：本节内容已迁移至分布式存储的 JDBC 模块（见本章"JDBC"一节）。以下内容保留作为参考，但建议使用新文档。
-
-`agentscope-extensions-mysql` 把 AgentScope 的 Agent 状态持久化到 MySQL。适合已有 MySQL 基础设施、需要事务和 SQL 查询能力的场景。
-
-### 添加依赖
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-mysql</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-数据库驱动按你使用的版本自行引入（例如 `mysql:mysql-connector-j`）。
-
-### 快速上手
-
-```java
-import com.zaxxer.hikari.HikariDataSource;
-import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.extensions.mysql.state.MysqlAgentStateStore;
-
-HikariDataSource ds = new HikariDataSource();
-ds.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC");
-ds.setUsername("root");
-ds.setPassword("***");
-
-// 第二个参数 createIfNotExist=true：自动创建库与表
-AgentStateStore stateStore = new MysqlAgentStateStore(ds, true);
-
-ReActAgent agent = ReActAgent.builder()
-    .name("assistant")
-    .model(model)
-    .stateStore(stateStore)
-    .build();
-```
-
-如果库与表已经预先创建好了，可以使用更安全的形式：
-
-```java
-AgentStateStore stateStore = new MysqlAgentStateStore(ds);          // 库/表不存在则抛 IllegalStateException
-AgentStateStore stateStore = new MysqlAgentStateStore(ds, false);   // 同上，显式声明
-```
-
-### 自定义库名 / 表名
-
-```java
-AgentStateStore stateStore = new MysqlAgentStateStore(
-    ds,
-    "agentscope_prod",        // 库名
-    "session_state",          // 表名
-    true                      // 是否自动创建
-);
-```
-
-库名、表名只允许 `[a-zA-Z_][a-zA-Z0-9_-]*`，长度 ≤ 64，避免 SQL 注入。
-
-### 表结构
-
-`createIfNotExist=true` 时会自动建表：
-
-```sql
-CREATE TABLE IF NOT EXISTS agentscope_sessions (
-    session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
-    state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
-    item_index INT NOT NULL DEFAULT 0,
-    state_data LONGTEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    PRIMARY KEY (session_id, state_key, item_index)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
-
-两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是大小写敏感的标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。注意 `utf8mb4_bin` 为 PAD SPACE 语义——仅尾部空格不同的值仍视为相等。
-
-#### 迁移在此改动之前创建的表
-
-`CREATE TABLE IF NOT EXISTS` 不会修改已存在的表，因此更早部署的实例仍保持大小写不敏感，需要由运维执行迁移。`agentscope_store`、`agentscope_sessions`、`agentscope_snapshots` 三张表的主键都是调用方提供的标识符，道理相同：
-
-```sql
-ALTER TABLE agentscope_store
-    MODIFY namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL,
-    MODIFY item_key       VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
-
-ALTER TABLE agentscope_sessions
-    MODIFY session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
-    MODIFY state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
-
-ALTER TABLE agentscope_snapshots
-    MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
-```
-
-若配置过表前缀或逐表名称覆盖，请相应替换表名。创建 `agentscope_snapshots` 的两条路径——`agentscope-extensions-jdbc` 方言与 legacy 的 `agentscope-extensions-mysql` 快照客户端——现在钉的是同一个排序规则，因此更早部署的实例只需执行上面的语句。
-
-有两点需要提前考虑：
-
-- **读取语义随排序规则一起改变。** 比较与前缀查询（`session_id = ?`、`LIKE 'prefix%'`）变为大小写敏感，原先用小写 `sess-1` 能查到 `SESS-1` 的场景将不再匹配。请在会话空闲窗口执行迁移。
-- **已有数据可能已经丢失。** 若迁移前曾写入两个仅大小写不同的键，第二次写入会通过 `ON DUPLICATE KEY UPDATE` 覆盖第一次，那一行无法从表中恢复。
-
-- `(userId, sessionId)` 二元组会被打包进 `session_id` 列，形如 `{userSegment}:{sessionId}`（`userSegment` 为 `userId`，匿名 session 用 `__anon__`）。
-- 单值：`item_index = 0`
-- 列表：`item_index = 0,1,2,...`，每项一行；同时另存一行 `state_key='xxx:_hash'` 用作变更检测。
-
-### 直接使用 API
-
-`MysqlAgentStateStore` 实现了 `AgentStateStore` 接口，常用调用如下：
-
-```java
-// 单值（匿名 session 时 userId 可传 null）
-stateStore.save("user-42", "session-1", "agent_state", state);
-Optional<MyState> got = stateStore.get("user-42", "session-1", "agent_state", MyState.class);
-
-// 列表（增量 append；变更时整体重写）
-stateStore.save("user-42", "session-1", "messages", listOfMessages);
-List<MyState> all = stateStore.getList("user-42", "session-1", "messages", MyState.class);
-
-// 维护
-boolean exists = stateStore.exists("user-42", "session-1");
-stateStore.delete("user-42", "session-1");
-Set<String> sessions = stateStore.listSessionIds("user-42");   // 传 null 列出匿名 session
-
-// 清理（请谨慎，仅用于测试）
-stateStore.truncateAllSessions();
-```
-
-### 配置参数说明
-
-| 构造参数 / 方法 | 说明 |
-| --- | --- |
-| `dataSource` | 必填。建议用 HikariCP / Druid 等连接池 |
-| `databaseName` | 默认 `agentscope` |
-| `tableName` | 默认 `agentscope_sessions` |
-| `createIfNotExist` | `true` 时自动 `CREATE DATABASE` + `CREATE TABLE` |
-
-> `truncateAllSessions()` 使用 `TRUNCATE TABLE`，需要 DROP 权限；DDL 不可回滚，仅用于测试或运维清理。
-
-## Redis 状态存储
-
-> **注意**：本节内容已迁移至分布式存储的 Redis 模块（见本章"Redis"一节）。以下内容保留作为参考，但建议使用新文档。
-
-`agentscope-extensions-redis` 把 AgentScope 的 Agent 状态存到 Redis。统一抽象出 `RedisClientAdapter`，支持 **Jedis、Lettuce、Redisson** 三个客户端，覆盖 Standalone、Cluster、Sentinel 等部署模式。
-
-### 添加依赖
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-redis</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-模块本身不强制依赖某一客户端，按你项目里实际用的引入即可（Jedis / Lettuce / Redisson）。
-
-### 快速上手（Lettuce 单机）
-
-```java
-import io.lettuce.core.RedisClient;
-import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.extensions.redis.state.RedisAgentStateStore;
-
-RedisClient redisClient = RedisClient.create("redis://localhost:6379");
-
-AgentStateStore stateStore = RedisAgentStateStore.builder()
-    .lettuceClient(redisClient)
-    .build();
-```
-
-### 三种客户端的接入
-
-#### Jedis
-
-```java
-import redis.clients.jedis.UnifiedJedis;
-
-UnifiedJedis jedis = new redis.clients.jedis.JedisPooled("localhost", 6379);
-AgentStateStore stateStore = RedisAgentStateStore.builder()
-    .jedisClient(jedis)   // UnifiedJedis、JedisCluster、JedisSentineled 都可
-    .build();
-```
-
-#### Lettuce 集群
-
-```java
-import io.lettuce.core.cluster.RedisClusterClient;
-import io.lettuce.core.RedisURI;
-
-RedisClusterClient clusterClient = RedisClusterClient.create(
-    RedisURI.create("redis://localhost:7000"));
-
-AgentStateStore stateStore = RedisAgentStateStore.builder()
-    .lettuceClusterClient(clusterClient)
-    .build();
-```
-
-#### Redisson
-
-```java
-import org.redisson.Redisson;
-import org.redisson.config.Config;
-
-Config config = new Config();
-config.useSingleServer().setAddress("redis://localhost:6379");
-RedissonClient redisson = Redisson.create(config);
-
-AgentStateStore stateStore = RedisAgentStateStore.builder()
-    .redissonClient(redisson)
-    .build();
-```
-
-> Redisson 还支持 `useClusterServers()` / `useSentinelServers()` / `useMasterSlaveServers()`，配好后照样传给 `redissonClient(...)`。
-
-### 自定义 key 前缀
-
-默认所有 key 形如 `agentscope:session:{userSegment}/{sessionId}:...`（`userSegment` 即 `userId`，匿名 session 用 `__anon__`）。多个项目共享同一个 Redis 时建议自定义：
-
-```java
-AgentStateStore stateStore = RedisAgentStateStore.builder()
-    .lettuceClient(redisClient)
-    .keyPrefix("myapp:session:")
-    .build();
-```
-
-### Key 结构
-
-`(userId, sessionId)` 二元组会被打包成单一槽位标识 `{userSegment}/{sessionId}`（`userSegment` 为 `userId`，`userId` 为 null 时取 `__anon__`）。
-
-| 类型 | Key 模式 |
-| --- | --- |
-| 单值 | `{prefix}{userSegment}/{sessionId}:{stateKey}`（Redis String，存 JSON） |
-| 列表 | `{prefix}{userSegment}/{sessionId}:{stateKey}:list`（Redis List，每项一条 JSON） |
-| 列表 hash | `{prefix}{userSegment}/{sessionId}:{stateKey}:list:_hash`（变更检测用） |
-| Session 索引 | `{prefix}{userSegment}/{sessionId}:_keys`（Redis Set，记录该 session 下所有 stateKey） |
-
-`_keys` 索引让 `delete(userId, sessionId)`、`exists(userId, sessionId)` 都只需要常数次 Redis 调用，避免 `KEYS *`。
-
-### 挂载到 Agent
-
-```java
-ReActAgent agent = ReActAgent.builder()
-    .name("assistant")
-    .model(model)
-    .stateStore(stateStore)
-    .build();
-```
-
-之后你的 Memory、Workspace、Plan 等组件就会自动通过 Redis 持久化。每次调用读写哪个槽位，由该次调用的 `RuntimeContext` 决定：
-
-```java
-RuntimeContext rc = RuntimeContext.builder()
-    .userId("alice")
-    .sessionId("session-1")
-    .build();
-
-agent.call(msg, rc).block();
-```
-
-### 自定义客户端适配
-
-如果你需要接其他 Redis 兼容存储（比如 KeyDB、Tair），可以实现 `RedisClientAdapter` 然后通过 `clientAdapter(...)` 注入：
-
-```java
-AgentStateStore stateStore = RedisAgentStateStore.builder()
-    .clientAdapter(new MyCustomAdapter(...))
-    .build();
-```
-
-### Builder 配置参数
-
-| 方法 | 说明 |
-| --- | --- |
-| `jedisClient(UnifiedJedis)` | Jedis 单机/集群/哨兵任意一种 |
-| `lettuceClient(RedisClient)` | Lettuce 单机/Sentinel |
-| `lettuceClusterClient(RedisClusterClient)` | Lettuce 集群 |
-| `redissonClient(RedissonClient)` | Redisson 任意部署模式 |
-| `clientAdapter(RedisClientAdapter)` | 自定义适配器 |
-| `keyPrefix(String)` | 默认 `agentscope:session:` |
-
-> 上述客户端方法互斥，只设置一个。
-
-## OSS 状态存储
-
-> **注意**：本节内容已迁移至分布式存储的 OSS 模块（见本章"阿里云 OSS"一节）。以下内容保留作为参考，但建议使用新文档。
-
-`agentscope-extensions-oss` 把 AgentScope 的 Agent 状态持久化到阿里云对象存储（OSS）。适合大容量数据和阿里云生态的场景。
-
-### 添加依赖
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-oss</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
-
-### 快速上手
-
-```java
-import com.aliyun.oss.OSS;
-import com.aliyun.oss.OSSClientBuilder;
-import io.agentscope.core.state.AgentStateStore;
-import io.agentscope.extensions.oss.OssAgentStateStore;
-
-OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
-
-AgentStateStore stateStore = OssAgentStateStore.builder()
-    .ossClient(ossClient)
-    .bucketName("my-agentscope-bucket")
-    .keyPrefix("agentscope/state/")
-    .build();
-
-ReActAgent agent = ReActAgent.builder()
-    .name("assistant")
-    .model(model)
-    .stateStore(stateStore)
-    .build();
-```
-
-### Key 结构
-
-`(userId, sessionId)` 二元组会被打包进 OSS 对象路径：
-
-| 类型 | Key 模式 |
-| --- | --- |
-| 单值 | `{keyPrefix}{userId}/{sessionId}/{stateKey}.json` |
-| 列表 | `{keyPrefix}{userId}/{sessionId}/{stateKey}.list.json` |
-| 列表 hash | `{keyPrefix}{userId}/{sessionId}/{stateKey}.list.hash`（变更检测用） |
-
-匿名 session（`userId` 为 null）时 `userId` 用 `__anon__` 替代。
-
-### Builder 配置参数
-
-| 方法 | 说明 |
-| --- | --- |
-| `ossClient(OSS)` | 必填。阿里云 OSS 客户端 |
-| `bucketName(String)` | 必填。OSS Bucket 名称 |
-| `keyPrefix(String)` | 默认 `agentscope/state/` |
-
-### 安全提示
-
-- 生产环境建议使用 RAM Role + STS 临时凭证，避免在代码中硬编码 AK/SK
-- 为 bucket 配置生命周期规则（如 7 天自动过期），避免存储成本失控
+详细用法和代码示例见本章各后端小节：Redis（`RedisAgentStateStore`）、JDBC（`JdbcAgentStateStore`）、OSS（`OssAgentStateStore`）。
 
 ## 分布式存储（Distributed Store）
 
-AgentScope 将所有需要分布式持久化的组件统一到 `DistributedStore` 接口下。一行配置即可让 Agent 的状态、工作区文件系统、沙箱快照和并发锁全部切到同一个分布式后端。
+AgentScope 将所有需要分布式持久化的组件统一到 `DistributedStore` 接口下。一行配置即可让 Agent 的状态、工作区文件系统、沙箱快照和并发锁全部切到同一个分布式后端。这是多副本部署的推荐配置方式——与其为每个组件分别挑选、装配存储实现，不如让 builder 从一个入口自动完成注入；后文四个后端小节里的提供的组件清单，本质都是这条一键路径的手工拆解版。
 
 ### 快速上手
 
@@ -411,6 +76,8 @@ HarnessAgent agent = HarnessAgent.builder()
             .isolationScope(IsolationScope.USER))
     .build();
 ```
+
+第 42 章沿这条一键路径给出了多副本生产的最小上手模板；本章后续小节则把每个后端、每个组件的参数展开成完整参考。
 
 ### 能力矩阵
 
@@ -1003,7 +670,7 @@ import io.agentscope.extensions.mongodb.store.MongoBaseStore;
 BaseStore store = new MongoBaseStore(mongoClient.getDatabase("agentscope"), "agentscope_base");
 ```
 
-- 命名空间路径使用 `\u001F`（ASCII Unit Separator）作为段分隔符，带 trailing separator 实现前缀匹配。
+- 命名空间路径使用 ``（ASCII Unit Separator）作为段分隔符，带 trailing separator 实现前缀匹配。
 - `put` / `putIfVersion` 通过 `version` 字段支持乐观并发。
 
 #### 3. MongoSnapshotSpec
@@ -1040,14 +707,7 @@ SandboxExecutionGuard guard = MongoSandboxExecutionGuard.builder(mongoClient)
 
 ### 集合与 TTL
 
-| 集合 | 用途 | TTL | 默认名称 |
-|------|------|-----|---------|
-| 会话 | Agent 状态存储 | `_updated_at` 30 天 | `agentscope_sessions` |
-| 基础存储 | 工作区 KV | — | `agentscope_base` |
-| 快照 | 沙箱 tar 归档 | `createdAt` 30 天 | `agentscope_snapshots` |
-| 沙箱锁 | 分布式锁 | `expiresAt` 即时 | `agentscope_sandbox_locks` |
-
-所有集合名集中在 `MongoConstants` 中管理，可按组件覆盖。
+四个组件落在四个集合里，集合划分、各自的 TTL 与默认名称汇总于章末参考速查的 MongoDB 一节；所有集合名集中在 `MongoConstants` 中管理，可按组件覆盖。
 
 ### 选型建议
 
@@ -1162,3 +822,394 @@ DistributedStore mixed = DistributedStore.builder()
 
 - 生产环境建议使用 RAM Role + STS 临时凭证，避免在代码中硬编码 AK/SK
 - 为快照 bucket 配置生命周期规则（如 7 天自动过期），避免存储成本失控
+
+## 存量维护参考：三个 legacy 状态存储模块
+
+接下来三节是 AgentScope 早期的三个独立状态存储模块——MySQL、Redis、OSS。它们只实现了 `AgentStateStore` 一个接口，如今已分别迁移进本章分布式存储的 JDBC、Redis、OSS 模块，每节开头的注意块都标明了迁移去向。仍在维护使用这些模块的存量代码、或要在历史文档与配置里核对参数时，这三节就是完整的对照材料；新项目一律使用前文的 `DistributedStore` 一键配置。
+
+三节结构相同：添加依赖 → 快速上手 → key 结构与寻址规则 → 通过 `AgentStateStore` API 直接使用；构造器与 builder 的完整参数表已统一收拢到章末参考速查。
+
+## MySQL 状态存储
+
+> **注意**：本节内容已迁移至分布式存储的 JDBC 模块（见本章"JDBC"一节）。以下内容保留作为参考，但建议使用新文档。
+
+`agentscope-extensions-mysql` 把 AgentScope 的 Agent 状态持久化到 MySQL。适合已有 MySQL 基础设施、需要事务和 SQL 查询能力的场景。
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-mysql</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+数据库驱动按你使用的版本自行引入（例如 `mysql:mysql-connector-j`）。
+
+### 快速上手
+
+```java
+import com.zaxxer.hikari.HikariDataSource;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.extensions.mysql.state.MysqlAgentStateStore;
+
+HikariDataSource ds = new HikariDataSource();
+ds.setJdbcUrl("jdbc:mysql://localhost:3306/agentscope?serverTimezone=UTC");
+ds.setUsername("root");
+ds.setPassword("***");
+
+// 第二个参数 createIfNotExist=true：自动创建库与表
+AgentStateStore stateStore = new MysqlAgentStateStore(ds, true);
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .stateStore(stateStore)
+    .build();
+```
+
+如果库与表已经预先创建好了，可以使用更安全的形式：
+
+```java
+AgentStateStore stateStore = new MysqlAgentStateStore(ds);          // 库/表不存在则抛 IllegalStateException
+AgentStateStore stateStore = new MysqlAgentStateStore(ds, false);   // 同上，显式声明
+```
+
+### 自定义库名 / 表名
+
+```java
+AgentStateStore stateStore = new MysqlAgentStateStore(
+    ds,
+    "agentscope_prod",        // 库名
+    "session_state",          // 表名
+    true                      // 是否自动创建
+);
+```
+
+库名、表名只允许 `[a-zA-Z_][a-zA-Z0-9_-]*`，长度 ≤ 64，避免 SQL 注入。
+
+### 表结构
+
+`createIfNotExist=true` 时会自动建表：
+
+```sql
+CREATE TABLE IF NOT EXISTS agentscope_sessions (
+    session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    item_index INT NOT NULL DEFAULT 0,
+    state_data LONGTEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (session_id, state_key, item_index)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+两个键列显式指定 `utf8mb4_bin`，而表级默认排序规则仍为 `utf8mb4_unicode_ci`：`session_id` 与 `state_key` 是大小写敏感的标识符，而表级默认排序规则大小写不敏感，若不指定二进制排序规则，两个仅大小写不同的 id 会在主键上冲突、共用同一行。注意 `utf8mb4_bin` 为 PAD SPACE 语义——仅尾部空格不同的值仍视为相等。
+
+#### 迁移在此改动之前创建的表
+
+`CREATE TABLE IF NOT EXISTS` 不会修改已存在的表，因此更早部署的实例仍保持大小写不敏感，需要由运维执行迁移。`agentscope_store`、`agentscope_sessions`、`agentscope_snapshots` 三张表的主键都是调用方提供的标识符，道理相同：
+
+```sql
+ALTER TABLE agentscope_store
+    MODIFY namespace_path VARCHAR(512) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY item_key       VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_sessions
+    MODIFY session_id VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
+    MODIFY state_key  VARCHAR(255) COLLATE utf8mb4_bin NOT NULL;
+
+ALTER TABLE agentscope_snapshots
+    MODIFY snapshot_id VARCHAR(512) COLLATE utf8mb4_bin NOT NULL;
+```
+
+若配置过表前缀或逐表名称覆盖，请相应替换表名。创建 `agentscope_snapshots` 的两条路径——`agentscope-extensions-jdbc` 方言与 legacy 的 `agentscope-extensions-mysql` 快照客户端——现在钉的是同一个排序规则，因此更早部署的实例只需执行上面的语句。
+
+有两点需要提前考虑：
+
+- **读取语义随排序规则一起改变。** 比较与前缀查询（`session_id = ?`、`LIKE 'prefix%'`）变为大小写敏感，原先用小写 `sess-1` 能查到 `SESS-1` 的场景将不再匹配。请在会话空闲窗口执行迁移。
+- **已有数据可能已经丢失。** 若迁移前曾写入两个仅大小写不同的键，第二次写入会通过 `ON DUPLICATE KEY UPDATE` 覆盖第一次，那一行无法从表中恢复。
+
+- `(userId, sessionId)` 二元组会被打包进 `session_id` 列，形如 `{userSegment}:{sessionId}`（`userSegment` 为 `userId`，匿名 session 用 `__anon__`）。
+- 单值：`item_index = 0`
+- 列表：`item_index = 0,1,2,...`，每项一行；同时另存一行 `state_key='xxx:_hash'` 用作变更检测。
+
+### 直接使用 API
+
+`MysqlAgentStateStore` 实现了 `AgentStateStore` 接口，常用调用如下：
+
+```java
+// 单值（匿名 session 时 userId 可传 null）
+stateStore.save("user-42", "session-1", "agent_state", state);
+Optional<MyState> got = stateStore.get("user-42", "session-1", "agent_state", MyState.class);
+
+// 列表（增量 append；变更时整体重写）
+stateStore.save("user-42", "session-1", "messages", listOfMessages);
+List<MyState> all = stateStore.getList("user-42", "session-1", "messages", MyState.class);
+
+// 维护
+boolean exists = stateStore.exists("user-42", "session-1");
+stateStore.delete("user-42", "session-1");
+Set<String> sessions = stateStore.listSessionIds("user-42");   // 传 null 列出匿名 session
+
+// 清理（请谨慎，仅用于测试）
+stateStore.truncateAllSessions();
+```
+
+构造参数的完整说明表收拢在章末参考速查的 legacy MySQL 一节。
+
+## Redis 状态存储
+
+> **注意**：本节内容已迁移至分布式存储的 Redis 模块（见本章"Redis"一节）。以下内容保留作为参考，但建议使用新文档。
+
+`agentscope-extensions-redis` 把 AgentScope 的 Agent 状态存到 Redis。统一抽象出 `RedisClientAdapter`，支持 **Jedis、Lettuce、Redisson** 三个客户端，覆盖 Standalone、Cluster、Sentinel 等部署模式。
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-redis</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+模块本身不强制依赖某一客户端，按你项目里实际用的引入即可（Jedis / Lettuce / Redisson）。
+
+### 快速上手（Lettuce 单机）
+
+```java
+import io.lettuce.core.RedisClient;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.extensions.redis.state.RedisAgentStateStore;
+
+RedisClient redisClient = RedisClient.create("redis://localhost:6379");
+
+AgentStateStore stateStore = RedisAgentStateStore.builder()
+    .lettuceClient(redisClient)
+    .build();
+```
+
+### 三种客户端的接入
+
+#### Jedis
+
+```java
+import redis.clients.jedis.UnifiedJedis;
+
+UnifiedJedis jedis = new redis.clients.jedis.JedisPooled("localhost", 6379);
+AgentStateStore stateStore = RedisAgentStateStore.builder()
+    .jedisClient(jedis)   // UnifiedJedis、JedisCluster、JedisSentineled 都可
+    .build();
+```
+
+#### Lettuce 集群
+
+```java
+import io.lettuce.core.cluster.RedisClusterClient;
+import io.lettuce.core.RedisURI;
+
+RedisClusterClient clusterClient = RedisClusterClient.create(
+    RedisURI.create("redis://localhost:7000"));
+
+AgentStateStore stateStore = RedisAgentStateStore.builder()
+    .lettuceClusterClient(clusterClient)
+    .build();
+```
+
+#### Redisson
+
+```java
+import org.redisson.Redisson;
+import org.redisson.config.Config;
+
+Config config = new Config();
+config.useSingleServer().setAddress("redis://localhost:6379");
+RedissonClient redisson = Redisson.create(config);
+
+AgentStateStore stateStore = RedisAgentStateStore.builder()
+    .redissonClient(redisson)
+    .build();
+```
+
+> Redisson 还支持 `useClusterServers()` / `useSentinelServers()` / `useMasterSlaveServers()`，配好后照样传给 `redissonClient(...)`。
+
+### 自定义 key 前缀
+
+默认所有 key 形如 `agentscope:session:{userSegment}/{sessionId}:...`（`userSegment` 即 `userId`，匿名 session 用 `__anon__`）。多个项目共享同一个 Redis 时建议自定义：
+
+```java
+AgentStateStore stateStore = RedisAgentStateStore.builder()
+    .lettuceClient(redisClient)
+    .keyPrefix("myapp:session:")
+    .build();
+```
+
+### Key 结构
+
+`(userId, sessionId)` 二元组会被打包成单一槽位标识 `{userSegment}/{sessionId}`（`userSegment` 为 `userId`，`userId` 为 null 时取 `__anon__`）。
+
+| 类型 | Key 模式 |
+| --- | --- |
+| 单值 | `{prefix}{userSegment}/{sessionId}:{stateKey}`（Redis String，存 JSON） |
+| 列表 | `{prefix}{userSegment}/{sessionId}:{stateKey}:list`（Redis List，每项一条 JSON） |
+| 列表 hash | `{prefix}{userSegment}/{sessionId}:{stateKey}:list:_hash`（变更检测用） |
+| Session 索引 | `{prefix}{userSegment}/{sessionId}:_keys`（Redis Set，记录该 session 下所有 stateKey） |
+
+`_keys` 索引让 `delete(userId, sessionId)`、`exists(userId, sessionId)` 都只需要常数次 Redis 调用，避免 `KEYS *`。
+
+### 挂载到 Agent
+
+```java
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .stateStore(stateStore)
+    .build();
+```
+
+之后你的 Memory、Workspace、Plan 等组件就会自动通过 Redis 持久化。每次调用读写哪个槽位，由该次调用的 `RuntimeContext` 决定：
+
+```java
+RuntimeContext rc = RuntimeContext.builder()
+    .userId("alice")
+    .sessionId("session-1")
+    .build();
+
+agent.call(msg, rc).block();
+```
+
+### 自定义客户端适配
+
+如果你需要接其他 Redis 兼容存储（比如 KeyDB、Tair），可以实现 `RedisClientAdapter` 然后通过 `clientAdapter(...)` 注入：
+
+```java
+AgentStateStore stateStore = RedisAgentStateStore.builder()
+    .clientAdapter(new MyCustomAdapter(...))
+    .build();
+```
+
+builder 的客户端方法与 `keyPrefix` 参数的完整说明表收拢在章末参考速查的 legacy Redis 一节。
+
+## OSS 状态存储
+
+> **注意**：本节内容已迁移至分布式存储的 OSS 模块（见本章"阿里云 OSS"一节）。以下内容保留作为参考，但建议使用新文档。
+
+`agentscope-extensions-oss` 把 AgentScope 的 Agent 状态持久化到阿里云对象存储（OSS）。适合大容量数据和阿里云生态的场景。
+
+### 添加依赖
+
+```xml
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-oss</artifactId>
+    <version>${agentscope.version}</version>
+</dependency>
+```
+
+### 快速上手
+
+```java
+import com.aliyun.oss.OSS;
+import com.aliyun.oss.OSSClientBuilder;
+import io.agentscope.core.state.AgentStateStore;
+import io.agentscope.extensions.oss.OssAgentStateStore;
+
+OSS ossClient = new OSSClientBuilder().build(endpoint, accessKeyId, accessKeySecret);
+
+AgentStateStore stateStore = OssAgentStateStore.builder()
+    .ossClient(ossClient)
+    .bucketName("my-agentscope-bucket")
+    .keyPrefix("agentscope/state/")
+    .build();
+
+ReActAgent agent = ReActAgent.builder()
+    .name("assistant")
+    .model(model)
+    .stateStore(stateStore)
+    .build();
+```
+
+### Key 结构
+
+`(userId, sessionId)` 二元组会被打包进 OSS 对象路径：
+
+| 类型 | Key 模式 |
+| --- | --- |
+| 单值 | `{keyPrefix}{userId}/{sessionId}/{stateKey}.json` |
+| 列表 | `{keyPrefix}{userId}/{sessionId}/{stateKey}.list.json` |
+| 列表 hash | `{keyPrefix}{userId}/{sessionId}/{stateKey}.list.hash`（变更检测用） |
+
+匿名 session（`userId` 为 null）时 `userId` 用 `__anon__` 替代。
+
+builder 参数的完整说明表收拢在章末参考速查的 legacy OSS 一节。
+
+### 安全提示
+
+- 生产环境建议使用 RAM Role + STS 临时凭证，避免在代码中硬编码 AK/SK
+- 为 bucket 配置生命周期规则（如 7 天自动过期），避免存储成本失控
+
+## 本章小结
+
+这一章沿着三条线走完了 Agent 状态的存储底座：
+
+1. **为什么需要存储底座**：单机默认的本地文件存储在第二个副本出现时立即失效——会话不共享、重启丢状态、副本间互相看不见，状态必须外置到共享后端；
+2. **接口层**：`AgentStateStore` 以 `(userId, sessionId)` 寻址，与原生 Session Log 是两套恢复通道，仅替换 stateStore 不会迁移或共享原生日志；
+3. **生产推荐**：`DistributedStore` 一行配置同时覆盖 AgentStateStore、BaseStore、SandboxSnapshotSpec、SandboxExecutionGuard 四类组件，四个后端可按组件混合搭配；OSS 不提供沙箱并发锁，需要时混入 Redis 的 guard；
+4. **四个后端**：Redis 低延迟、多副本生产首选（Redis Cluster 必须显式选 V1 key 布局）；JDBC 是关系型数据库统一入口，兼管 skill 仓库与历史模块迁移；MongoDB 文档型、集合级 TTL；OSS 大容量快照首选；
+5. **Control Plane**：已部署控制面时可托管协调类能力，但 `AgentStateStore` 仍需自备后端，正确性靠后端的 versioning CAS；
+6. **legacy 三模块**：MySQL、Redis、OSS 三个独立状态存储已被分布式存储对应模块取代，保留作为存量维护参考，参数表收拢在章末速查。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出 `AgentStateStore` 与原生 Session Log 的区别，并解释为什么只换 stateStore 不会迁移原生日志；
+- ☐ 用 `DistributedStore` 一键配置让多个 Agent 副本共享状态与工作区；
+- ☐ 解释 OSS 为什么不提供 `SandboxExecutionGuard`，并配出 OSS + Redis 的混合后端；
+- ☐ 为已有 MySQL / MongoDB / OSS 基础设施的团队各选对后端，并说出 Redis Cluster 场景必须显式选择 V1 key 布局的原因；
+- ☐ 面对使用 legacy MySQL / Redis / OSS 状态存储的存量代码，说出各自的迁移去向。
+
+## 参考速查
+
+本节收拢本章各节引用过的参数与集合配置全表，供实施时查阅；正文主线中的最小路径不依赖本节。
+
+### legacy MySQL 构造参数
+
+| 构造参数 / 方法 | 说明 |
+| --- | --- |
+| `dataSource` | 必填。建议用 HikariCP / Druid 等连接池 |
+| `databaseName` | 默认 `agentscope` |
+| `tableName` | 默认 `agentscope_sessions` |
+| `createIfNotExist` | `true` 时自动 `CREATE DATABASE` + `CREATE TABLE` |
+
+> `truncateAllSessions()` 使用 `TRUNCATE TABLE`，需要 DROP 权限；DDL 不可回滚，仅用于测试或运维清理。
+
+### legacy Redis builder 参数
+
+| 方法 | 说明 |
+| --- | --- |
+| `jedisClient(UnifiedJedis)` | Jedis 单机/集群/哨兵任意一种 |
+| `lettuceClient(RedisClient)` | Lettuce 单机/Sentinel |
+| `lettuceClusterClient(RedisClusterClient)` | Lettuce 集群 |
+| `redissonClient(RedissonClient)` | Redisson 任意部署模式 |
+| `clientAdapter(RedisClientAdapter)` | 自定义适配器 |
+| `keyPrefix(String)` | 默认 `agentscope:session:` |
+
+> 上述客户端方法互斥，只设置一个。
+
+### legacy OSS builder 参数
+
+| 方法 | 说明 |
+| --- | --- |
+| `ossClient(OSS)` | 必填。阿里云 OSS 客户端 |
+| `bucketName(String)` | 必填。OSS Bucket 名称 |
+| `keyPrefix(String)` | 默认 `agentscope/state/` |
+
+### MongoDB 集合与 TTL
+
+| 集合 | 用途 | TTL | 默认名称 |
+|------|------|-----|---------|
+| 会话 | Agent 状态存储 | `_updated_at` 30 天 | `agentscope_sessions` |
+| 基础存储 | 工作区 KV | — | `agentscope_base` |
+| 快照 | 沙箱 tar 归档 | `createdAt` 30 天 | `agentscope_snapshots` |
+| 沙箱锁 | 分布式锁 | `expiresAt` 即时 | `agentscope_sandbox_locks` |

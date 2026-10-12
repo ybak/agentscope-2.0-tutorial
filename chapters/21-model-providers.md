@@ -29,6 +29,8 @@ source: integration/model/index.md, integration/model/openai.md, integration/mod
 
 表中每家提供商的接入细节见本章后续各节。其中 DeepSeek、GLM、Kimi、MiniMax 复用 OpenAI 扩展模块（`agentscope-extensions-model-openai`），依赖与 OpenAI 一节相同，专属差异见各自小节。
 
+如果还拿不准选哪家，一句话导航：接 OpenAI 或 DeepSeek、GLM、Kimi、MiniMax 这类遵循 OpenAI API 载荷格式的兼容服务，都用 OpenAI 扩展；要用 OpenAI 官方 Responses API 与其服务端内置工具（`web_search`、`code_interpreter` 等），选 OpenAI Official；阿里云 Qwen 走 DashScope（支持 `qwen*` 短名）；Google 模型用 Gemini（Gemini API 或 Vertex AI 路径均可）；Claude 及需要 Bearer Token 的兼容网关用 Anthropic；本地开发、私有化部署和离线模型服务用 Ollama。
+
 ## 通用接入流程
 
 所有提供商的接入路径完全一致：
@@ -307,15 +309,7 @@ DashScopeChatModel model = DashScopeChatModel.builder()
 
 ### Maven 依赖
 
-与 OpenAI 一节相同，复用 OpenAI 模型扩展模块：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-openai</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
+与 OpenAI 一节相同，复用 OpenAI 模型扩展模块，依赖 XML 见"OpenAI"一节的"Maven 依赖"，不再逐家重复给出。
 
 ### 获取凭据
 
@@ -370,15 +364,7 @@ DeepSeek 稳定端点默认不使用工具 schema 的 `strict` 字段，因此�
 
 ### Maven 依赖
 
-与 OpenAI 一节相同，复用 OpenAI 模型扩展模块：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-openai</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
+与 OpenAI 一节相同，复用 OpenAI 模型扩展模块，依赖 XML 见"OpenAI"一节的"Maven 依赖"，不再逐家重复给出。
 
 ### 获取凭据
 
@@ -444,15 +430,7 @@ GLM 只接受 `tool_choice=auto`。强制工具选择会降级为 `auto`；`Tool
 
 ### Maven 依赖
 
-与 OpenAI 一节相同，复用 OpenAI 模型扩展模块：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-openai</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
+与 OpenAI 一节相同，复用 OpenAI 模型扩展模块，依赖 XML 见"OpenAI"一节的"Maven 依赖"，不再逐家重复给出。
 
 ### 获取凭据
 
@@ -520,15 +498,7 @@ Kimi formatter 会把 OpenAI 风格请求适配为 Kimi chat-completions API 支
 
 ### Maven 依赖
 
-与 OpenAI 一节相同，复用 OpenAI 模型扩展模块：
-
-```xml
-<dependency>
-    <groupId>io.agentscope</groupId>
-    <artifactId>agentscope-extensions-model-openai</artifactId>
-    <version>${agentscope.version}</version>
-</dependency>
-```
+与 OpenAI 一节相同，复用 OpenAI 模型扩展模块，依赖 XML 见"OpenAI"一节的"Maven 依赖"，不再逐家重复给出。
 
 ### 获取凭据
 
@@ -835,3 +805,20 @@ agentscope:
     model-name: llama3
     # base-url: http://localhost:11434
 ```
+
+## 本章小结
+
+作为选型参考章，本章的回顾方式是"按任务索引"而不是复述叙事。接入任何一家的路径都相同，就是"通用接入流程"的四步：引入扩展模块 Maven 依赖 → 设置该提供商的环境变量 → 用 `provider:<model>` 字符串 id 选择模型（底层 `ModelRegistry.resolve` 解析）→ 需要自定义 endpoint、formatter、transport 或生成参数时改用显式 builder；差别只在各家的凭据入口、id 前缀与 formatter 兼容性行为。
+
+| 你的任务 | 去哪里看 |
+| --- | --- |
+| 第一次接入，尽快跑通一家 | "通用接入流程" + 该家的"配置示例" |
+| 用 OpenAI 及其兼容栈（DeepSeek / GLM / Kimi / MiniMax） | "OpenAI"一节拿依赖；四家各看"获取凭据 / 配置示例 / 专属说明" |
+| 用 OpenAI Responses API 的服务端内置工具（`web_search`、`code_interpreter`、`image_generation`、`tool_search`） | "OpenAI Official"一节的"专属说明" |
+| 用阿里云 Qwen（`qwen*` 短名，endpoint type / thinking / search / encryption 专属配置） | "DashScope"一节 |
+| 用 Google Gemini（Gemini API 或 Vertex AI 路径） | "Gemini"一节 |
+| 用 Claude 或接入 Bearer Token 兼容网关 | "Anthropic"一节的"专属说明" |
+| 本地开发、私有化部署、离线模型服务 | "Ollama"一节 |
+| 排查请求被对端拒绝或字段被改写 | 该家的"兼容性说明"（formatter 对 `strict`、`tool_choice`、采样参数与结构化输出的处理） |
+
+接入排查先看三个检查点：扩展模块在不在 classpath、环境变量设没设、id 前缀对不对。formatter、credential 与 registry 的机制解释不在本章，统一见第 6 章（模型接入）。

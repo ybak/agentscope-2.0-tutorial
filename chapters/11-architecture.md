@@ -62,6 +62,8 @@ source: docs/harness/architecture.md
 
 ## 状态怎么流转
 
+能力入口齐了，最后一个工程问题是数据：这些能力运行中产生的状态放在哪、能活多久。
+
 状态分三层，框架自动在层之间搬数据。
 
 - **调用内状态** —— `AgentState`（对话上下文、权限规则、Plan Mode 状态、工具状态）加上 `RuntimeContext`（`sessionId`、`userId`、沙箱句柄、extra）。
@@ -85,6 +87,25 @@ source: docs/harness/architecture.md
 - 读写工作区用 `harnessAgent.getWorkspaceManager()`，它会按当前文件系统模式（本机 / 沙箱 / 远端）正确路由。直接 `java.nio.Files` 在沙箱或远端模式下会写错地方。
 
 middleware 六类扩展点的完整说明见第 9 章（中间件）。
+
+## 本章小结
+
+这一章是一张工程视角的全景图，走的是一条固定的检索路线：
+
+1. **调用方式**：`call` 拿回复接工作流、`streamEvents` 看实时进度、`agent.session(ctx)` 转后台排队与恢复——三种方式共用同一套模型、工具和中间件配置；
+2. **能力入口**：十余项内置能力汇成一张配置总览表，它就是第 12-20 章的检索目录，按业务需要逐项启用；
+3. **状态层次**：调用内状态随 `AgentState` 与 `RuntimeContext` 存在，跨调用状态从 Session Log 的 checkpoint 恢复，长期记忆落在 `MEMORY.md`——排查数据问题时先分清层，再到对应后端查；
+4. **扩展边界**：自定义行为用 `.middleware(...)` 插在内置链路之前，读写工作区必须走 `getWorkspaceManager()` 才能随文件系统模式正确路由。
+
+接下来按总览表进入具体能力：第 12 章从所有能力的公共落点——工作区与文件系统——开始。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出三种调用方式（`call` / `streamEvents` / `agent.session(ctx)`）各自适合的业务场景；
+- ☐ 在能力配置总览表中找到任意一项能力的配置入口与深入章节；
+- ☐ 把一个具体数据（对话上下文、checkpoint、`MEMORY.md`）归入调用内、跨调用、长期记忆三层之一；
+- ☐ 说出修改 AGENTS.md 或 MEMORY.md 后何时生效，以及为什么不需要重启；
+- ☐ 说明自定义 middleware 应插在哪里，以及为什么沙箱或远端模式下不能直接用 `java.nio.Files` 读写工作区。
 
 ## 相关文档
 

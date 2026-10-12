@@ -425,6 +425,27 @@ execute("python3 /workspace/skills/code-reviewer/scripts/run-checks.sh <目标�
 
 **自学习按顺序启用**：没人写新 skill 之前开 curator 没意义。先开 `enableSkillManageTool`，再加 promotion gate 让审核流程介入，最后用 curator 处理"老的不再用"。
 
+## 本章小结
+
+这一章沿一条复用路径展开：把能力写成 skill，让它从团队资产变成各 agent 随手可用的能力：
+
+1. **skill 的形态**：一个目录加一份 SKILL.md（YAML frontmatter 的 name + description，加给 agent 看的指令），可再带 `references/` 与 `scripts/`；
+2. **两类安装来源**：技能市场（Git / Nacos / MySQL / classpath，`skillRepository(...)` 统一接入，可重复调用）与工作区（`workspace/skills/` 共用、`<userId>/skills/` 按用户覆盖），同时生效；
+3. **同名冲突**：项目全局目录、市场、工作区共用、用户隔离四层从低到高，只在重名时被上层覆盖；
+4. **运行机制**：每轮推理合成 `<available_skills>` 块，agent 觉得相关才调 `load_skill_through_path` 拉详情；市场 skill 每轮推理前由 stager 物化到 `.skills-cache/`；
+5. **沙箱投影**：物化、投影、容器内执行三步让脚本可跑；读 SKILL.md 走内存或宿主文件系统，不需要沙箱；
+6. **自学习闭环**（可选）：`enableSkillManageTool` 起草、promotion gate 审核、curator 后台整理，三个阶段独立可开，按顺序启用。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 写出一份带 name + description 的 SKILL.md，并解释 description 为什么决定 agent 用不用这个 skill；
+- ☐ 用 `GitSkillRepository` 把团队 skill 仓库接进 agent；
+- ☐ 把项目特有约定放到 `workspace/skills/`，并给单个用户覆盖一份同名版本；
+- ☐ 说出四层同名优先级从低到高的顺序，判断重名时 agent 实际拿到哪一份；
+- ☐ 解释市场 skill 的文件怎么落到 `.skills-cache/`、又怎么投影进沙箱容器；
+- ☐ 打开自学习闭环的前两步，说出 curator 标 stale 与归档的两个天数阈值；
+- ☐ （选做）用 `ClasspathSkillRepository` 让 skill 跟 JAR 一起发布。
+
 ## 相关文档
 
 - 第 12 章（工作区与文件系统）—— `skills/` 目录的整体布局、多租户隔离与按用户切目录

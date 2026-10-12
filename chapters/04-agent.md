@@ -173,19 +173,7 @@ ReActAgent.Builder agentBuilder =
 
 > **提示**：`ModelRegistry` 的字符串形式（`<provider>:<model>`）需要对应的模型扩展模块在 classpath 中。它支持 `dashscope` / `openai` / `openai-official` / `deepseek` / `anthropic` / `gemini` / `ollama`，会自动从环境变量读取 API key（`DASHSCOPE_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` / `GEMINI_API_KEY`）。需要在长期运行场景下同时获得工作区、会话持久化、记忆压缩、子 agent 等能力，请改用 `HarnessAgent`（见第 11 章）——它对 `ReActAgent` 做了一层薄包装，builder 接口大体一致。
 
-### 参数说明
-
-| 参数 | 类型 | 默认值 | 描述 |
-|------|------|--------|------|
-| `name` | `String` | 必填 | 智能体标识符，用于消息和日志 |
-| `sysPrompt` | `String` | 必填 | 智能体的基础系统提示词 |
-| `model` | `Model` | 必填 | 用于推理的大语言模型（继承自 `ChatModelBase`） |
-| `toolkit` | `Toolkit` | `new Toolkit()` | 管理工具、MCP 客户端、技能和工具组 |
-| `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | 应用于 agent / reasoning / acting / model call / system prompt 钩子 |
-| `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
-| `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
-| `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见第 10 章（权限系统与人工介入） |
-| `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数 |
+上面的三个示例只用到最常用的四个参数：`name`、`sysPrompt`、`model` 与 `toolkit`。builder 上还有 `middlewares`、`stateStore`、`defaultSessionId`、`permissionContext`、`maxIters` 等参数，完整清单连同类型与默认值统一收在本章末的参考速查；正文各节会在第一次用到某个参数时说明它——`stateStore` 见本章的配置状态持久化一节，`permissionContext` 参见第 10 章（权限系统与人工介入）。
 
 ## 运行智能体
 
@@ -254,7 +242,7 @@ agent.observe(otherAgentMsg).block();
 
 ## 多用户 / 多会话并发
 
-共享 Builder 的不同请求各自创建实例和 `RuntimeContext`。下面的 WebFlux handler 表达式使用前面配置好的 `agentBuilder`：
+前面的示例都是单用户单次调用；真实服务要同时面对多个用户、多个会话。共享 Builder 的不同请求各自创建实例和 `RuntimeContext`。下面的 WebFlux handler 表达式使用前面配置好的 `agentBuilder`：
 
 ```java
 import reactor.core.publisher.Mono;
@@ -671,6 +659,50 @@ ReActAgent.builder()
 |---|---|
 | `enableMetaTool(true)` | 注册 `list_tools` / `activate_group` 元工具，让 LLM 能发现和切换工具组 |
 | `enableTaskList()` | 注册任务列表工具，让 LLM 拆解复杂任务为步骤并逐步完成 |
+
+## 本章小结
+
+这一章围绕开头的三个决定，走完了一条配置与运行 Agent 的完整路线：
+
+1. **选类**：要长期运行、记住用户的助手从 `HarnessAgent` 开始；一次性的回复、抽取或工作流步骤，直接用 `ReActAgent` 组合基础能力；
+2. **选入口**：要最终回复用 `call`，要在当前请求里逐步展示进度用 `streamEvents`，只注入上下文不触发推理用 `observe`；后台持续执行与中断恢复交给 `AgentSession`（第 19 章）；
+3. **管实例**：共享 Builder、每请求 `builder.build()` 创建新实例、用完关闭；共享实例依赖无状态执行引擎，同一会话由执行门串行化；
+4. **跑循环**：ReAct 主循环串起推理与行动，权限检查、人机交互、状态持久化都围绕这一循环工作；
+5. **传上下文**：`RuntimeContext` 承载每次调用的身份与瞬态数据，`AgentState` 才是持久化状态，由 `stateStore` 按 `(userId, sessionId)` 槽位读写；
+6. **处理暂停**：用户确认与外部执行都会让智能体暂停并发出事件，把结果喂给下一次 `call` 即可恢复；
+7. **拿结果**：需要程序化消费输出时，用结构化输出让智能体按指定 JSON Schema 返回。
+
+下一步建议把模型与工具拆开看：第 6 章讲 `.model(...)` 背后的模型接入与切换供应商，第 7 章讲 Toolkit 里的工具怎么写、怎么被模型调用。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说出 `ReActAgent` 与 `HarnessAgent` 的分工，并为你的场景选定其中一个；
+- ☐ 用共享 Builder 配置 Agent，并在每次请求中创建、关闭实例；
+- ☐ 分别用 `call` 与 `streamEvents` 发起调用，解释两者返回类型的差别；
+- ☐ 解释 `RuntimeContext` 与 `AgentState` 的区别，说明哪些数据该放哪一边；
+- ☐ 配置 `stateStore` 后，用同一 `(userId, sessionId)` 恢复上一次调用的状态；
+- ☐ 完成一次带用户确认的工具调用：接收 `RequireUserConfirmEvent`、回传 `ConfirmResult`、恢复执行；
+- ☐ 用 `call(msgs, Schema.class)` 拿到强类型的结构化输出。
+
+## 参考速查
+
+本节收拢正文中引用过的查阅性内容，供配置时对照；理解主线不依赖本节。
+
+### ReActAgent.Builder 参数
+
+| 参数 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `name` | `String` | 必填 | 智能体标识符，用于消息和日志 |
+| `sysPrompt` | `String` | 必填 | 智能体的基础系统提示词 |
+| `model` | `Model` | 必填 | 用于推理的大语言模型（继承自 `ChatModelBase`） |
+| `toolkit` | `Toolkit` | `new Toolkit()` | 管理工具、MCP 客户端、技能和工具组 |
+| `middlewares` | `List<? extends MiddlewareBase>` | `List.of()` | 应用于 agent / reasoning / acting / model call / system prompt 钩子 |
+| `stateStore` | `AgentStateStore` | `null`（不持久化） | 配置后 agent 在每次 `call` 后自动加载/保存 `AgentState`，按该次调用 `RuntimeContext` 的 `(userId, sessionId)` 寻址 |
+| `defaultSessionId` | `String` | agent `name` | 当某次调用的 `RuntimeContext` 没带 `sessionId` 时的兜底值 |
+| `permissionContext` | `PermissionContextState` | 默认 `DEFAULT` 模式 | 工具执行的细粒度规则，参见第 10 章（权限系统与人工介入） |
+| `maxIters` | `int` | `10` | ReAct 主循环最大迭代次数 |
+
+`stateStore` 的配置示例见本章的配置状态持久化（AgentStateStore）一节；`permissionContext` 对应的判定规则见第 10 章。
 
 ## 延伸阅读
 
