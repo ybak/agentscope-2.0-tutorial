@@ -8,6 +8,21 @@ source: docs/building-blocks/permission-system.md
 
 > 本章导读：当你的 Agent 要执行有真实后果的操作——删文件、跑命令、发线上请求——就需要一道闸门来回答“这个操作准不准做”。本章讲解做这道判定的权限系统：拦截每一次工具调用，按 Rules（针对具体工具的显式规则）、Mode（全局默认策略）与 Built-in Checks（工具自带的运行时检查）三层决策给出结论；再讲五种 PermissionMode 的适用场景、建议规则与危险路径保护，以及结合 HITL 的确认恢复流程和常见部署配方。读完本章，你可以为 Agent 划定安全、可控的行动边界。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>Agent 要做有真实后果的操作<br/>删文件 · 跑命令 · 发线上请求"] --> B["权限系统<br/>拦截每次工具调用做判定"]
+    B --> C["三层决策<br/>Rules · Mode · Built-in Checks"]
+    B --> D["五种 PermissionMode<br/>适用场景"]
+    B --> E["建议规则与危险路径保护"]
+    B --> F["结合 HITL<br/>确认恢复与部署配方"]
+    C --> G["收益<br/>为 Agent 划定<br/>安全可控的行动边界"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 你什么时候需要它
 
 只要 Agent 的工具会产生真实副作用，这层闸门就值得配。几个典型处境：

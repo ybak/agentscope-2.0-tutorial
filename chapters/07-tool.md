@@ -8,6 +8,21 @@ source: docs/building-blocks/tool.md
 
 > 本章导读：当你的 Agent 不再只是聊天——要查订单、写工单、跑脚本、读文件，也就是要操作真实业务系统时，给它的每一项能力都要在本章登记。本章讲解工具体系的三个概念——Tool（单个能力）、Toolkit（注册并分发工具的容器）与 Tool Group（成组启停的工具集合）；三者的完整定义见下一节。本章覆盖 `@Tool` 注解（把一个 Java 方法声明为模型可调用的工具）与 `ToolBase`（显式建模工具的抽象基类）两种自定义方式、外部执行工具（由人工或外部系统代为执行）、Context 注入、MCP 接入、Skill 热加载与 meta tool 自我管理。读完本章，你可以系统地为 Agent 扩展安全、可控的行动能力。`ToolBase` 的完整方法表与 `@Tool` 的完整属性表收拢在章末参考速查。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>Agent 要操作真实业务系统<br/>查订单 · 写工单 · 跑脚本"] --> B["工具体系<br/>Tool · Toolkit · Tool Group"]
+    B --> C["Java Tool<br/>注解式与 ToolBase 两种自定义方式"]
+    B --> D["接收 Context<br/>拿到本次调用信息"]
+    B --> E["MCP<br/>接入现成工具生态"]
+    B --> F["Skill 热加载<br/>meta tool 自我管理"]
+    C --> G["收益<br/>为 Agent 扩展<br/>安全可控的行动能力"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 你什么时候需要它
 
 - **让 Agent 摸到你的业务系统。** 订单查询、工单更新、调用内部 API——写成一个 `@Tool` 方法注册进 Toolkit，模型就能在推理中决定何时调用。第 4 章循环里“执行工具”的那一步，落到的就是本章的构件。

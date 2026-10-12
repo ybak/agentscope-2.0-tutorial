@@ -8,6 +8,19 @@ source: docs/building-blocks/agent.md, docs/harness/architecture.md
 
 > 本章导读：当你读完前两章、能跑通一个 `HarnessAgent`，却仍分不清 ReActAgent、HarnessAgent、Service Managed Agent 谁包含谁、什么情况下该用哪一层时，本章把全书概念画成一张三层地图。读完它，你再进入任何一章细节之前，都能先知道那个主题在地图上的位置。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>分不清三层谁包含谁<br/>什么情况该用哪一层"] --> B["核心概念地图<br/>同一内核 · 逐层装配"]
+    B --> C["ReActAgent<br/>推理-工具循环与基础能力"]
+    B --> D["HarnessAgent<br/>同一循环上组合工程能力"]
+    B --> E["能力叠加<br/>到 Service Managed Agent"]
+    C --> G["收益<br/>翻开任何一章细节之前<br/>先知道它在地图上的位置"]
+    D --> G
+    E --> G
+```
+
+*本章导览图*
+
 AgentScope Java 2.0 的 API 面并不小：ReActAgent、HarnessAgent、Managed Agent、工作区、会话日志、Session API……初学时最容易迷失的不是某个具体用法，而是分不清这些概念谁包含谁、各自解决什么问题。
 
 AgentScope 的能力是逐层叠加的。最底层是 ReActAgent：它实现“模型推理 → 执行工具 → 观察结果”的 ReAct 循环，并把权限、人机交互、中间件等基础能力挂在这一循环上。中间层是 HarnessAgent：它在同一个循环之上内置工作区、长期记忆、上下文压缩、技能、子 Agent、沙箱与会话恢复等工程能力，让长任务应用不必逐项自行装配。最上层是 AgentScope Service 平台上的 Managed Agent：它以 HarnessAgent 为内核，由平台统一管理运行时，业务应用通过 API 提交任务、接收事件并获取交付物。

@@ -8,6 +8,21 @@ source: docs/building-blocks/agent.md
 
 > 本章导读：当你把第一篇的示例换成真实业务，马上要做三个决定——直接用底层的 `ReActAgent`，还是用封装好的 `HarnessAgent`？一次请求用哪种方式发起？实例每次新建还是共享？本章就围绕这些决定展开：讲解 `Agent` 统一接口、两者的分工、实例生命周期与共享 Builder 实践、`call` / `streamEvents` / `observe`（只记录消息、不触发推理）三种调用方式、`RuntimeContext` 的用途、人机交互的暂停与恢复、状态持久化与结构化输出。读完本章，你能为业务场景选对调用入口，并独立配置、运行和管理一个智能体。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>把示例换成真实业务<br/>要做三个决定"] --> B["Agent 与 ReAct 循环<br/>统一接口与三种调用方式"]
+    B --> C["选类与调用方式<br/>ReActAgent 还是 HarnessAgent"]
+    B --> D["实例生命周期<br/>共享 Builder · 每请求新建"]
+    B --> E["RuntimeContext<br/>每次调用的身份与瞬态数据"]
+    B --> F["人机交互<br/>暂停与恢复"]
+    C --> G["收益<br/>选对调用入口<br/>独立配置运行和管理智能体"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 你什么时候需要它
 
 把示例换成真实业务时，上面的三个决定正好对应三种典型处境。

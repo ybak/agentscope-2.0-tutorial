@@ -8,6 +8,21 @@ source: docs/building-blocks/model.md
 
 > 本章导读：当你要把 Agent 接到公司实际在用的模型上——也许是通义千问或 OpenAI，也许是内网 Ollama、OpenAI 兼容的自建网关，而且以后还可能切换供应商——本章就是动手的地方。本章先讲模型层的两层结构（鉴权凭证与模型实现分离）和各提供商扩展模块，再讲字符串 model id 与显式 builder 两种创建方式、`ModelRegistry` 的解析与缓存策略、Formatter、结构化输出的路径选择，最后走一遍自定义模型提供商的步骤。读完本章，你可以把主流 LLM 接入 Agent，并按需深度定制。各 starter 的 customizer 类型与各提供商的 formatter 类名等查阅内容，收拢在章末参考速查。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>把 Agent 接到公司在用的模型<br/>以后还能切换供应商"] --> B["模型接入<br/>两层结构与提供商扩展模块"]
+    B --> C["两层结构<br/>鉴权凭证与模型实现分离"]
+    B --> D["两种创建方式<br/>字符串 model id · 显式 builder"]
+    B --> E["ModelRegistry<br/>解析与缓存策略"]
+    B --> F["自定义模型提供商"]
+    C --> G["收益<br/>把主流 LLM 接入 Agent<br/>并按需深度定制"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 你什么时候需要它
 
 - **接一个新供应商，先走最小路径。** 引入对应扩展模块、设置该提供商的标准环境变量，把 `dashscope:qwen-plus` 这样的字符串 id 交给第 4 章的 `.model(...)` 就能跑通。Spring Boot 应用则优先使用对应提供商的 starter，用 `application.yml` 完成配置。

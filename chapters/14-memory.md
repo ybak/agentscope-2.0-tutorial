@@ -8,6 +8,21 @@ source: docs/harness/memory.md
 
 > 本章导读：当用户开启第二通对话，希望 Agent 还记得上一轮聊定的偏好——"上次说好用 PostgreSQL""别再发邮件通知"——靠的就是本章的长期记忆。本章讲解 Harness 的双层长期记忆——日流水账与 `MEMORY.md` 的分工、三处独立 LLM 调用（Flush：抽取事实进日流水账；Consolidation：合并成 `MEMORY.md`；Compaction summary：把对话压缩成摘要）各自的 prompt 与触发时机、压缩与卸载的调整参数、`MemoryConfig` 的节流与定制，以及 agent 自己使用的记忆工具与后台维护。读完本章，你可以让 agent"记住跨会话的事实"，并控制这套管线带来的 token 成本。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>第二通对话还记得<br/>上轮聊定的偏好"] --> B["双层长期记忆<br/>日流水账与 MEMORY.md 的分工"]
+    B --> C["三处 LLM 调用<br/>各自 prompt 与触发时机"]
+    B --> D["调整上下文压缩<br/>早期对话整理成摘要"]
+    B --> E["MemoryConfig 定制<br/>节流 · 小模型 · 改 prompt"]
+    B --> F["大工具结果卸载<br/>落盘并留路径"]
+    C --> G["收益<br/>agent 记住跨会话的事实<br/>控制管线的 token 成本"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 你什么时候需要它
 
 - **第二通对话还要记得用户偏好。** 上次会话里用户明确的选择（用什么数据库、什么回复风格、别再推荐什么），希望在下次 `call()` 自动可见——Flush 把这些事实抽进 `memory/`，后台合并进 `MEMORY.md`，每次调用作为参考资料注入模型请求。
