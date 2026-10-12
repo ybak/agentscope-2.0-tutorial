@@ -6,7 +6,18 @@ source: docs/building-blocks/permission-system.md
 
 # 第 10 章 权限系统与人工介入
 
-> 本章导读：讲解拦截每次工具调用的权限系统——Rules、Mode 与 Built-in Checks 三层决策、五种 PermissionMode 的适用场景、建议规则与危险路径保护，以及结合 HITL 的确认恢复流程和常见部署配方。读完本章，你可以为 Agent 划定安全、可控的行动边界。
+> 本章导读：当你的 Agent 要执行有真实后果的操作——删文件、跑命令、发线上请求——就需要一道闸门来回答“这个操作准不准做”。本章讲解做这道判定的权限系统：拦截每一次工具调用，按 Rules（针对具体工具的显式规则）、Mode（全局默认策略）与 Built-in Checks（工具自带的运行时检查）三层决策给出结论；再讲五种 PermissionMode 的适用场景、建议规则与危险路径保护，以及结合 HITL 的确认恢复流程和常见部署配方。读完本章，你可以为 Agent 划定安全、可控的行动边界。
+
+## 你什么时候需要它
+
+只要 Agent 的工具会产生真实副作用，这层闸门就值得配。几个典型处境：
+
+- **人在场的产品形态。** 写工作目录内的文件可以自动放行，敏感操作必须问一句——`DEFAULT` / `ACCEPT_EDITS` 两种模式加上若干规则就能表达“哪些操作要人审批”。
+- **只读调研。** 让 Agent 只查不改：`EXPLORE` 模式放行读、拒绝一切写与命令，适合代码探索与规划。
+- **无人值守。** CI、定时任务里没人点确认：`DONT_ASK` 把所有询问静默降级为拒绝，不会阻塞等待。
+- **完全可信的沙箱。** `BYPASS` 放行一切，但 deny 规则与危险路径检查仍然不可绕过——最后一道底线始终在。
+
+与已学内容的关系和边界：第 7 章定义了工具“能做什么”，本章决定“准不准做”——第 7 章每个工具自带的 `checkPermissions` 就是本章的第三层检查。人工审批的界面交互（暂停、恢复）在第 4 章“人机交互”一节演示过，本章补上判定侧的完整规则；第 9 章的 middleware 可以观察“全部工具被拒绝”事件来决定是否停止 Agent，但判定本身不归它管。
 
 ## 概述
 
@@ -86,6 +97,8 @@ flowchart TD
 
 ## Permission Mode
 
+三层决策先从最上层配起：Mode 决定所有未命中规则的调用的默认行为。
+
 `PermissionMode` 枚举（`io.agentscope.core.permission.PermissionMode`）支持以下模式，分别适配不同的部署场景：
 
 | Mode | 行为 | 适用场景 |
@@ -136,6 +149,8 @@ PermissionContextState permCtx =
 ```
 
 ## Permission Rule
+
+Mode 管默认值，规则管例外。
 
 `PermissionRule`（record）把某个 tool 与具体的调用模式映射到三种行为之一：`ALLOW`、`DENY`、`ASK`。
 
@@ -197,6 +212,8 @@ ConfirmResult result =
 
 ## Built-in Checks
 
+前两层来自配置，第三层长在工具自己身上。
+
 每个 tool 都实现了一个 `checkPermissions(toolInput, context)` 方法（位于 `ToolBase`），在运行时基于真实调用入参执行检查，返回 `Mono<PermissionDecision>`。这些检查不可绕过 —— 无论 mode 或 rules 是什么，它们都生效。
 
 `PermissionDecision` 提供四个静态构造方法：`allow(message)` / `deny(message)` / `ask(message)` / `passthrough(message)`。返回 `PASSTHROUGH` 表示「我不强加判断，交给引擎按 rules / mode 评估」。
@@ -250,6 +267,8 @@ public class MyTool extends ToolBase {
 | 目录 | `.git/`、`.ssh/`、`.aws/`、`.kube/` |
 
 ## 结合 HITL
+
+判定给出 ASK 之后，接下来是人与 Agent 之间的交互流程。
 
 当权限引擎对某个工具调用返回 ASK 决策时，agent 不会直接执行，而是暂停并返回一个 `GenerateReason.PERMISSION_ASKING` 的响应。返回的 `Msg` 中包含处于 `ASKING` 状态的 `ToolUseBlock`，调用方据此向用户展示待确认的操作，收集决策后通过 `ConfirmResult` 恢复 agent。
 
@@ -422,6 +441,8 @@ PermissionContextState headless =
 完整可运行示例：`agentscope-examples/documentation/.../hitl/PermissionHITLExample.java`。
 
 ## 常见配方
+
+最后把前面的组件拼成常见部署形态的现成配置。
 
 下面的示例展示了如何为常见部署场景配置 `permissionContext`。每个配方把一种 mode 与一组规则结合，匹配特定的使用场景。
 

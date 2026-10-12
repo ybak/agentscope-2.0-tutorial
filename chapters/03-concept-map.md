@@ -18,7 +18,7 @@ AgentScope 的能力是逐层叠加的。最底层是 ReActAgent：它实现“�
 
 这张地图解决的是“选型与定位”问题。三个典型时刻你会用到它：
 
-**第一次决定“用哪一层”的时候。** 例如要给公司做一个能查工单、能接入业务流程的助手：想在应用代码里深度定制，就从 `HarnessAgent` 入手；只想由平台代管、通过 API 调用，就直接在 Service 上配置 Managed Agent；两者也不必二选一，已有的 Harness 应用还能作为 External Agent 接入 Service。框架本身的推荐是：业务 Agent 开发优先 `HarnessAgent`，需要自行组装运行层时再用 `ReActAgent`。
+**第一次决定“用哪一层”的时候。** 例如要给公司做一个能查工单、能接入业务流程的助手：想在应用代码里深度定制，就从 `HarnessAgent` 入手；只想由平台代管、通过 API 调用，就直接在 Service 上配置 Managed Agent；两者也不必二选一，已有的 Harness 应用还能作为 External Agent 接入 Service。框架本身的推荐是：业务 Agent 开发优先 `HarnessAgent`，需要自行组合基础能力时再用 `ReActAgent`。
 
 **读后面章节迷路的时候。** 后面的章节各自深入某一层的某个能力，随时可以回到本章，确认当前主题属于哪一层、与哪些能力平级。
 

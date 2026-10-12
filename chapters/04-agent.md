@@ -6,13 +6,25 @@ source: docs/building-blocks/agent.md
 
 # 第 4 章 Agent 与 ReAct 循环
 
-> 本章导读：围绕 `Agent` 统一接口讲解 `ReActAgent` 与 `HarnessAgent` 的分工、实例生命周期与共享 Builder 实践、`call` / `streamEvents` / `observe` 三种调用方式、`RuntimeContext` 的用途、人机交互的暂停与恢复、状态持久化与结构化输出。读完本章，你能为业务场景选对调用入口，并独立配置、运行和管理一个智能体。
+> 本章导读：当你把第一篇的示例换成真实业务，马上要做三个决定——直接用底层的 `ReActAgent`，还是用封装好的 `HarnessAgent`？一次请求用哪种方式发起？实例每次新建还是共享？本章就围绕这些决定展开：讲解 `Agent` 统一接口、两者的分工、实例生命周期与共享 Builder 实践、`call` / `streamEvents` / `observe`（只记录消息、不触发推理）三种调用方式、`RuntimeContext` 的用途、人机交互的暂停与恢复、状态持久化与结构化输出。读完本章，你能为业务场景选对调用入口，并独立配置、运行和管理一个智能体。
+
+## 你什么时候需要它
+
+把示例换成真实业务时，上面的三个决定正好对应三种典型处境。
+
+**要长期运行、能记住用户的助手，从 `HarnessAgent` 开始。** 客服助手、个人助理、运维值班机器人这类应用，需要工作区、会话持久化、记忆压缩、子 Agent 等运行能力——这些 `HarnessAgent` 已经内置，你只做配置。反过来，如果只是获取一次回复、做一次结构化抽取、执行工作流中的一个步骤，直接用 `ReActAgent` 自行组合基础能力就够了。
+
+**按“用户要不要看过程”选发起方式。** 要最终回复（提取数据、工作流步骤），用 `call`；要在当前请求里逐步展示文本与工具进度（聊天界面、命令行进度），用 `streamEvents`；要“关闭页面后继续执行、忙时排队、运行中补充要求、中断后接着做”，用 HarnessAgent 的会话操作（`AgentSession`，见第 19 章）。
+
+**实例管理先跟着第 2 章的习惯走。** 共享 Builder、每次请求构建新实例、用完关闭；本章“实例生命周期”一节给出完整规则与共享实例的例外。
+
+与已学内容的关系：第 2 章你已经用 `HarnessAgent` 跑通 `call` 与 `streamEvents`，本章把第 3 章地图上“基座层”的这块拆开讲透，也会第一次用到 Toolkit（注册并向模型暴露工具的容器，第 7 章展开）——配置 Agent 时模型与工具先直接使用，两者的细节分别在第 6、7 章。下面从 `Agent` 统一接口看起。
 
 ## 概述
 
 AgentScope 通过 `Agent` 接口统一智能体的调用方式，提供底层的 `ReActAgent` 和在其基础上封装的 `HarnessAgent`。**业务 Agent 开发推荐优先使用 `HarnessAgent`**，也可以直接使用 `ReActAgent`，自行组合应用所需的能力。
 
-**ReAct 是 AgentScope Harness 的执行基础。** `ReActAgent` 负责“模型推理 → 执行工具 → 将结果交回模型”的循环，直到返回结果或等待外部交互。权限检查、人机交互、上下文与状态管理、中间件、实时事件等基础能力都围绕这一循环工作。
+**ReAct 是 AgentScope Harness 的执行基础。** `ReActAgent` 负责“模型推理 → 执行工具 → 将结果交回模型”的循环，直到返回结果或等待外部交互。权限检查（Permission，工具执行前判定允许、拒绝还是询问用户）、人机交互、上下文与状态管理、中间件、实时事件等基础能力都围绕这一循环工作。
 
 `HarnessAgent` 内部封装 `ReActAgent`，沿用同一套推理与执行循环，并进一步内置工作区、长期记忆、上下文压缩、技能、子 Agent、沙箱以及会话日志与恢复等能力。因此，使用 Harness 后，**整体的推理、执行循环本质上没有变化**；更多运行能力由 Harness 统一装配，业务开发者可以直接配置使用。
 
@@ -75,19 +87,21 @@ flowchart TD
 
 ## 实例生命周期
 
+选好了 Agent 与调用方式，下一个工程问题是：实例每次新建还是共享、何时关闭。
+
 **推荐共享配置 Builder，每次请求 `builder.build()` 创建新的 Agent，执行结束后关闭。** Builder 在应用启动时配置完成，请求期间只负责构建；用户、会话、请求参数通过新建的 `RuntimeContext` 传入，不修改共享 Builder。
 
 同步调用用 `try-with-resources` 包住执行和等待；响应式调用用 `Mono.using` / `Flux.using`，让实例在订阅结束、报错或取消时释放。模型客户端、连接池、存储、技能仓库等依赖可以由应用统一管理，应用退出时再关闭；共享工具与中间件应保证线程安全，不能把当前用户或上下文保存在成员字段里。
 
 新实例与新会话是两个概念。Harness 使用稳定的 `agentId`、`userId`、`sessionId` 和相同日志后端恢复已提交状态；普通 ReActAgent 若未配置会话日志或 `stateStore`，仅保留在旧实例内的上下文不会带到新实例。
 
-**也可以共享同一个 Agent 实例。** Agent 采用无状态执行引擎设计，会话状态按身份管理；共享实例由应用在退出时关闭。同一实例内，相同用户与会话的直接调用由执行门串行化，不同会话可并行。实例仍有缓存、执行门和后台资源，因此这里的“无状态”不表示没有生命周期。后续示例统一采用每请求创建的推荐方式。
+**也可以共享同一个 Agent 实例。** Agent 采用无状态执行引擎设计，会话状态按身份管理；共享实例由应用在退出时关闭。同一实例内，相同用户与会话的直接调用由执行门（把同一会话的调用排成串行的机制）串行化，不同会话可并行。实例仍有缓存、执行门和后台资源，因此这里的“无状态”不表示没有生命周期。后续示例统一采用每请求创建的推荐方式。
 
 后台 `AgentSession`、Channel 或托管运行时的生命周期由其管理器持有，不能套用“提交请求返回就关闭”的方式。中断一次直接调用也必须定位到正在执行的实例；临时构建另一个实例不能中断旧实例中的请求。
 
 ## 配置智能体
 
-先通过 `ReActAgent.builder()` 定义共享配置，再在每次请求中调用 `agentBuilder.build()`。`.model(...)` 既接受 `ModelRegistry` 解析的字符串 id（最常用、自动读取 env），也接受手动 builder 构造的 `Model` 实例（需要精细控制超时、自定义 endpoint 时用）。
+先通过 `ReActAgent.builder()` 定义共享配置，再在每次请求中调用 `agentBuilder.build()`。`.model(...)` 既接受 `ModelRegistry` 解析的字符串 id（最常用、自动读取 env），也接受手动 builder 构造的 `Model` 实例（需要精细控制超时、自定义 endpoint 时用）。`ModelRegistry` 是模型注册中心，把 `<provider>:<model>` 形式的字符串解析成模型实例；第一种写法依赖它，第二种完全绕开。
 
 **字符串 model id（推荐）**
 
@@ -175,6 +189,8 @@ ReActAgent.Builder agentBuilder =
 
 ## 运行智能体
 
+配置齐了模型与工具，下面把 Agent 真正跑起来。
+
 下文中的 `agentBuilder` 是应用配置好的共享 Builder；未展示完整作用域的片段中，`agent` 指当前请求内创建、执行结束后关闭的实例。
 
 `call` 和 `streamEvents` 都接受相同的输入消息列表，驱动相同的推理-行动循环，区别在于结果的交付方式。
@@ -259,7 +275,9 @@ Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/Str
 
 ## 会话应用的执行控制
 
-当聊天产品需要关闭页面后继续执行、保存排队任务或统一处理恢复和待办时，使用 `AgentSession` 管理这些操作。普通问答、流式展示或自行处理 HITL 的应用可以继续使用直接调用。
+以上都是“请求内完成”的直接调用；产品形态再往前一步，就需要会话级的执行控制。
+
+当聊天产品需要关闭页面后继续执行、保存排队任务或统一处理恢复和待办时，使用 `AgentSession` 管理这些操作。普通问答、流式展示或自行处理 HITL（human-in-the-loop，人工介入审批）的应用可以继续使用直接调用。
 
 会话方式通过 `submit` 接收新任务，以 `steer` / `inject` 补充信息，以 `respond` / `resume` 继续原任务；框架持有后台执行。前端从快照与持久事件读取进度。完整流程见第 19 章（会话日志与恢复）。
 
@@ -267,7 +285,7 @@ Spring Boot 完整示例见 `agentscope-examples/documentation/.../streaming/Str
 
 ### 高级：自行管理单次执行
 
-`ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()` 的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
+`ReActAgent` 和 `HarnessAgent` 提供 `prepareRun(messages, context)`（事件流）与 `prepareCall(messages, context)`（最终回复），返回带有唯一 `runId()`（本次执行的稳定关联 ID）的 `AgentRun<T>`。创建句柄不会执行 Agent；订阅一次 `stream()` 才开始执行。
 
 ```java
 AgentRun<AgentEvent> run = agent.prepareRun(List.of(new UserMessage("你好")), context);
@@ -321,9 +339,11 @@ agent.interrupt("alice", "session-001", interruptMsg);
 
 ## RuntimeContext (per-call 上下文)
 
-`RuntimeContext`（`io.agentscope.core.agent.RuntimeContext`）是 **per-call 元数据袋**。每次调用传入独立实例，工具和 middleware 通过参数接收上下文。Agent 不提供共享的当前上下文 getter，也不向共享 hook 字段注入上下文。技能仓库操作及 `HarnessAgent.promoteSkill(name, reviewerId, ctx)` 同样显式接收上下文；不带上下文的仓库操作使用默认命名空间。
+执行过程中，工具与 middleware 怎么拿到“这次调用”的身份与参数？答案是随调用传入的 RuntimeContext。
 
-它**不是**持久化状态——`AgentState`（聊天上下文、压缩摘要、权限规则、tool state）才是。`RuntimeContext` 的作用是承载「当前这一次调用」相关的瞬态数据：tenant / userId / request-id、DB 连接、审计 logger、特性开关，等等。
+`RuntimeContext`（`io.agentscope.core.agent.RuntimeContext`）是 **per-call 元数据袋**。每次调用传入独立实例，工具和 middleware 通过参数接收上下文。Agent 不提供共享的当前上下文 getter，也不向共享 hook（钩子，框架在固定执行位置留给应用的回调点）字段注入上下文。技能仓库操作及 `HarnessAgent.promoteSkill(name, reviewerId, ctx)` 同样显式接收上下文；不带上下文的仓库操作使用默认命名空间。
+
+RuntimeContext **不是**持久化状态——`AgentState`（聊天上下文、压缩摘要、权限规则、tool state）才是。`RuntimeContext` 的作用是承载「当前这一次调用」相关的瞬态数据：tenant / userId / request-id、DB 连接、审计 logger、特性开关，等等。
 
 ### 内置字段与属性层
 
@@ -434,7 +454,7 @@ Msg result = agent.call(List.of(resumeMsg), ctx).block();
 ```
 
 - **已确认**的工具调用立即执行，智能体继续推理。
-- **已拒绝**的工具调用会产生 LLM 可见的错误结果，LLM 可能会用不同方式重试。
+- **已拒绝**的工具调用会产生 LLM（大语言模型）可见的错误结果，LLM 可能会用不同方式重试。
 - **已接受的规则**会持久化到权限引擎中——匹配的未来调用将自动允许，无需再次提示。
 
 ### 外部工具执行

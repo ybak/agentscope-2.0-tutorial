@@ -6,7 +6,15 @@ source: docs/building-blocks/context.md
 
 # 第 8 章 上下文
 
-> 本章导读：讲解无状态 Agent 引擎下的会话状态管理——AgentState 的字段与生命周期、状态持久化与恢复链路、多用户隔离、跨进程接续、Per-session 中断，以及 per-call 元数据 RuntimeContext 与 runId 关联。读完本章，你可以让会话在实例、进程与机器之间稳定延续。
+> 本章导读：当你的应用要支持“用户过一天回来，对话还能接着聊”，或者部署了多个副本后要保证 alice 的会话状态不会被 bob 读到，再或者工具执行时需要拿到本次调用者的身份——背后靠的都是本章的会话状态机制。本章讲解无状态引擎（实例不保存会话，状态按身份存取）下的会话状态管理——AgentState 的字段与生命周期、状态持久化与恢复链路、多用户隔离、跨进程接续、Per-session 中断，以及 per-call 元数据 RuntimeContext 与 runId 关联。读完本章，你可以让会话在实例、进程与机器之间稳定延续。
+
+## 你什么时候需要它
+
+- **会话要“断点续聊”。** 服务重启、换实例、滚动发布之后，同一个用户还得接着之前聊——状态不能只活在内存里。把状态交给存储后，每次 `call` 自动按 `(userId, sessionId)` 读写对应的快照，另一台机器也能接续。
+- **多用户、多租户不能串数据。** `userId` 与 `sessionId` 共同决定状态槽位与文件命名空间，谁的状态、落到谁的名下，都由这对身份寻址。
+- **工具与中间件需要“本次调用”的信息。** 租户标识、DB 连接、审计 logger 这类瞬态数据走 `RuntimeContext`，用完即弃，不进持久状态。
+
+与已学内容的关系和边界：第 4 章配置的 `stateStore` 就是本章机制的入口；`AgentSession` 的后台任务也复用同一套会话存储。而“每轮模型输入怎么组织、历史怎么压缩来省 token”是第 13 章（上下文管理）的事——本章管状态放在哪里、如何恢复，下一节先划清这个分工。
 
 ## 本章与上下文管理的关系
 
@@ -41,6 +49,8 @@ Agent 实例仍持有执行门、状态缓存和后台资源，应在执行结�
 工具和中间件通过框架注入的 `RuntimeContext.getAgentState()` 访问当前会话，不保存全局“当前状态”引用。新建 Agent 不会复制所有业务依赖，也不替代权限检查；共享依赖应支持并发访问。同一会话跨实例执行需要应用调度协调，详见下方“并发使用”一节。
 
 ## AgentState
+
+无状态引擎不等于没有状态——状态被显式放进一份可持久化的快照里。
 
 `AgentStateStore`（内置与扩展实现见第 24 章）持久化的是一份 **`AgentState`**（`io.agentscope.core.state.AgentState`），它是 agent 当前“瞬时”运行状态的完整快照：
 
@@ -178,7 +188,7 @@ agentB.call(nextMsg, RuntimeContext.builder()
 
 `(userId, sessionId)` 决定状态槽位。匿名/单租户可使用空 userId；多租户应从可信认证上下文取得 userId，不能信任客户端任意指定的身份。
 
-跨实例并发还需会话路由或分布式协调。支持版本控制的 StateStore 保存时使用 CAS，冲突结果由 ConflictPolicy 决定；不支持版本控制的后端没有该保护。CAS 也不回滚已经发生的工具副作用。
+跨实例并发还需会话路由或分布式协调。支持版本控制的 StateStore 保存时使用 CAS（写入时核对版本号未被并发修改的更新方式），冲突结果由 ConflictPolicy 决定；不支持版本控制的后端没有该保护。CAS 也不回滚已经发生的工具副作用。
 
 ### 多用户隔离
 
@@ -291,6 +301,8 @@ Mono.zip(aliceCall, bobCall).block();
 
 ## `RuntimeContext` —— per-call 元数据
 
+会话状态之外，每次调用还随身携带一份用完即弃的元数据。
+
 `RuntimeContext`（位于 `io.agentscope.core.agent`）是一个轻量容器，在 `agent.call(msgs, ctx)` 中传入，hook 与 tool 在本次调用期间共享。其自由 / 类型属性**不自动持久化，也不自动注入模型消息**；而 `sessionId` / `userId` 字段决定本次调用状态存储读写哪个 `AgentState` 槽位。在 call 入口，框架会把 call-scoped 的 `AgentState` 注入到 `RuntimeContext` 上，中间件和工具通过 `ctx.getAgentState()` 获取正确的 per-call 状态。
 
 ```java
@@ -355,3 +367,5 @@ assert run.runId().equals(ctx.getRunId());
 - 第 4 章（Agent 与 ReAct 循环）—— `ReActAgent` 完整接口与 Builder 参数
 - 第 14 章（记忆）—— 长期记忆与后台维护
 - 第 10 章（权限系统与人工介入）—— 权限规则的持久化
+
+最后收拢一下两章的分工：本章解决“会话状态放在哪里、如何保存恢复”，第 13 章讲 Harness 层的上下文管理策略——每轮模型输入如何组织、历史如何压缩。两边合起来，才是“上下文”这个词的完整含义。

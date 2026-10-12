@@ -6,11 +6,20 @@ source: docs/building-blocks/tool.md
 
 # 第 7 章 工具
 
-> 本章导读：讲解工具体系的三个概念——Tool、Toolkit 与 Tool Group，覆盖 `@Tool` 注解与 `ToolBase` 两种自定义方式、外部执行工具、Context 注入、MCP 接入、Skill 热加载与 meta tool 自我管理。读完本章，你可以系统地为 Agent 扩展安全、可控的行动能力。
+> 本章导读：当你的 Agent 不再只是聊天——要查订单、写工单、跑脚本、读文件，也就是要操作真实业务系统时，给它的每一项能力都要在本章登记。本章讲解工具体系的三个概念——Tool（单个能力）、Toolkit 与 Tool Group（成组启停的工具集合）；三者的完整定义见下一节。本章覆盖 `@Tool` 注解（把一个 Java 方法声明为模型可调用的工具）与 `ToolBase`（显式建模工具的抽象基类）两种自定义方式、外部执行工具（由人工或外部系统代为执行）、Context 注入、MCP 接入、Skill 热加载与 meta tool 自我管理。读完本章，你可以系统地为 Agent 扩展安全、可控的行动能力。
+
+## 你什么时候需要它
+
+- **让 Agent 摸到你的业务系统。** 订单查询、工单更新、调用内部 API——写成一个 `@Tool` 方法注册进 Toolkit，模型就能在推理中决定何时调用。第 4 章循环里“执行工具”的那一步，落到的就是本章的构件。
+- **现成的工具生态，不想自己写代码。** 地图、文件系统、搜索这类能力，很多已经以 MCP 服务器的形式存在；注册一个 MCP 客户端，整组工具即可接入。
+- **动作敏感，需要人来执行或确认。** 把工具标记为外部执行，Agent 会在调用点暂停，等人工或外部系统回传结果后再继续推理。
+- **工具太多，上下文装不下。** 用 Tool Group 把工具成组启停，只让当前任务相关的工具暴露给模型。
+
+与已学内容的关系和边界：工具让 Agent “能做”，第 10 章的权限系统管“准不准做”——每个工具执行前都会先过权限检查；工具在执行中拿到的本次调用身份与状态来自 `RuntimeContext`（第 4 章），本章“接收 Context”一节展开。
 
 ## 概述
 
-Tool 是 agent 与外部世界交互的方式 —— 执行业务操作、调用 API、读写数据等。每个 tool 通过 JSON Schema 暴露给 LLM，agent 通过统一接口完成调用。
+Tool 是 agent 与外部世界交互的方式 —— 执行业务操作、调用 API、读写数据等。每个 tool 通过 JSON Schema（描述参数名、类型与是否必填的 JSON 规范）暴露给 LLM，agent 通过统一接口完成调用。
 
 AgentScope 把 tool 相关的构件组织成三个概念：
 
@@ -241,7 +250,7 @@ public class HumanApprovalTool extends ToolBase {
 | `ToolExecutionContext` | `runtimeContext.asToolExecutionContext()`（兼容层，已 deprecated） |
 | 其它用户自定义 POJO 类型 | `runtimeContext.get(ParamType.class)` —— 即调用方在 `RuntimeContext.builder().put(ParamType.class, value)` 注册的对象 |
 
-注入的 `ToolEmitter` 会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
+注入的 `ToolEmitter`（工具向外部发送流式进度的出口）会提供当前工具调用 ID，可用于把进度与前端状态或其它共享存储关联起来：
 
 ```java
 @Tool(name = "run_task", description = "Run a long-running task")
@@ -324,6 +333,8 @@ public class TenantAwareTool extends ToolBase {
 
 ## MCP
 
+自己的工具自己写之外，现成的工具生态可以用 MCP 直接接入。
+
 AgentScope 集成 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)，让 agent 可以接入任意 MCP 兼容的工具提供方。框架自动处理协议协商、工具发现与结果转换。
 
 支持三种连接方式：
@@ -392,7 +403,9 @@ toolkit.registerMcpClient(search).block();
 
 ## Skill
 
-Skill 是基于 markdown 的指令集，无需写新工具代码即可拓展 agent 能力。每个 skill 是一个目录，包含一个带 frontmatter 元数据与详细指令的 `SKILL.md` 文件。
+还有一类扩展连工具代码都不用写：用 Markdown 指令包装 Agent 已有的工具。
+
+Skill 是基于 markdown 的指令集，无需写新工具代码即可拓展 agent 能力。每个 skill 是一个目录，包含一个带 frontmatter（文件开头用 `---` 包住的元数据区块）元数据与详细指令的 `SKILL.md` 文件。
 
 与 tool 不同，skill 不能被直接调用。Agent 通过自动注册的查看器工具 `load_skill_through_path` 读取 skill 指令，再用现有的 tool 按指令执行。
 
@@ -521,6 +534,8 @@ ReActAgent agent =
 
 ## 自我管理 Tool
 
+工具越注册越多，新的问题是上下文噪音——把工具组的启停交给 Agent 自己管理。
+
 内置 **meta tool**（`reset_tools`）让 agent 在运行时自我管理哪些 tool group 处于激活状态，从而保持上下文聚焦 —— 只有与当前任务相关的 tool 暴露给模型。
 
 ### 定义 Tool Group
@@ -584,6 +599,8 @@ ReActAgent agent =
 > **警告**：Meta tool 的输入表示所有 group 的**最终状态**而非增量。任何未显式置为 `true` 的 group 都会被停用，无论之前的状态如何。
 
 ## 请求级工具视图与会话隔离
+
+前面的注册与激活都是 Agent 级的；单次请求还可以有更细的工具视图。
 
 Agent 构建时复制工具注册表和注册元数据；已有工具实例仍按引用共享，因此自定义工具需要自行保证并发安全。构建某个 Agent 时添加的 Hook、知识库等工具不会覆盖其他 Agent 的注册。
 

@@ -6,7 +6,15 @@ source: docs/building-blocks/model.md
 
 # 第 6 章 模型接入
 
-> 本章导读：讲解模型层的 Credential / Chat Model 两层结构、各提供商扩展模块、字符串 model id 与显式 builder 两种创建方式、`ModelRegistry` 的解析与缓存策略、Formatter、结构化输出的路径选择，以及自定义模型提供商的步骤。读完本章，你可以把主流 LLM 接入 Agent，并按需深度定制。
+> 本章导读：当你要把 Agent 接到公司实际在用的模型上——也许是通义千问或 OpenAI，也许是内网 Ollama、OpenAI 兼容的自建网关，而且以后还可能切换供应商——本章就是动手的地方。本章先讲模型层的两层结构（鉴权凭证与模型实现分离）和各提供商扩展模块，再讲字符串 model id 与显式 builder 两种创建方式、`ModelRegistry` 的解析与缓存策略、Formatter、结构化输出的路径选择，最后走一遍自定义模型提供商的步骤。读完本章，你可以把主流 LLM 接入 Agent，并按需深度定制。
+
+## 你什么时候需要它
+
+- **接一个新供应商，先走最小路径。** 引入对应扩展模块、设置该提供商的标准环境变量，把 `dashscope:qwen-plus` 这样的字符串 id 交给第 4 章的 `.model(...)` 就能跑通。Spring Boot 应用则优先使用对应提供商的 starter，用 `application.yml` 完成配置。
+- **默认配置不够用时，显式构造模型。** 需要自定义 API key、base URL、formatter、transport、timeout、生成参数等提供商专属配置时——例如走公司统一的 OpenAI 兼容网关、调低 temperature、给 Claude 开 prompt 缓存——推荐显式构造 `Model` 实例再传给 agent。
+- **为换供应商或多家兜底留后路。** 业务侧面向的是统一的 `Model` 接口（`stream(messages, tools, options)`），底层换实现不改调用代码；第 4 章的主备容错（`fallbackModel`）也是给 Agent 配置两个模型实现。
+
+与已学内容的关系：第 4 章配置 Agent 时 `.model(...)` 的两种写法（字符串 id 与显式 builder）正对应本章的两条主线；模型是 ReAct 循环“推理”一端的引擎，工具（第 7 章）是另一端。边界：实际开发中通常不需要直接调模型，而是通过 `ReActAgent` 调度——直接调用模型只用于轻量场景。
 
 ## 概述
 
@@ -29,6 +37,8 @@ CredentialBase/
 这种分层与前端的自然交互流程一致 —— 先注册凭证，再从凭证下挑选模型 —— 让界面只需鉴权一次，就能展示该提供商支持的所有模型。
 
 ## 模型扩展模块
+
+通用 API 留在 core，具体提供商的实现进了独立模块——先看这些模块怎么引入。
 
 特定模型提供商的实现已经从 `agentscope-core` 迁移到独立扩展模块中。每个模型适配模块自己维护 chat model、credential、formatter、DTO、异常、SDK/API client 等。
 
@@ -79,7 +89,7 @@ ReActAgent agent =
                 .build();
 ```
 
-扩展模块会通过 Java SPI 被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`GLM_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
+扩展模块会通过 Java SPI（JDK 的服务提供者发现机制，按约定目录自动加载实现类）被自动发现。模型提供商会读取自己的标准环境变量，例如 `DASHSCOPE_API_KEY`、`OPENAI_API_KEY`、`GLM_API_KEY`、`DEEPSEEK_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`。Ollama 会在存在时读取 `OLLAMA_BASE_URL`，否则默认使用本地 Ollama endpoint。
 
 ### 显式 Model builder
 
@@ -561,6 +571,8 @@ ModelRegistry.registerFactory(
 ```
 
 ## 前端集成
+
+模型层还内置了面向前端的模型发现能力。
 
 ### 什么是 ModelCard
 

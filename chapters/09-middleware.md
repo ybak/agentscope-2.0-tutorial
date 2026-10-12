@@ -6,7 +6,17 @@ source: docs/building-blocks/middleware.md
 
 # 第 9 章 中间件
 
-> 本章导读：讲解在六类扩展点注入自定义逻辑的中间件机制——洋葱式 / 变换式 / 通知式三类 hook 的语义与执行顺序、`activePoints()` 参与声明、内置的 OpenTelemetry 追踪等实现，以及计时、限速、模型回退等实用示例。读完本章，你可以在不修改 agent 代码的前提下横切观察与改写执行流程。
+> 本章导读：当你想给所有 Agent 统一加上计时日志、链路追踪、限速或动态 system prompt，而又不想改动任何一个 agent 或 model 类时，middleware 就是为此准备的扩展机制。本章讲解在六类扩展点注入自定义逻辑的中间件机制——包裹、变换、通知三类 hook 的语义与执行顺序、用 `activePoints()` 声明参与哪些扩展点、内置的链路追踪等实现，以及计时、限速、模型回退等实用示例。读完本章，你可以在不修改 agent 代码的前提下横切观察与改写执行流程。
+
+## 你什么时候需要它
+
+判断标准就一条：这段逻辑是否与具体业务无关，又要作用于每一次执行。满足的话，把它装进 middleware，而不是散落在各个业务方法里。典型例子：
+
+- **可观测性。** 模型调用耗时、链路追踪、请求日志——内置的 OpenTelemetry 追踪中间件（本章“内置 Middleware”一节）就是现成实现，装配一行代码。
+- **流量与稳定性。** 两次模型调用之间强制最小间隔（限速）、主模型失败时切到备用模型——本章“实用示例”给出可直接复用的写法。注意如果只是简单的“主→备”回退，builder 上的 `fallbackModel` / `maxRetries` 已经够用，不必写 middleware。
+- **输入与流程微调。** 往 system prompt 注入实时信息、过滤中间轮次的文本只输出最终答案、全部工具被用户拒绝时让 Agent 停下——这些改流程的动作都挂在对应的扩展点上。
+
+与已学内容的关系和边界：第 4 章主循环图的每个阶段（推理、工具执行、模型调用）都有对应的挂点，本章就是往这些挂点上挂逻辑。“这次工具调用允不允许”不由 middleware 管——那是第 10 章权限系统的判定，middleware 更适合做权限之外的横切增强。
 
 ## 概述
 
@@ -67,9 +77,11 @@ ReActAgent agent =
 
 ## 内置 Middleware
 
+自己动手之前，先看框架自带的三个实现——链路追踪、任务提醒、最终答案过滤，不少需求可以省掉。
+
 ### OtelTracingMiddleware
 
-`OtelTracingMiddleware`（位于 `io.agentscope.core.tracing`）为 agent 全生命周期接入 [OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/gen-ai/) 追踪。它在 `onAgent`、`onModelCall`、`onActing` 三个位置打点，按层级生成 span：
+`OtelTracingMiddleware`（位于 `io.agentscope.core.tracing`）为 agent 全生命周期接入 [OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/gen-ai/) 追踪。它在 `onAgent`、`onModelCall`、`onActing` 三个位置打点，按层级生成 span（追踪中一段有起止时间的操作记录）：
 
 - `invoke_agent <name>` —— 包裹整次 reply
 - `chat <model>` —— 包裹每次模型 API 调用
@@ -240,7 +252,7 @@ ReActAgent agent =
 
 ## 自定义 Middleware
 
-实现 `MiddlewareBase` 接口（位于 `io.agentscope.core.middleware`），只重写需要的 hook 即可，其它的不用管。
+内置的不够用时，实现 `MiddlewareBase` 接口（位于 `io.agentscope.core.middleware`）自己写，只重写需要的 hook 即可，其它的不用管。
 
 每个洋葱 hook 收到一个 `next` 函数，调用 `next.apply(input)` 进入内层逻辑；可以在调用前后插入自己的处理，或者通过 `Flux<AgentEvent>` 算子（`doOnNext` / `flatMap` / `map` 等）观察、改写中间事件流。
 
@@ -478,6 +490,8 @@ MiddlewareBase timingOnly =
 继承内置 middleware 时同样适用：内置类声明的正是其挂接的扩展点，子类若覆写了新的 hook（例如给 `TaskReminderMiddleware` 增加 `onModelCall`），必须相应扩展继承到的 `activePoints()`——否则新增的 hook 会被静默跳过。
 
 ## 实用示例
+
+最后是几个可以直接照抄的完整示例。
 
 ### 计时 middleware
 
