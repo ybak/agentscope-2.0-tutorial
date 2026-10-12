@@ -8,6 +8,21 @@ source: integration/memory/index.md, integration/memory/overview.md, integration
 
 > 本章导读：讲解 AgentScope 在多轮、多会话之间持久化用户偏好、事实与要点的接口 `LongTermMemory`，以及三种开箱即用的后端实现：通用语义记忆 Mem0（支持多租户三层 ID 与 metadata 过滤）、云端托管的百炼记忆（rerank / judge / rewrite 检索增强）、基于对话轨迹抽取的 ReMe（workspace 级隔离）。三者实现同一接口，通过 `longTermMemory(...)` 直接挂入 Agent，本章末尾各自的 Builder 参数表可以直接对照选型。读完本章，你可以为 Agent 加上跨会话的长期记忆，并按隔离与检索质量需求选择后端。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>用户偏好与事实<br/>要在多轮多会话间持久"] --> B["长期记忆集成<br/>LongTermMemory 统一接口"]
+    B --> C["Mem0<br/>通用语义记忆 · 多租户过滤"]
+    B --> D["百炼记忆<br/>云端托管 · 检索增强"]
+    B --> E["ReMe<br/>对话轨迹摘要 · 工作区级隔离"]
+    B --> F["统一挂入<br/>longTermMemory 一行接到 Agent"]
+    C --> G["收益<br/>Agent 拥有跨会话记忆<br/>按隔离与检索质量选后端"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 `LongTermMemory` 是 AgentScope 用来在多轮、多会话之间持久化用户偏好、事实、要点的接口。它与第 14 章的 Harness 内置记忆分工不同：后者基于工作区文件、由框架内置的 hook 维护；本章的三种实现走外部服务路线，记忆的抽取与检索交给所选后端。`agentscope-extensions-*` 仓库下提供了对接主流记忆服务的开箱即用实现：
 
 | 扩展 | 后端 | 适合场景 |

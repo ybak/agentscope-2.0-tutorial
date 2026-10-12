@@ -10,6 +10,21 @@ source: service/index.md, service/quickstart.md, service/environments.md, servic
 
 > **注意**：本章命令基于当前发布版本 `2.1.0-BETA1`（预发布版本），用于生产前请验证实际部署。其中 Environments 与权限相关接口属于预览文档，正式版本可能调整。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>多个业务应用想共用<br/>同一套 Agent 能力"] --> B["AgentScope Service<br/>可自托管的 Agent 运行平台"]
+    B --> C["五分钟跑起来<br/>Docker Compose 部署与首次调用"]
+    B --> D["一次调用背后的组件<br/>Agent · Session · Turn"]
+    B --> E["成长中的三件事<br/>工具执行位置 · 账号权限 · 生产安装"]
+    B --> F["进阶选读<br/>Runtime Host 接入 Coding Agent"]
+    C --> G["收益<br/>拥有一个可用的 Service<br/>为后续章节备好模型工具与账号"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 为什么需要一个共享的 Agent 平台
 
 假设你跟着前四篇，用 Harness SDK 给工单系统内嵌了一个 Agent：它读上下文、调工具、需要时向人确认，运行得不错。接下来你会遇到一组熟悉的要求——

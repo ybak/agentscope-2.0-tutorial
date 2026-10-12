@@ -8,6 +8,21 @@ source: integration/channel/index.md, integration/channel/dingtalk.md, integrati
 
 > 本章导读：讲解通过 Harness 的 Channel 接口把 Agent 接入真实消息平台的五个适配器——钉钉（Stream WebSocket / HTTP 回调）、飞书（事件订阅回调）、企业微信（加密回调）、GitHub 与 GitLab（issue / PR 评论 webhook）。所有适配器共享同一套模式：入站解析为统一的 InboundMessage、去重、防循环、经 Gateway 分发，出站调用平台 API 投递回复；公共的幂等去重、防死循环、access token 缓存组件也在本章概览一并说明。读完本章，你可以让同一个 Agent 同时挂在 IM 与代码托管平台上，并了解多实例部署时共享状态的接法。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>同一个 Agent 挂上<br/>IM 与代码托管平台"] --> B["IM 渠道集成<br/>五个真实平台适配器"]
+    B --> C["统一接入模式<br/>入站解析 · 去重 · 防循环 · 分发"]
+    B --> D["五个适配器<br/>钉钉 · 飞书 · 企业微信 · GitHub · GitLab"]
+    B --> E["共享公共组件<br/>幂等去重 · 防死循环 · token 缓存"]
+    B --> F["多实例部署<br/>共享状态怎么接"]
+    C --> G["收益<br/>Agent 同时挂在 IM 与代码平台<br/>多实例部署不踩坑"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 这些扩展通过 Harness 的 Channel 接口（见第 20 章）将你的 Agent 接入真实的消息平台。每个适配器负责平台特有的认证、webhook 签名校验、消息解析和回复投递——你的 Agent 代码无需感知平台差异。
 
 | 扩展 | 平台 | 传输方式 |

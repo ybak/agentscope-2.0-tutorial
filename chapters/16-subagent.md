@@ -8,6 +8,21 @@ source: docs/harness/subagent.md
 
 > 本章导读：主 agent 的上下文是稀缺资源，而一块分析、一次评审、一份调研往往可以独立完成——硬塞进主线程只会让上下文膨胀、任务变慢。本章讲解主 agent 如何把"可独立处理、上下文重、可并行"的任务委派出去——三类声明方式（内置 general-purpose、工作区 spec、编程式）、ISOLATED 与 SHARED 工作区、同步与后台调用及自动反向通知、持久会话、向用户暴露子 Agent、远程子 Agent（Agent Protocol）与流式转发，以及权限继承、Plan Mode 传播等行为细节。读完本章，你可以用一套声明文件把主 agent 从重上下文任务中解放出来。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>一块分析一次评审可独立完成<br/>别挤占主 agent 上下文"] --> B["子 Agent 协作<br/>把任务委派给独立运行的子实例"]
+    B --> C["三类声明方式<br/>内置 general-purpose · 工作区 spec · 编程式"]
+    B --> D["工作区模式<br/>ISOLATED 独享 · SHARED 与父共享"]
+    B --> E["同步与后台<br/>后台完成自动反向通知 · 可持久会话"]
+    B --> F["远程与行为细节<br/>远程子 Agent · 权限继承 · Plan Mode 传播"]
+    C --> G["收益<br/>一套声明文件让主 agent<br/>从重上下文任务中解放"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 作用
 
 让主 agent 把"可独立处理、上下文重、可并行"的任务委派出去，避免主线程膨胀。每个子 agent 都是一个临时实例（本地的 `HarnessAgent` 或远程 stub），跑自己的会话，结果通过工具返回给父 agent。

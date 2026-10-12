@@ -8,6 +8,19 @@ source: integration/overview.md, integration/infrastructure/index.md, integratio
 
 > 本章导读：第四篇的收尾章。开篇先给出 AgentScope 集成扩展的全景地图——把模型、分布式存储、沙箱、记忆、RAG、技能仓库、Channel、协议八组扩展分别指回第 18、21~27 章；然后讲余下两组：基础设施（Higress AI 网关经 MCP 引入网关工具、Nacos 统一控制面、Scheduler 让 Agent 按 CRON 定时跑）与生态扩展（Chat Completions Web 把 Agent 暴露成 OpenAI 兼容接口、Studio 可视化调试、Training 在线训练闭环）。读完本章，你可以把 Agent 接入企业既有技术栈（网关、注册中心、调度器），并按需开启调试与训练流水线。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>把 Agent 接进企业既有技术栈<br/>还要能调试与训练"] --> B["基础设施与生态工具<br/>集成扩展全景的收尾两组"]
+    B --> C["集成扩展全景<br/>八组扩展各归哪一章"]
+    B --> D["基础设施<br/>Higress AI 网关 · Nacos 控制面 · 定时调度"]
+    B --> E["生态扩展<br/>兼容接口 · 可视化调试 · 在线训练"]
+    C --> G["收益<br/>接入网关注册中心与调度器<br/>按需开启调试与训练流水线"]
+    D --> G
+    E --> G
+```
+
+*本章导览图*
+
 AgentScope Java 与第三方系统、生态服务的集成扩展都是 `agentscope-extensions/` 下的独立 Maven 模块，按需引入即可。按主题分为以下几组：
 
 ## 集成扩展全景

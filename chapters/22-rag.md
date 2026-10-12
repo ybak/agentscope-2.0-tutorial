@@ -8,6 +8,21 @@ source: integration/rag/index.md, integration/rag/overview.md, integration/rag/s
 
 > 本章导读：讲解 AgentScope 接入外部知识库的统一接口 `Knowledge`——Agent 在推理时通过它检索文档片段，再交给模型生成。先以一张扩展选型表比较五种实现（自建链路的 Simple、阿里云百炼、Dify、HayStack、RAGFlow），说明"接入方式都是同一套"的设计；再逐个展开各实现的依赖、快速上手、检索参数与限制。读完本章，你可以为 Agent 选配任意一种 RAG 后端，并理解"除 Simple 外只负责检索"的管控分离设计。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>想让模型答得准<br/>要接自己的知识库"] --> B["RAG 集成<br/>检索增强生成 · 先检索再作答"]
+    B --> C["统一接口 Knowledge<br/>推理时检索 · 片段交给模型"]
+    B --> D["五种实现选型<br/>Simple · 百炼 · Dify · HayStack · RAGFlow"]
+    B --> E["接入方式都是同一套<br/>换后端不改接入代码"]
+    B --> F["管控分离<br/>除 Simple 外只负责检索"]
+    C --> G["收益<br/>为 Agent 选配任一种 RAG 后端<br/>并理解管控分离的设计"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 RAG（Retrieval-Augmented Generation，检索增强生成）——先从外部知识库检索资料，再让模型据此作答——就是本章要接入的能力。`io.agentscope.core.rag.Knowledge` 是 AgentScope 用于"接入外部知识库"的接口。Agent 在推理时通过它检索文档片段，再交给模型用于生成。`agentscope-extensions-*` 仓库下提供了多种实现：
 
 | 扩展 | 类型 | 适合场景 |

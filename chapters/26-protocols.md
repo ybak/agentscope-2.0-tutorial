@@ -8,6 +8,21 @@ source: integration/protocol/index.md, integration/protocol/overview.md, integra
 
 > 本章导读：讲解 AgentScope Java 侧三种"让 Agent 与外部以标准协议交互"的适配器——A2A（把远端 A2A Agent 包装成本地 Agent、把本地 ReActAgent 暴露成 A2A Server）、Agent Protocol（把 Harness Agent 暴露成 `/tasks` 标准 HTTP 接口，支持 SSE 事件流、并发控制、Agent 路由与 HITL 恢复）、AG-UI（把 `AgentEvent` 流转换为前端可实时渲染的 AG-UI 事件，含推理内容、token usage、子 agent 事件与工具审批 interrupt）。读完本章，你可以把同一个 Agent 同时开放给其他 Agent 系统、内部任务调度方和浏览器前端。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>同一个 Agent 要同时<br/>开放给三种外部调用方"] --> B["Agent 协议<br/>三种标准协议适配器"]
+    B --> C["A2A<br/>Agent 与外部 Agent 系统互调"]
+    B --> D["Agent Protocol<br/>用标准 HTTP 接口提交任务"]
+    B --> E["AG-UI<br/>事件流转成前端可实时渲染的事件"]
+    B --> F["怎么选<br/>外部互操作 · 内部调度 · 前端 UI"]
+    C --> G["收益<br/>同时开放给其他 Agent 系统<br/>任务调度方与浏览器前端"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 AgentScope 在 Java 侧提供了多种"让 Agent 与外部交互"的协议适配器。它们各自解决一个不同的问题：
 
 | 扩展 | 协议 | 解决的问题 |

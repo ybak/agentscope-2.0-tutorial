@@ -8,6 +8,21 @@ source: integration/session/index.md, integration/session/overview.md, integrati
 
 > 本章导读：Agent 在单机上跑通之后，第一个分布式问题往往不是流量，而是状态——两个应用副本各写各的本地文件，同一个用户的会话在两台机器上就是两份互不相通的记忆。本章把 Agent 状态的持久化与多副本部署的存储底座整理成一份完整参考：先说清 `AgentStateStore` 接口本身——`(userId, sessionId)` 寻址、与原生 Session Log 的区别；然后进入生产推荐的 `DistributedStore` 一键配置——一行代码同时覆盖 Agent 状态、工作区文件系统 KV、沙箱快照与并发锁，四个后端（Redis、JDBC、MongoDB、阿里云 OSS）可以混合搭配；最后是 MySQL、Redis、OSS 三个 legacy 状态存储模块——它们已由分布式存储的对应模块取代，保留作为存量维护参考。读完本章，你可以让多个 Agent 副本共享同一份状态与工作区，并按现有基础设施选择后端组合。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>第二个副本上线后<br/>两台机器别各记各的"] --> B["会话存储与分布式部署<br/>Agent 状态的存储底座"]
+    B --> C["AgentStateStore 接口<br/>状态存到哪 · 按用户与会话寻址"]
+    B --> D["DistributedStore 一键配置<br/>状态 · 工作区文件 · 快照 · 锁"]
+    B --> E["四个后端<br/>Redis · JDBC · MongoDB · OSS 混合搭配"]
+    B --> F["legacy 状态存储<br/>已被取代的存量维护参考"]
+    C --> G["收益<br/>多副本共享同一份状态与工作区<br/>按既有设施选后端组合"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 从单机到多副本：存储要解决什么
 
 前二十章的所有示例都默认 Agent 运行在单个进程里。只要部署第二个副本，三件事立刻出现：

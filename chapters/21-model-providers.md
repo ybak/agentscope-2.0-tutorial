@@ -8,6 +8,21 @@ source: integration/model/index.md, integration/model/openai.md, integration/mod
 
 > 本章导读：全书唯一的"合并精编"章——把十家模型提供商的接入文档合并为一张总表加每家固定的四段式小节（Maven 依赖、获取凭据、配置示例、专属说明）。OpenAI 扩展同时承载 DeepSeek、GLM、Kimi、MiniMax 等 OpenAI 兼容端点的一等支持；OpenAI Official 走官方 SDK 的 Responses API；DashScope、Gemini、Anthropic、Ollama 各有独立模块与专属能力（Qwen 短名、服务端工具、Bearer Token、本地部署）。读完本章，你可以把任意一家模型服务接入 AgentScope，并掌握各家 formatter 与兼容性差异。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>把任意一家模型服务<br/>接进 AgentScope"] --> B["10 家提供商统一接入<br/>一张总表加每家四段式小节"]
+    B --> C["通用接入流程<br/>引依赖 · 获取凭据 · 字符串 id 选模型"]
+    B --> D["ModelRegistry 统一解析<br/>按字符串 id 前缀找到对应模型"]
+    B --> E["OpenAI 兼容一族<br/>DeepSeek · GLM · Kimi · MiniMax 复用"]
+    B --> F["各家差异点<br/>专属能力 · 报文格式 · 环境变量"]
+    C --> G["收益<br/>任意一家都能接入<br/>分清各家兼容性差异"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 模型提供商扩展用于把 AgentScope Java 接入托管或本地 Chat Model API。对应扩展模块在 classpath 中时，可以通过 `ModelRegistry` 字符串 id 选择模型。所有模型提供商均已迁移到独立模型扩展模块中，`agentscope-core` 只保留共享模型契约。
 
 ## 提供商总表

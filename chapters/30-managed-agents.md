@@ -10,6 +10,21 @@ source: service/create-managed-agent.md, service/managed-agent-configuration.md,
 
 > **注意**：本章命令基于 `2.1.0-BETA1` 预发布版本，用于生产前请验证实际部署。其中 Hosted Agent、External Agent 与 Workspace 相关内容属于预览文档，正式版本尚未发布，可能调整。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>应用没法复现浏览器里的点击<br/>要用 API 跑通托管 Agent"] --> B["创建并运行托管 Agent<br/>用 curl 走完最小可运行路径"]
+    B --> C["第一个托管 Agent<br/>创建 · 会话 · 提交 · 核对"]
+    B --> D["配置纵深<br/>Agent 定义 · 模型 · Workspace 版本化"]
+    B --> E["Hosted Agent<br/>接入电脑上的 Coding Agent"]
+    B --> F["External Agent<br/>注册已在运行中的应用"]
+    C --> G["收益<br/>托管 Agent 真正跑起来<br/>已有应用与 Coding Agent 同平台接入"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 运行第一个托管 Agent
 
 上一章你已经用 Console 完成过一次"创建 Agent—提交任务—收到回答"。本节用 curl 重做一遍，并多走一步：让 Agent 把整理结果写入文件、再读回来核对——工具是否真正执行，要以文件内容为准。用 curl 创建的是一个基于 HarnessAgent 的托管 Agent，让它整理会议记录、写入文件并读取核对。Service 负责运行 Agent，你只需配置它并通过 Session API 提交任务。

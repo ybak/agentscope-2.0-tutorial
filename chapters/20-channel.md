@@ -8,6 +8,21 @@ source: docs/harness/channel.md
 
 > 本章导读：同一个 agent 要接到网页、命令行和即时通讯工具上，每接一个平台都要重新回答同一组问题——这条消息来自哪个用户、属于哪个对话、两条消息同时到达谁先谁后、注册了多个 agent 时交给谁。本章讲 AgentScope 对这组问题的回答：应用代码与 agent 之间的 Gateway——会话管理、per-session 并发控制与多 agent 路由，以及把消息平台适配成这套路由模型的 Channel：SendOptions 的用法、流式事件与 SSE Controller、与暴露子 Agent 的双向对话、GatewayBootstrap 多 agent 接线、自定义 Channel 接口与内置 IM 适配器。读完本章，你可以把同一个 agent 稳定地接到 HTTP、SSE 或任意消息平台上。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>同一个 agent 接到网页<br/>命令行与即时通讯工具"] --> B["渠道 Channel<br/>应用与 agent 之间的 Gateway 接线"]
+    B --> C["Gateway 路由<br/>会话管理 · 并发控制 · 多 agent 路由"]
+    B --> D["平台适配<br/>解析消息来源 · 投递回复"]
+    B --> E["流式事件与 SSE<br/>回复流实时推给前端"]
+    B --> F["多 agent 与自定义<br/>GatewayBootstrap 接线 · 自定义 Channel"]
+    C --> G["收益<br/>同一个 agent 稳定接到<br/>HTTP · SSE · 任意消息平台"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 ## 它们做什么
 
 先看没有这层抽象时会撞上的问题。用户双击发送按钮，两条相同的消息同时进入同一个对话，agent 和自己竞争；同一个用户从网页和命令行各发一条，应用对不上这是不是同一段对话；接入第二个平台时，会话与路由的逻辑要再写一遍。

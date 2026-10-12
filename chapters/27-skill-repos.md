@@ -8,6 +8,21 @@ source: integration/skill/index.md, integration/skill/overview.md, integration/s
 
 > 本章导读：讲解 `AgentSkillRepository` 接口的三种开箱即用实现——Git 技能仓库（远程仓库 + 轻量 remote ref 检查，按需 pull）、MySQL 与 PostgreSQL 技能仓库（数据库 CRUD，在线编辑即时生效；两者均已标记废弃，建议迁移到第 24 章的统一 JDBC 模块）。章首还给出两条使用契约：作用域隔离（每个仓储实例只服务一个作用域）与实例复用（同来源共享实例、不为每个 Agent 重建）。读完本章，你可以为技能选择合适的存储来源，并在多团队、多作用域场景下正确组合多个仓储。
 
+```mermaid
+flowchart LR
+    A["你的需求<br/>技能要跨团队共享<br/>或在线编辑动态发布"] --> B["Skill 仓库<br/>技能从外部存储加载"]
+    B --> C["Git 技能仓库<br/>版本管控 · 按需拉取"]
+    B --> D["数据库技能仓库<br/>MySQL · PostgreSQL 在线编辑"]
+    B --> E["两条使用契约<br/>作用域隔离 · 实例复用"]
+    B --> F["废弃与迁移<br/>数据库仓库转向统一 JDBC 模块"]
+    C --> G["收益<br/>选对技能存储来源<br/>多作用域正确组合仓储"]
+    D --> G
+    E --> G
+    F --> G
+```
+
+*本章导览图*
+
 `AgentSkill` 是 AgentScope 用 Markdown + 资源文件来描述一个可复用"技能"的格式（参考第 15 章）。`AgentSkillRepository` 接口负责把这些技能从外部存储里加载进来，再交给 `Toolkit` / `ReActAgent` 使用。
 
 `agentscope-extensions-*` 仓库提供了以下开箱即用的实现：
