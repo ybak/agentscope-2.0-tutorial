@@ -6,11 +6,23 @@ source: docs/quickstart.md
 
 # 第 2 章 快速开始
 
-> 本章导读：从零搭建第一个可运行的 AgentScope Java 应用——安装依赖、用共享 Builder 创建 HarnessAgent、完成问答与流式输出，并了解何时需要引入 AgentSession。读完本章，你将获得一个能跨实例恢复会话的最小示例。
+> 本章导读：当你想在 Java 工程里真正跑起第一个 AgentScope 应用——而不只是记住概念——本章带你从零完成：安装依赖、创建一个能记住对话的智能体，并分别用同步和流式两种方式与它对话。读完本章，你将获得一个能跨实例恢复会话的最小示例，并且知道什么时候需要引入 `AgentSession`。
+
+## 你什么时候需要它
+
+本章要跑起来的，就是第 1 章所说的 Harness 能力的最小闭环：把一个 `HarnessAgent` 嵌入你自己的应用并完成对话。三个常见的出发点：
+
+- **给现有 Java 或 Spring Boot 服务加一个能干活的助手**。例如用户在问“我的订单到哪了”，后端不只想返回一段话，还想让 Agent 调用订单接口、必要时向你确认后继续。这对应第 1 章的问答与助理场景。
+- **想让模型的处理过程边执行边可见**。命令行里看进度、网页上逐字显示回答，都需要流式输出，而不是等最终结果一次返回。
+- **预感任务会变长、会中断**。用户关掉页面后任务还得继续——这需要提前了解会话持久化与 `AgentSession`，本章靠后的小节会讲到。
+
+如果只是想先验证这套框架灵不灵，本章也是一个最小验证：一个 Maven 依赖、一个类，就能完成两轮带记忆的问答。
+
+与已学内容的关系：第 1 章从场景层面给出了三个维度，本章你会在最小示例里摸到其中两块地基——给每次调用传递会话身份，以及自动保存的状态快照；受控执行涉及的权限与沙箱本章不配置，留到第 7、10、18 章。
 
 ## 安装
 
-AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
+先准备环境。AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 
 ### Maven 依赖
 
@@ -26,7 +38,7 @@ AgentScope Java 需要 JDK 17 及以上版本，构建工具推荐 Maven 3.9+。
 
 > **注意**：把 `${agentscope.version}` 替换为最新版本号即可，最新版本请参考附录 A（Release Notes）。
 
-如果只需要 `ReActAgent` 的推理、工具和上下文 API，并自行组合应用所需能力，`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter 位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见第 3 章与第 11 章。
+如果只需要 `ReActAgent` 的推理、工具和上下文 API，并自行组合应用所需能力，`agentscope-core` 足够提供 agent 本身。具体模型提供商是独立的：特定模型提供商的 Chat Model 与 formatter（把对话消息转换成特定模型请求格式的组件）位于独立的 `agentscope-extensions-model-*` 模型扩展模块中。`ReActAgent` 与 `HarnessAgent` 的区别详见第 3 章与第 11 章。
 
 下面的 quickstart 通过 `.model("dashscope:qwen-plus")` 使用 DashScope，因此还需要引入对应模型扩展：
 
@@ -42,7 +54,7 @@ MCP 集成需要官方 MCP SDK，参考 `agentscope-examples/documentation/pom.x
 
 ## 第一个智能体
 
-推荐在应用启动时定义共享 Builder，每次请求用 `builder.build()` 创建新的 Agent，执行完成后关闭。Builder 保存通用配置，请求身份放在独立的 `RuntimeContext` 中；新建实例不会改变会话身份。下面用两个实例完成同一会话的两轮问答。运行前设置模型凭据：
+推荐在应用启动时定义共享 Builder，每次请求用 `builder.build()` 创建新的 Agent，执行完成后关闭。Builder 保存通用配置，请求身份放在独立的 `RuntimeContext`（一次调用携带的用户与会话身份）中；新建实例不会改变会话身份。换句话说，会话记忆不属于某个 Agent 实例，而是挂在 `userId` 与 `sessionId` 这对身份上：实例用完即弃，对话凭身份找回。下面用两个实例完成同一会话的两轮问答。运行前设置模型凭据：
 
 ```bash
 export DASHSCOPE_API_KEY=your_api_key
@@ -82,11 +94,11 @@ public class FirstAgent {
 }
 ```
 
-`call` 返回 `Mono<Msg>`；这里用 `block()` 启动执行并等待回复，适合命令行示例。一次调用可以多次推理和执行工具。相同 `userId`、`sessionId` 的下一次调用会使用同一段会话的上下文。
+`call` 返回 `Mono<Msg>`——Reactor 的响应式类型，代表“订阅后才会执行、最终产出一条回复”的异步计算；这里用 `block()` 启动执行并等待回复，适合命令行示例。一次调用可以多次推理和执行工具。相同 `userId`、`sessionId` 的下一次调用会使用同一段会话的上下文。
 
-默认情况下，Harness 会自动保存执行日志和用于继续对话的状态快照（checkpoint）。重启时保留相同的 `agentId`、用户、会话身份和存储配置，即可继续对话；这不需要额外创建 `AgentSession`。
+第二个例子能答出“我叫天宇”，靠的不是实例还记得，而是持久化的会话日志。默认情况下，Harness 会自动保存执行日志和用于继续对话的状态快照（checkpoint）。重启时保留相同的 `agentId`、用户、会话身份和存储配置，即可继续对话；这不需要额外创建 `AgentSession`。
 
-这个本地示例的原生日志位于 Workspace Filesystem 为当前身份解析的根目录下 `.agentscope-runtime/`。配置隔离目录或分布式 Filesystem 后，实际位置跟随对应根目录或 namespace。需要查看记录、更换后端时，再查阅第 19 章的“存储位置与后端配置”一节。
+这个本地示例的原生日志位于 Workspace Filesystem（工作区文件系统，Agent 读写文件都经过的可插拔抽象层，可指向本机目录、共享存储或沙箱）为当前身份解析的根目录下 `.agentscope-runtime/`。配置隔离目录或分布式 Filesystem 后，实际位置跟随对应根目录或 namespace。需要查看记录、更换后端时，再查阅第 19 章的“存储位置与后端配置”一节。
 
 ### 流式查看推理与工具调用
 
@@ -112,13 +124,13 @@ try (HarnessAgent agent = AGENT_BUILDER.build()) {
 }
 ```
 
-`streamEvents` 返回 `Flux<AgentEvent>`，订阅后启动执行；`blockLast()` 在这里等待流结束。它与 `call` 使用相同的 Agent 能力和持久化配置。
+`streamEvents` 返回 `Flux<AgentEvent>`——Reactor 的事件流类型，订阅后陆续产出事件；`blockLast()` 在这里等待流结束。它与 `call` 使用相同的 Agent 能力和持久化配置。
 
 同一个请求按输出需求选择 `call` 或 `streamEvents`。如果先 `call`，再用相同输入调用 `streamEvents`，会再次执行该请求。
 
 ### 在 Web 请求中使用
 
-WebFlux 中使用 `Mono.using` 管理实例：订阅时从共享 Builder 构建 Agent，执行完成、报错或取消时关闭。不要在 `try` 块中返回尚未订阅的 `Mono`，否则 Agent 会提前关闭。下面是 handler 中的调用表达式：
+命令行示例里实例随用随建；放进 Web 服务后，实例的生命周期要跟一次请求对齐。WebFlux 中使用 `Mono.using` 管理实例：订阅时从共享 Builder 构建 Agent，执行完成、报错或取消时关闭。不要在 `try` 块中返回尚未订阅的 `Mono`，否则 Agent 会提前关闭。下面是 handler 中的调用表达式：
 
 ```java
 import reactor.core.publisher.Mono;
