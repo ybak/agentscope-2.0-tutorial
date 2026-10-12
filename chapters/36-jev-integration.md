@@ -13,9 +13,9 @@ source: jev/guides/client.md, jev/guides/harness-runtime.md, jev/guides/agent-in
 ```mermaid
 flowchart LR
     A["你的需求<br/>把 JEV 接进<br/>你自己的 Java 工程"] --> B["三条接入路径<br/>三节操作手册"]
-    B --> C["创建客户端<br/>JevClient 发起类型化判断"]
-    B --> D["配置 Harness 能力<br/>运行模式 · 总预算 · 决策观察器"]
-    B --> E["离线案例先行<br/>跑通链路再换真实后端"]
+    B --> C["创建客户端<br/>发起类型化判断"]
+    B --> D["配置 Harness 能力<br/>运行模式与预算"]
+    B --> E["离线案例先行<br/>再换真实后端"]
     C --> F["收益<br/>Java 代码与命令行<br/>原样可运行"]
     D --> F
     E --> F

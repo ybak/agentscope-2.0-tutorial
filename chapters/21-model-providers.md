@@ -12,7 +12,7 @@ source: integration/model/index.md, integration/model/openai.md, integration/mod
 flowchart LR
     A["你的需求<br/>把任意一家模型服务<br/>接进 AgentScope"] --> B["10 家提供商统一接入<br/>一张总表加每家四段式小节"]
     B --> C["通用接入流程<br/>引依赖 · 获取凭据 · 字符串 id 选模型"]
-    B --> D["用字符串 id 选模型<br/>按 id 前缀找到对应模型"]
+    B --> D["用字符串 id 选模型<br/>按 id 前缀路由到对应扩展"]
     B --> E["OpenAI 兼容一族<br/>DeepSeek · GLM · Kimi · MiniMax 复用"]
     B --> F["各家差异点<br/>专属能力 · 报文格式 · 环境变量"]
     C --> G["收益<br/>任意一家都能接入<br/>分清各家兼容性差异"]
