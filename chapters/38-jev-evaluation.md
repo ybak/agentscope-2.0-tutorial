@@ -6,7 +6,24 @@ source: jev/guides/judge-api.md, jev/guides/trace-evaluation-api.md, jev/guides/
 
 # 第 38 章 评估与运营
 
-> 本章导读：接入了判断，还要能评估判断本身是否值得。本章前四节是 JEV 评估 API 的完整收录：`JevJudge` 用带版本的条件定义聚合 PASS/FAIL/INCONCLUSIVE，`JevTraceEvaluator` 采集并评估 Agent 轨迹的八项指标，`JevTraceMetric` 让定义在在线审核与离线回放间复用，`JevEvaluator` 加 runner 对固定样本做批量回归；第五节讲如何用同一组输入做基线与同题对照、读懂报告并校准阈值；第六节给出预算分配与决策记录的消费方式；末节是全部 API 与包的索引。评估的纪律与判断一致：金标不进模型请求、弃权和错误留在分母里、离线预设结果不能充当模型准确率。
+> 本章导读：第 37 章把 JEV 判断接进了运行链路，接下来要回答一个更根本的问题——这些判断本身值得吗：该拦的退款有没有拦住？改过提示词之后，回答质量是变好还是变坏？上线之前，怎么证明阈值选对了？本章按"想解决什么评估问题"组织答案：检查一份草稿是否满足一组条件，用 `JevJudge` 定义带版本的条件并聚合 PASS/FAIL/INCONCLUSIVE；检查 Agent 一次调用选没选对工具、回答有没有依据，用 `JevTraceEvaluator` 评估八项轨迹指标；让在线审核与离线回放共用同一套标准，靠带版本的定义与 `JevTraceMetric`；改动之后对固定样本做批量回归，用 `JevEvaluator` 加 runner；判断 JEV 与文本模型谁更值得接管，用基线与同题对照回答。38.7 节转向评估的运营面：给判断分配预算、消费决策记录。每节先给出一条最小可运行路径，再展开细节；全量字段、Service 配置与包索引收在章末"参考速查"。评估的纪律与判断一致：金标不进模型请求、弃权和错误留在分母里、离线预设结果不能充当模型准确率。
+
+## 评估什么，用什么评估
+
+第 37 章之后，JEV 的判断已经在链路上运行：工具选择在推荐候选，退款防护在检查受保护调用，回答审核在给草稿打分。但"跑起来了"不等于"值得用"——38.6 节有一个例子：一个判断器即使拒绝了全部危险调用，也可能把所有正常退款一起拦住。所以评估的对象不是模型本身，而是"加入判断之后，Harness 是否改善"：判断质量、Harness 实际行为和端到端效果要分别测量。
+
+在评估端到端效果之前，先要能对单个判断、单次调用和一批样本做出可复现的评估。本章按评估对象给出对应的组件：
+
+| 你想评估什么 | 用什么 | 见 |
+|---|---|---|
+| 一份草稿或回答是否满足一组条件 | `JevJudge` | 38.2 节 |
+| 一次调用选没选对工具、回答有没有依据 | `JevTraceEvaluator` 与内置轨迹指标 | 38.3 节 |
+| 多个场景、线上线下是否共用同一套标准 | 带版本的定义复用与 `JevTraceMetric` 自定义 | 38.4 节 |
+| 改动之后，一批固定样本的质量是否回归 | `JevEvaluator` + `JevEvaluationRunner` | 38.5 节 |
+
+这些组件共用同一条纪律，先在这里立下，各节不再重复：**金标（预先标注的期望结果）只用于判分，不进入发给评审模型的请求**；弃权和错误保留在统计分母里，不从样本中消失；离线示例用预设概率验证调用链，其结果不能充当真实模型的准确率。同理，正文示例中的 0.2/0.8 等阈值都是演示值，正式使用前应在自己的业务样本上校准。
+
+本章所有可运行命令都按第 36 章"构建一次，运行多个案例"一节设置好 `JEV_CP` 后执行，正文不再重复这一步。
 
 ## 用条件定义评审标准
 
@@ -35,7 +52,7 @@ var definition = new JevJudge.Definition("refund-answer-v1", List.of(
         true, 0.2, 0.8)));
 ```
 
-`true` 表示期望条件成立；0.2 和 0.8 是失败、通过阈值，中间区间保留不确定。它们是演示配置，正式使用前应在自己的业务样本上校准。
+`true` 表示期望条件成立；0.2 和 0.8 是失败、通过阈值，中间区间保留不确定。
 
 `refund-answer-v1` 标识这套标准。修改问题、字段含义或阈值时更新版本，才能区分"模型表现变了"与"评审规则变了"。
 
@@ -52,7 +69,7 @@ var pending = judge.judge(state, definition);
 
 `client` 按客户端接入（见第 36 章）创建。2 秒是这次评审的总预算，包含客户端重试和退避。证据必须来自实际业务记录，不能用 Agent 自己的承诺作为退款成功证明。
 
-这三个字段与 `JevEvaluator`（见本章"批量评估问题、证据与回答"一节）的输入一致，因此这份 definition 可以直接用于后续批量回归。
+这三个字段与 `JevEvaluator`（见 38.5 节）的输入一致，因此这份 definition 可以直接用于后续批量回归。
 
 ### 3. 按状态决定草稿下一步
 
@@ -76,8 +93,6 @@ var observed = pending.doOnNext(result -> {
 概率不是文字理由。`findings()` 保留逐项概率和状态，不自动生成原因解释、证据引用或 run/session；应用应关联原业务记录。
 
 ### 运行与验证
-
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios judge
@@ -151,7 +166,7 @@ var evaluator = new JevTraceEvaluator(client, metrics,
 var pending = evaluator.evaluate(trace);
 ```
 
-三个上限分别约束一次评估的总耗时、单项问题数量和状态字符数，避免长轨迹无限放大评审开销。0.2/0.8 是演示阈值，正式使用应分用途校准。应用在响应式链中组合 `pending`，独立命令行才阻塞等待。
+三个上限分别约束一次评估的总耗时、单项问题数量和状态字符数，避免长轨迹无限放大评审开销。应用在响应式链中组合 `pending`，独立命令行才阻塞等待。
 
 本例重点看 `tool_choice`、`used_tool_result` 和 `grounded`：工具选择正确不代表最终回答有依据。如果把回答换成"退款已经完成"，应由依据检查独立暴露问题，而不是被工具调用成功掩盖。
 
@@ -181,18 +196,9 @@ var extendedEvaluator = new JevTraceEvaluator(client, extendedMetrics,
 var comparison = extendedEvaluator.evaluate(labelled);
 ```
 
-自定义指标实现 `id/version/precheck/state/questions/reduce`。metric ID 和本地题目 ID 只能使用字母开头的字母、数字、下划线，最长 64 字符。线上问题名为 `metric.question`；重复 metric ID 拒绝构造。无问题的确定性指标不发请求。不同指标对同一 state 字段给出不同值时拆分请求，绝不覆盖。
+自定义指标的实现契约（`id/version/precheck/state/questions/reduce` 五个方法与 ID 命名规则）统一放在 38.4 节。
 
 `report.passed()` 只有在非空且全部指标明确 DECIDED/passed=true 时才为 true。SKIPPED、错误、弃权、没有通过策略的纯分类都不能使整体通过。调用方仍需查看每项状态；false 不等于业务判定为拒绝。
-
-### 错误、预算和取消
-
-- 缺字段或空证据：SKIPPED；不完整轨迹：INCOMPLETE_TRACE；超出单项问题数或状态字符数：EVALUATION_LIMIT，不截断证据后继续评分。
-- 预检查、定义或 reducer 异常只影响对应指标；不在报告中保存异常文本，避免带出上下文。
-- 后端错误、空响应、缺题、错类型、非法概率均为 ERROR；已报告的用量仍保留，未知用量不算零。
-- 总预算覆盖本次所有分组；超时取消在途请求，未完成指标记 TIMEOUT；已完成指标保留。
-- 下游取消向调用函数传播，不发出伪造的"完成报告"，也不继续后续分组。底层传输是否成功中断远端计算依赖 transport，不能据此声称不再计费。
-- 分组串行执行；数据集并发由 runner 参数控制，范围 1..32；自定义回调必须及时返回非阻塞 Publisher。
 
 ### 3. 在线采集时只观察本次调用
 
@@ -219,30 +225,9 @@ var agent = HarnessAgent.builder().name("observed-order-agent")
 
 该观察器拒绝 ENFORCE：动作已经执行，事后评估无权撤销它。执行前权限及护栏继续由现有工具防护承担；同步输出审核继续用响应中间件。不会根据评估结果重跑 Agent 或写工具。
 
-### Service 配置和记录
+在 AgentScope Service 侧启用同样的评估，则是在部署配置中写一个 JSON 配置块：默认 OFF，启用时须显式提供两个阈值，其余字段与记录格式见本章末"参考速查"。
 
-```json
-{
-  "jev": {
-    "evaluation": {
-      "mode": "SHADOW",
-      "version": "orders-v1",
-      "budgetMillis": 3000,
-      "threshold": 0.8,
-      "rejectionThreshold": 0.2,
-      "maxQuestions": 128,
-      "maxStateChars": 100000,
-      "metrics": ["tool_choice", "used_tool_result", "grounded", "completeness"]
-    }
-  }
-}
-```
-
-`evaluation` 默认 OFF；启用时显式提供两个阈值。`metrics` 省略时使用七项；未知名称、重复名称、ENFORCE、任意 endpoint/key 配置均拒绝。预算最多 30 秒、问题最多 512、状态最多 1,000,000 字符。阈值仅演示，不构成线上建议。
-
-配置进入已有 Agent 构建缓存身份；变更指标或阈值重建 Agent。结果复用 `JevServiceSupport.TraceSink`，由现有运行链关联 run/session：`evaluation.<metric>` 保存版本、状态、标签/分数/通过值和耗时；`evaluation.usage` 记录请求数、已知用量响应数与 token。不会保存原始轨迹、模型密钥、完整证据或自由生成的解释。未获得响应的请求成本未知，不能用已知 token 总量当完整账单。
-
-### 批量报告与对照
+### 回放多个样本并汇总
 
 ```java
 var cases = List.of(new io.agentscope.extensions.judge.jev.evaluation.JevTraceRunner.Case("orders", trace,
@@ -259,8 +244,6 @@ var report = new io.agentscope.extensions.judge.jev.evaluation.JevTraceRunner().
 
 `JevTraceEvaluationExample` 使用真实 ReActAgent 与只读模拟工具，脚本模型生成工具调用和最终答案，评估端返回合成响应，不需要密钥。
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
-
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevTraceEvaluationExample
 ```
@@ -274,6 +257,15 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevTraceEvaluationExample
 `JevTextBackend(model, transport)` 将相同 `SystemOneRequest` 转成兼容 Chat Completions 的 JSON 请求；transport 接收请求 JSON 并返回完整响应 JSON 的 `Mono<String>`。端点、密钥、HTTP 超时和取消由 transport 管理，适配器不自行读取环境变量。示例 `JevTraceBenchmark` 用 HTTP API 调用 Qwen。
 
 仅接受完整 JSON、全部题目和全部分布项；重复键、非数值概率、非法总和、截断响应均为 ERROR/INVALID_RESPONSE，仍保留可解析的 token 用量。不会用 0.5 或归一化结果掩盖格式失败。Choice 的置信度根据相对均匀分布计算；概率没有经过独立校准。
+
+### 错误、预算和取消
+
+- 缺字段或空证据：SKIPPED；不完整轨迹：INCOMPLETE_TRACE；超出单项问题数或状态字符数：EVALUATION_LIMIT，不截断证据后继续评分。
+- 预检查、定义或 reducer 异常只影响对应指标；不在报告中保存异常文本，避免带出上下文。
+- 后端错误、空响应、缺题、错类型、非法概率均为 ERROR；已报告的用量仍保留，未知用量不算零。
+- 总预算覆盖本次所有分组；超时取消在途请求，未完成指标记 TIMEOUT；已完成指标保留。
+- 下游取消向调用函数传播，不发出伪造的"完成报告"，也不继续后续分组。底层传输是否成功中断远端计算依赖 transport，不能据此声称不再计费。
+- 分组串行执行；数据集并发由 runner 参数控制，范围 1..32；自定义回调必须及时返回非阻塞 Publisher。
 
 ## 复用与扩展评估定义
 
@@ -330,19 +322,17 @@ var traceEvaluator = new JevTraceEvaluator(client, metrics,
     new JevTraceEvaluator.Limits(Duration.ofSeconds(3), 128, 100_000));
 ```
 
-同一个 traceEvaluator 可以交给 `JevTraceRunner` 回放数据，也可以交给 `JevTraceEvaluationMiddleware` 观察真实 Agent 调用。接入示例见本章"采集并评估 Agent 轨迹"一节。
+同一个 traceEvaluator 可以交给 `JevTraceRunner` 回放数据，也可以交给 `JevTraceEvaluationMiddleware` 观察真实 Agent 调用。接入示例见 38.3 节。
 
-指标 ID 和局部题目 ID 使用字母开头的字母、数字、下划线，最长 64 字符；指标 ID 不可重复。评估器用命名空间隔离问题，兼容的 state 合并请求，冲突字段拆分请求。无问题的确定性指标不调用模型。定义和 reducer 异常只影响对应指标。
+指标 ID 和局部题目 ID 使用字母开头的字母、数字、下划线，最长 64 字符；指标 ID 不可重复，重复 metric ID 拒绝构造，线上问题名为 `metric.question`。评估器用命名空间隔离问题，兼容的 state 合并请求；不同指标对同一 state 字段给出不同值时拆分请求，绝不覆盖。无问题的确定性指标不调用模型。定义和 reducer 异常只影响对应指标。
 
 ### 保存状态而非只保存总分
 
 `JevMetricResult.passed` 可为空，非 DECIDED 状态不能声明通过或失败。保留 SKIPPED、INCONCLUSIVE 和 ERROR，分别判断是输入缺失、模型不确定还是调用失败；不要将它们替换成零分后丢掉原因。
 
-阈值示例用于说明接口。业务金标、版本、运行模式和完整样本分母一起决定评测结果是否可比较。评测方法见本章"评测自己的 Harness 与判断后端"一节。
+阈值示例用于说明接口。业务金标、版本、运行模式和完整样本分母一起决定评测结果是否可比较。评测方法见 38.6 节。
 
 ### 运行与验证
-
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios judge
@@ -382,7 +372,7 @@ var judge = new JevJudge(client, Duration.ofSeconds(2));
 Evaluator evaluator = new JevEvaluator(judge, definition);
 ```
 
-`client` 的配置见客户端接入（见第 36 章）。定义与单条 Judge 用法（见本章"用条件定义评审标准"一节）相同，问题、证据和回答分别映射到 `user_question`、`supporting_context`、`assistant_answer`。
+`client` 的配置见客户端接入（见第 36 章）。定义与单条 Judge 用法（见 38.2 节）相同，问题、证据和回答分别映射到 `user_question`、`supporting_context`、`assistant_answer`。
 
 ### 2. 构造一正一反的固定样本
 
@@ -417,15 +407,13 @@ var observed = pending.doOnNext(report -> {
 
 ### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
-
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios evaluation
 ```
 
 离线夹具对两条样本分别返回 PASS、FAIL，报告显示 2 条匹配。它验证标签隔离与统计口径，不是"模型准确率 100%"的证据。完整用例为示例模块中的 `JevApplicationScenarios`。
 
-需要对比真实后端时，让两个 Evaluator 使用同一数据集、定义和预算，保留各自错误、弃权、用量及版本。"评测自己的 Harness 与判断后端"一节（见本章）说明如何组织对照。
+需要对比真实后端时，让两个 Evaluator 使用同一数据集、定义和预算，保留各自错误、弃权、用量及版本。38.6 节说明如何组织对照。
 
 ### 预算、报告与取消
 
@@ -469,7 +457,7 @@ P50/P95 使用最近秩，度量的是评审耗时，不是 Agent 完整任务�
 
 ### 运行基线与同题对照
 
-先按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`。以轨迹评估为例：
+以轨迹评估为例：
 
 ```bash
 JEV_DATA="agentscope-examples/jev/src/test/resources/jev/trace-cases.jsonl"
@@ -547,7 +535,7 @@ var options = new JevExecution.Options(
 
 ### 从影子模式切换
 
-先固定金标、模式和定义版本，记录分场景错误与弃权，再按本章"评测自己的 Harness 与判断后端"一节选择阈值。切换某一用途到 ENFORCE 时，确认其数据源、权限和失败处理已经接入。线上仍保留独立的工具执行结果和业务质量指标。
+先固定金标、模式和定义版本，记录分场景错误与弃权，再按 38.6 节选择阈值。切换某一用途到 ENFORCE 时，确认其数据源、权限和失败处理已经接入。线上仍保留独立的工具执行结果和业务质量指标。
 
 Service 的配置与事件查询见第 37 章"在 AgentScope Service 中配置 JEV"一节。
 
@@ -555,15 +543,53 @@ Service 的配置与事件查询见第 37 章"在 AgentScope Service 中配置 J
 
 工具防护对比用例（见 `agentscope-examples/jev/benchmarks/tool-guard` 的 README）同时记录检查耗时与实际派发，包含离线超时、取消、观察器异常和并发隔离测试。先跑这些固定分支，再对你的业务数据测量质量与延迟；不要用离线模拟耗时作为线上容量估计。
 
-## API 与包索引
+## 本章小结
 
-通过本节查找导入位置。基础依赖是 `io.agentscope:agentscope-extensions-jev`，与项目 BOM 使用同一版本；Harness 集成另外依赖同版本 `agentscope-harness`。
+评估回答的是一个问题：加入判断之后，Harness 是否真的变好了。围绕它，本章给出一条完整的路径：
+
+1. **单条审核**：`JevJudge` 用带版本的条件定义聚合 PASS / FAIL / INCONCLUSIVE / ERROR；概率不是文字理由，ERROR 不补造，INCONCLUSIVE 不能当作通过；
+2. **轨迹质量**：`JevTraceEvaluator` 对一次调用评估八项指标；`report.passed()` 只在全部指标明确通过时为 true，false 不等于业务判定为拒绝；
+3. **在线观察**：`JevTraceEvaluationMiddleware` 以 SHADOW 模式评估真实调用，只观察已经发生的行为、不撤销动作，拒绝 ENFORCE；
+4. **标准复用**：同一份带版本 `Definition` 在 Judge、Evaluator 与响应中间件之间复用；自定义指标实现 `JevTraceMetric` 的五个方法，可以含不发请求的确定性检查；
+5. **批量回归**：`JevEvaluator` 加 `JevEvaluationRunner` 回放固定样本，准确率分母包含错误、弃权与跳过；
+6. **对照决策**：用 `--baseline` 与同题对照比较原流程、JEV 与文本模型，弃权和错误留在分母，阈值在独立校准集选择，上线前先 SHADOW 记录建议；
+7. **运营**：给判断分配独立预算，观察器按字段表记录决策，切换 ENFORCE 前确认数据源、权限与失败处理已接入。
+
+**按评估任务索引**——想清楚要评估什么，再进对应节：
+
+| 评估任务 | 去处 |
+|---|---|
+| 审核一份草稿或回答是否满足条件 | 38.2 节 |
+| 检查一次调用的工具选择、结果利用与回答依据 | 38.3 节 |
+| 在真实调用上采集评估（SHADOW） | 38.3 节"在线采集时只观察本次调用" |
+| 让线上线下共用标准，或新增自定义指标 | 38.4 节 |
+| 改动后对固定样本做质量回归 | 38.5 节 |
+| 决定是否用 JEV 接管某个判断环节 | 38.6 节 |
+| 配置预算、消费决策记录 | 38.7 节 |
+| 查包、依赖与 Service 配置 | 38.9 节"参考速查" |
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 说明金标为什么不能进入模型请求，弃权和错误为什么留在分母里；
+- ☐ 用 `JevJudge` 对一条"无依据承诺"草稿完成评审，并区分 PASS、FAIL、INCONCLUSIVE、ERROR 四种状态的处理方式；
+- ☐ 用 `JevTrace.fromMessages` 构造一次调用的轨迹，读出工具选择与回答依据两项结论；
+- ☐ 让在线审核与离线回放使用同一份带版本的定义；
+- ☐ 跑通一次 `--baseline` 对照，说清报告准确率的分母口径；
+- ☐ 说出 SHADOW 观察器记录中用于关联 run/session 的字段。
+
+## 参考速查
+
+本节收拢本章正文引用过的包索引与 Service 配置，供实施时查阅；各节的最小可运行路径不依赖本节。
+
+### 包与依赖
+
+基础依赖是 `io.agentscope:agentscope-extensions-jev`，与项目 BOM 使用同一版本；Harness 集成另外依赖同版本 `agentscope-harness`。各包的主要入口如下：
 
 | 包（前缀 `io.agentscope.extensions.judge.jev`） | 主要入口 | 使用说明 |
 |---|---|---|
-| 根包 | JevClient、SystemOneRequest、JevJudge、JevExecution、JevGuardrail | 客户端（见第 36 章）、评审定义（见第 38 章） |
+| 根包 | JevClient、SystemOneRequest、JevJudge、JevExecution、JevGuardrail | 客户端（见第 36 章）、评审定义（见本章） |
 | example | JevToolSelectionMiddleware、JevAutoModeMiddleware、JevModelRouterMiddleware | 运行模式（见第 36 章） |
-| evaluation | JevTrace、JevTraceMetric、JevTraceEvaluator、JevTraceEvaluationMiddleware、JevTraceRunner、JevEvaluator、JevEvaluationRunner、JevTextBackend | 轨迹评估（见第 38 章） |
+| evaluation | JevTrace、JevTraceMetric、JevTraceEvaluator、JevTraceEvaluationMiddleware、JevTraceRunner、JevEvaluator、JevEvaluationRunner、JevTextBackend | 轨迹评估（见本章） |
 | context | JevContextCompactor、JevContextArchive、FileJevContextArchive、StoreJevContextArchive | 上下文压缩（见第 37 章） |
 | supervision | JevTaskSupervisor、JevSupervisionMiddleware、SupervisionEvidence | 持续监督（见第 37 章） |
 | routing | JevPhaseRouting、JevRouteCatalog | 阶段路由（见第 37 章） |
@@ -575,6 +601,31 @@ Service 的配置与事件查询见第 37 章"在 AgentScope Service 中配置 J
 
 `example` 是三个可复用中间件的现有包名。可运行案例另在 `agentscope-examples/jev`，使用 `io.agentscope.examples.jev` 包，不需要将 examples 加为生产依赖。
 
-例如，给退款工具增加派发前检查，导入 `example.JevAutoModeMiddleware`；审核最终回答，导入 `integration.JevResponseMiddleware`；只评审一份已有草稿，则用根包的 `JevJudge`。先按任务选择功能节，再从本表查找导入位置。
+例如，给退款工具增加派发前检查，导入 `example.JevAutoModeMiddleware`；审核最终回答，导入 `integration.JevResponseMiddleware`；只评审一份已有草稿，则用根包的 `JevJudge`。先按 38.1 节想清楚评估问题，再从本表查找导入位置。
 
 文档片段中的 model、ACL、Source、记录函数及业务存储由应用提供。完整导入和可运行装配见第 36 章"运行案例与功能入口"一节。
+
+### Service 端评估配置与记录
+
+在 AgentScope Service 侧启用轨迹评估，配置写在部署 JSON 的 `jev` 键下：
+
+```json
+{
+  "jev": {
+    "evaluation": {
+      "mode": "SHADOW",
+      "version": "orders-v1",
+      "budgetMillis": 3000,
+      "threshold": 0.8,
+      "rejectionThreshold": 0.2,
+      "maxQuestions": 128,
+      "maxStateChars": 100000,
+      "metrics": ["tool_choice", "used_tool_result", "grounded", "completeness"]
+    }
+  }
+}
+```
+
+`evaluation` 默认 OFF；启用时显式提供两个阈值。`metrics` 省略时使用七项；未知名称、重复名称、ENFORCE、任意 endpoint/key 配置均拒绝。预算最多 30 秒、问题最多 512、状态最多 1,000,000 字符。
+
+配置进入已有 Agent 构建缓存身份；变更指标或阈值重建 Agent。结果复用 `JevServiceSupport.TraceSink`，由现有运行链关联 run/session：`evaluation.<metric>` 保存版本、状态、标签/分数/通过值和耗时；`evaluation.usage` 记录请求数、已知用量响应数与 token。不会保存原始轨迹、模型密钥、完整证据或自由生成的解释。未获得响应的请求成本未知，不能用已知 token 总量当完整账单。

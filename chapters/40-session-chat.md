@@ -8,9 +8,7 @@ source: blogs/best-practices/session-chat.md
 
 > 本章导读：一个可以直接运行的 HarnessAgent Web Chat 示例（agentscope-chat），演示持久会话、实时事件、SSE 续传和 checkpoint 恢复：多步执行中刷新页面与断线重连后界面如何补齐、补充信息后如何恢复同一 turn、中断后如何从 checkpoint 续跑，以及新任务排队与运行中引导的区别。示例默认使用离线演示模型，无需 API Key、数据库或 Node.js，只需 JDK 17+ 和 Maven；读完本章，你可以照此把"页面离开后任务仍在执行"的聊天应用搭起来。
 
-完整源代码位于仓库 [agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-chat)。
-
-一个可以直接运行的 HarnessAgent Web Chat，演示持久会话、实时事件、SSE 续传和 checkpoint 恢复。浏览器页面包含聊天区、待答请求和已提交事件时间线。
+完整源代码位于仓库 [agentscope-chat](https://github.com/agentscope-ai/agentscope-java/tree/main/agentscope-examples/agents/agentscope-chat)。示例的浏览器页面包含聊天区、待答请求和已提交事件时间线。
 
 本示例承接第 2 章（快速开始）：普通问答和当前请求的流式输出使用 `call` / `streamEvents` 即可。这里使用 `AgentSession`，是因为页面离开后任务仍需执行，还需要排队、回复待办和中断后继续。会话 API 的逐步用法见第 19 章（会话日志与恢复）。
 
@@ -40,8 +38,6 @@ sequenceDiagram
 
 *图 40-1：可恢复会话聊天的交互时序*
 
-默认使用离线演示模型，无需 API Key、数据库或 Node.js。需要 JDK 17+ 和 Maven。
-
 ## 启动
 
 在 agentscope-java 仓库根目录运行：
@@ -61,6 +57,8 @@ CHAT_WORKSPACE=/absolute/path/to/chat-workspace CHAT_PORT=8088 \
 ```
 
 ## 按顺序体验
+
+以下 6 个场景由浅入深：先验证会话与历史能否持久，再体验执行中的刷新与断线，之后是挂起恢复、中断续跑与任务排队，最后查看执行细节。全程使用离线演示模型，切到真实模型的方法见本章后面的"使用真实模型"一节。
 
 ### 1. 聊天与历史恢复
 
@@ -155,3 +153,7 @@ java -jar agentscope-examples/agents/agentscope-chat/target/agentscope-chat.jar
 mvn -pl agentscope-examples/agents/agentscope-chat -am test \
   -Dtest=ChatSessionsTest,ChatItemsTest -Dsurefire.failIfNoSpecifiedTests=false
 ```
+
+## 本章小结
+
+本章用一个可运行的示例把第 19 章的会话机制连到了真实页面上：持久会话让刷新与重启不丢历史；SSE 续传靠"快照 + Last-Event-ID"补齐界面；`ask_user` 挂起后用 `respond` 在原 turn 上继续；中断后用 `resume` 从 checkpoint 续跑；新任务、运行中引导与材料注入分别对应 `submit`、`steer` 与 `inject`。这些操作背后的选择依据（什么时候该用哪一个）在第 41 章逐条展开；把示例搬到公共环境之前，先读第 42 章的生产差异。

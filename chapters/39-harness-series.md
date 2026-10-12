@@ -6,7 +6,7 @@ source: blogs/how-to-build-agent-harness/01-patterns.md, blogs/how-to-build-agen
 
 # 第 39 章 如何构建 Agent Harness
 
-> 本章导读：本章完整收录"如何构建 Agent Harness"系列四篇博文，依次对应本章四节，节内小节编号（1.1、2.1、3.1、4.1）延续原系列编号。第一篇建立 Model、Harness、Runtime、Sandbox 与 Agent Platform 的责任边界，并给出 `HarnessAgent` 的四种运行形态（本地工作区、嵌入式应用、长任务服务、平台化交付）；第二篇讲执行与编排——Agent Loop 与任务状态机、Planning 与阶段门禁、Subagent 委派契约、异步续行与完成验证；第三篇讲信息工程——Context 构建管线与 Manifest、压缩与 Continuation、Session/Task/Workspace 边界、Memory 与 Knowledge 治理、Skill 资产化；第四篇讲行动与反馈——Action Plane 统一行动契约、Tool/MCP/A2A 职责边界、Environment Contract 与 Sandbox、Permission/HITL、Streaming 交互协议，以及从 Trace 到 Harness Patch 的评估闭环。全系列以"生产服务漏洞修复与变更发布 Agent"为贯穿案例；原文中"本系列第 N 篇"的交叉引用已改写为本章内的小节引用，各篇末尾的系列导航因合并入同一章而移除；文中偶见的"构建（Build）/运行（Run）/治理（Governance）篇"指 AgentScope 官方文档的篇章划分，非本书各篇。
+> 本章导读：本章完整收录"如何构建 Agent Harness"系列四篇博文，依次对应本章四节，节内小节编号（1.1、2.1、3.1、4.1）延续原系列编号。第一篇建立 Model、Harness、Runtime、Sandbox 与 Agent Platform 的责任边界，并给出 `HarnessAgent` 的四种运行形态（本地工作区、嵌入式应用、长任务服务、平台化交付）；第二篇讲执行与编排——Agent Loop 与任务状态机、Planning 与阶段门禁、Subagent 委派契约、异步续行与完成验证；第三篇讲信息工程——Context 构建管线与 Manifest、压缩与 Continuation、Session/Task/Workspace 边界、Memory 与 Knowledge 治理、Skill 资产化；第四篇讲行动与反馈——Action Plane 统一行动契约、Tool/MCP/A2A 职责边界、Environment Contract 与 Sandbox、Permission/HITL（Human-in-the-Loop，人工介入）、Streaming 交互协议，以及从 Trace 到 Harness Patch 的评估闭环。全系列以"生产服务漏洞修复与变更发布 Agent"为贯穿案例；原文中"本系列第 N 篇"的交叉引用已改写为本章内的小节引用，各篇末尾的系列导航因合并入同一章而移除；文中偶见的"构建（Build）/运行（Run）/治理（Governance）篇"指 AgentScope 官方文档的篇章划分，非本书各篇。四篇按 1→4 的顺序读即是推荐路径：先定责任边界，再补执行与编排，然后处理信息组织，最后收紧行动与反馈；只想深入某一主题的读者可以按节跳读，每篇开头都交代了它从前一节承接的问题，与前面章节重复的 SDK 细节也在对应小节标注了出处。
 
 ## 第一篇 架构范式与责任边界
 
@@ -121,6 +121,8 @@ Harness 因而要把概率性的模型判断嵌入确定性的系统边界。模
 ### 1.2 基于高代码框架自主构建 Harness
 
 高代码 Agent Framework 提供模型、消息、工具、Agent、状态和编排等代码级抽象，应用团队在其上定义任务循环、上下文策略、能力组合和企业集成。这里的“高代码”强调开发团队可以直接控制和扩展 Harness 机制，与依靠可视化配置或预置模板的构建入口相区分，并不表示框架路径一定更复杂或更成熟。以 AgentScope Java 为例，HarnessAgent 将工作区、状态、Memory、Context 压缩、Plan Mode、Skill、Subagent、Sandbox 和交互控制等能力组织在统一运行上下文中，使团队可以按业务需要自主构建 Harness。这里的自主构建指开发团队使用框架设计和实现 Harness，并不是 Agent 自己生成或重构 Harness。
+
+下面的 Builder 代码你在第 2 章“快速开始”和第 11 章“Harness 架构深入”里已经见过，能力配置的逐项清单也在那里。本节不再展开配置细节，而是回答一个更架构化的问题——同一套 `HarnessAgent` 如何随运行责任逐步演进。
 
 Framework 路径的核心价值是任务语义控制。企业可以决定每轮 Context 怎样组成、哪些错误可以重试、计划何时生成和更新、何时请求审批、怎样创建子任务，以及什么证据算完成。与之对应，Framework 提供的是构建材料，不会自动补齐多租户隔离、状态恢复、Sandbox、安全策略、评估基线和业务验收。
 
@@ -416,7 +418,7 @@ flowchart TB
 
 #### 2.1.1 从模型调用到任务循环
 
-Agent Loop 是 Harness 最稳定的内核。它不要求模型一次性给出完整答案，而是允许模型根据当前目标和环境反馈，重复执行“判断—行动—观察—再判断”，直到任务被验证完成、进入等待、失败或取消。
+Agent Loop 是 Harness 最稳定的内核。它不要求模型一次性给出完整答案，而是允许模型根据当前目标和环境反馈，重复执行“判断—行动—观察—再判断”，直到任务被验证完成、进入等待、失败或取消。这个循环在第 4 章“Agent 与 ReAct 循环”中已用最小例子出现过；本节把它放进任务状态机与预算边界的企业语境。
 
 一个最小但完整的 Loop 可以抽象为五个阶段：
 
@@ -557,6 +559,8 @@ Plan Mode 将执行过程分为“只读探索—写入计划—人工确认—�
 
 这一实现展示了 Prompt 与 Harness 控制的区别：Prompt 可以要求模型“先规划再修改”，但只有权限模式、工具白名单、持久状态与 HITL 共同生效，系统才真正具备“计划获批前不可写”的约束。
 
+Plan Mode 的工具清单、状态持久化与 `todo_write` 的协作已在第 17 章“计划模式”中逐项展开；本节关注的是它作为阶段门禁的编排语义。
+
 ### 2.3 Subagent 与任务委派
 
 #### 2.3.1 何时值得委派
@@ -570,6 +574,8 @@ Subagent 的价值不是把一个 Agent 包装成多个角色，而是解决三�
 1. **并行执行**：互不依赖的检索、实现或验证可以同时推进，缩短墙钟时间。
 
 任务很短、步骤高度依赖或共享对象频繁变化时，委派会增加通信和合并成本。只有隔离、专业化或并行收益超过这些成本时，Subagent 才有价值。
+
+子 Agent 的声明方式、ISOLATED 与 SHARED 隔离、同步与后台执行已在第 16 章“子 Agent 协作”中展开；本节补齐的是委派契约与失败传播——SDK 告诉你怎么声明，这里回答怎么委派才可靠。
 
 #### 2.3.2 建立清晰的委派契约
 
@@ -704,7 +710,7 @@ flowchart LR
 
 #### 2.5.1 保持核心 Loop 稳定
 
-一个常见演进问题是：每加入压缩、计划、权限、模型路由或观测能力，就在 Loop 中增加一组条件分支。短期直接，长期会使状态迁移不可预测。更稳健的结构是“稳定内核 + 可插拔能力”：核心 Loop 只定义阶段与状态迁移；Middleware、Hook 或 Ability 在明确的生命周期点读取 Runtime Context，返回放行、修改、短路或追加行为。
+一个常见演进问题是：每加入压缩、计划、权限、模型路由或观测能力，就在 Loop 中增加一组条件分支。短期直接，长期会使状态迁移不可预测。更稳健的结构是“稳定内核 + 可插拔能力”：核心 Loop 只定义阶段与状态迁移；Middleware、Hook 或 Ability 在明确的生命周期点读取 Runtime Context，返回放行、修改、短路或追加行为。中间件如何装备、内置清单有哪些，已在第 9 章“中间件”给出；本节关注扩展时机的约定，以及扩展本身要守住的工程纪律。
 
 | 扩展时机 | 可加入的能力 | 不应做的事 |
 | --- | --- | --- |
@@ -935,6 +941,8 @@ Active Context
 
 “最近”不只按时间定义。用户对目标的最新修改、尚未解决的工具错误、待审批动作和验收失败证据，即使产生得更早，也应被视为活动状态；已经完成且可由 Artifact 证明的探索过程，则可以退出活动窗口。
 
+压缩阈值、保留策略与卸载目标在 SDK 中怎么配，第 8 章“上下文”和第 13 章“上下文管理”已经给出；本篇关心的是这些配置背后共同的生命周期：什么必须先落盘，什么可以退出窗口。
+
 #### 3.2.1 Commit、Compact、Rebuild 与 Validate
 
 对话压缩不是普通摘要。它要支持下一轮继续执行，因此至少保留：
@@ -1070,6 +1078,8 @@ Harness 还应面向逻辑状态接口编程，而不是把恢复能力绑定到
 
 Workspace 为 Agent 提供可寻址、可检查、可逐步修改的外部工作空间。它可以是代码目录、文档空间、数据分析目录、远程文件系统或受控对象存储视图。与 Memory 的主要区别是：Workspace 服务当前任务的显式工作过程，内容通常可被用户直接查看和编辑；Memory 则是跨任务选择性保留的经验和事实。
 
+文件系统与工作区目录在 SDK 中的约定见第 12 章“工作区与文件系统”；本节强调的是目录形式背后的生命周期与责任边界。
+
 ```text
 Workspace
 ├── inputs/       用户提供或任务同步的输入
@@ -1190,6 +1200,8 @@ Knowledge Evidence
 
 一种实用实现是把“原始记忆流水”和“已整理长期记忆”分开。AgentScope 将当日抽取的事实追加到 memory/YYYY-MM-DD.md，再周期性合并、去重到 MEMORY.md；前者保留来源过程，后者在每轮按策略进入 System Context。对话压缩前还可以先 Flush 关键事实，避免摘要把可复用经验一起抹掉。
 
+记忆组件本身的配置与读写见第 14 章“记忆”；这里的双层结构是同一套机制在“保留经验但不污染”约束下的用法。
+
 在漏洞修复任务中，下面的内容适合写入不同位置：
 
 | 信息 | 去向 | 原因 |
@@ -1209,6 +1221,8 @@ Knowledge Evidence
 Tool 告诉 Agent “能做什么动作”，Skill 告诉 Agent “在某类任务中如何正确使用若干动作”。一个 Skill 可以由指令、脚本、模板、示例、检查清单和参考资料组成，封装经过验证的任务方法，例如服务故障排查、合同审阅、数据质量分析或发布前检查。
 
 Skill 不等于一段 Prompt，也不等于 Tool 的别名。它通常包含模型需要判断的步骤，也可以调用确定性脚本和工具；它不直接拥有额外权限，只有在当前用户、任务和环境允许时，相关能力才能执行。
+
+Skill 在 AgentScope 中的编写与加载方式见第 15 章“技能（Skill）”；本节把视角拉高到资产治理：Skill 如何被发现、测试、发布和回归。
 
 ```text
 Skill Package
@@ -1580,6 +1594,8 @@ Agent 不只通过业务 API 行动，还可能直接使用 File、Shell、Code 
 | Browser | 页面检索、表单和 Web 系统操作 | Prompt Injection、会话劫持、误提交 | 域名策略、下载隔离、操作确认、内容信任标记 |
 | Computer Use | 操作通用桌面和应用 | 影响面难预测、视觉误判、不可逆操作 | 应用范围、屏幕/输入隔离、预览与人工确认 |
 
+沙箱的隔离范围、快照恢复与后端选择已在第 18 章“沙箱执行”中逐项说明；本节从契约的角度重述：Harness 声明需要什么，Runtime 与 Sandbox 负责兑现。
+
 Tool 常把复杂操作压缩成受 Schema 约束的业务动作，环境接口则更通用、更灵活。能用窄 Tool 完成的高风险动作，通常不应优先开放通用 Shell 或 Computer Use；当企业需要处理长尾应用和非结构化工作区时，再用 Sandbox 把通用能力限制在可接受边界内。
 
 #### 4.3.1 声明并兑现 Environment Contract
@@ -1715,6 +1731,8 @@ agent.streamEvents(
     .blockLast();
 ```
 
+Permission Mode、规则写法与 HITL 的基础接法已在第 10 章“权限系统与人工介入”给出；本节讨论把它们接进企业审批链路时，策略与交互各自要守住什么。
+
 事件发布只是交互入口，企业后端仍应依据当前登录身份、租户、资源版本和 Policy 做确定性判断。对生产发布，批准结果应生成短时、限定目标与动作的授权，不能把整个 Session 永久切换成无条件放行模式。拒绝也必须成为可恢复的任务事实，让 Harness 保留草稿并说明未完成项。
 
 **Steering、Interrupt 与 Resume。**
@@ -1803,6 +1821,8 @@ sequenceDiagram
 #### 4.5.5 用 HarnessAgent 事件承载持续任务
 
 `HarnessAgent.streamEvents` 把一次 Session 中的模型、工具和状态变化暴露为流。应用将这些事件写入带单调序号的 Event Store，再通过 SSE、WebSocket 或消息平台向客户端投影；客户端断线后从最后确认的游标续传，而不是要求原 Worker 和原连接一直存在。
+
+事件怎么读取、断线后怎么恢复显示，第 19 章“会话日志与恢复”已经操作化地讲过；本节补充的是事件语义的分类，以及哪些事件不可丢弃。
 
 ```java
 RuntimeContext context = RuntimeContext.builder()
@@ -1942,3 +1962,14 @@ Environment Contract 让 Harness 声明所需能力，Runtime 和 Sandbox 负责
 
 最终，Trace 将 Agent 版本、Context、行动、状态、成本和 Outcome 连成因果链；Evaluation Harness 从单步、轨迹和最终结果三个层次比较版本，把真实失败转化为有针对性的 Harness Patch。至此，“构建”篇形成了完整答案：构建 Agent，就是围绕任务、信息、行动三类工程契约构建 Harness，并将它形成可运行、可治理、可优化的 Agent。
 
+
+## 四篇要点回顾
+
+用贯穿案例（“生产服务漏洞修复与变更发布 Agent”）把四篇串起来看：
+
+- **第一篇 架构范式与责任边界**：Agent = Model + Harness；Model、Harness、Runtime、Sandbox 与 Agent Platform 各回答一个问题。`HarnessAgent` 以本地工作区、嵌入式应用、长任务服务、平台化交付四种运行形态承载同一套能力，选择时看调用从哪里发起、状态存在哪里、Runtime 与 Sandbox 由谁提供。
+- **第二篇 任务编排、长程推进与协作流转**：稳定 Loop（Prepare—Model—Act—Observe—Verify）配显式状态机与多维预算；Planning 与阶段门禁把计划外部化；Subagent 靠委派契约隔离上下文、能力与责任；异步任务靠权威状态与 Continuation 跨连接续行；完成由证据决定，不由模型自述决定。
+- **第三篇 上下文、状态与可复用能力资产**：Context 每轮动态编译并以 Manifest 保持可解释；压缩、卸载与 Reset 控制窗口增长，关键事实先进权威状态；Call/Session/Task/Workspace 各管一段生命周期；Memory 存经验、Knowledge 存事实、Skill 把方法变成可治理资产——所有资产都有作用域、版本与删除语义。
+- **第四篇 受控执行、验证反馈与交付准备**：Action Plane 按 Schema、身份、Policy、审批、执行、Observation 推进行动；Sandbox 与 Permission 控制副作用，Preview—Approve—Commit—Verify 处理高风险动作；事件流按身份呈现、可续传；Trace 连出因果链，Evaluation Harness 把失败转成有针对性的 Harness Patch。
+
+与第 4-20 章的关系一句话可以说清：那些章节给的是“在 SDK 里怎么配”，本篇给的是“为什么这样配，以及规模变大后还缺什么”。读完全篇再回去翻配置细节，两边会互相印证。

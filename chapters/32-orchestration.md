@@ -6,23 +6,25 @@ source: service/orchestration.md, service/create-team.md, service/team-configura
 
 # 第 32 章 编排：Team 与 Workflow
 
-> 本章导读：本章回答"多个 Agent 如何一起工作"。开篇的编排概览给出三个协作层次——HarnessAgent 内部 Subagent、Team 持续分工、Workflow 固定流程——并说明 Managed、External、Hosted 三类 Agent 如何进入同一编排。随后是 Team 的完整教程（创建复核团队、提交团队任务、调整成员）、Team 角色/成员/策略参数参考，以及 Workflow 的定义、校验、发布与运行。读完本章，你可以把单 Agent 验证扩展为可验收的团队协作或带人工审批的固定流程。
+> 本章导读：到这里为止，你的 Agent 都是一个人在工作。真实业务很快会带来三种新局面：任务执行到一半，有一块分析需要独立完成；一项工作需要几个成员围绕同一个目标持续分工；或者步骤与审批顺序已由业务定死，不能交给模型自由发挥。本章沿这条问题线给出三个协作层次——HarnessAgent 内部的 Subagent 委派、Team 组织的持续分工、Workflow 约束的固定流程——先讲清楚什么局面用哪一层，再动手走通两条主线：创建一个复核团队并提交团队任务，以及定义、校验、发布并执行一个带人工审批的 Workflow。读完本章，你可以把单 Agent 验证扩展为可验收的团队协作，或带人工审批的固定流程。
+
+> **注意**：本章 Team 与 Workflow 相关内容均为预览文档，正式版本尚未发布。
 
 ## 多 Agent 编排概览
 
-当一项工作需要不同专业能力配合时，可以把它拆成职责和交付明确的部分，再让多个 Agent 共同推进。AgentScope Service 支持在托管任务内部委派子 Agent，也支持通过 Team 组织独立成员，或者通过 Workflow 规定步骤与依赖。选择哪种方式，取决于这项工作需要临时分工、持续协作，还是明确的执行流程。
+假设你已经有一个能独立完成任务的 Agent，现在接到一项需要不同专业能力配合的工作。按工程习惯，你会把它拆成职责和交付明确的部分，再让多个 Agent 共同推进——真正的困难在于：这些能力从哪里来，协作按什么规则进行。AgentScope Service 支持在托管任务内部委派子 Agent，也支持通过 Team 组织独立成员，或者通过 Workflow 规定步骤与依赖。选择哪种方式，取决于这项工作需要临时分工、持续协作，还是明确的执行流程。
 
-参与协作的成员可以是 Service 运行的 Managed Agent，也可以是已经开发好的 External Agent，或通过 Runtime Host 连接的 Hosted Agent。它们进入同一个 Agent 目录后，可以按实际能力参与团队和流程编排，因此已有业务 Agent 和 Coding Agent 也能够与托管 Agent 配合完成工作。
+先说成员从哪里来：参与协作的成员可以是 Service 运行的 Managed Agent，也可以是已经开发好的 External Agent，或通过 Runtime Host 连接的 Hosted Agent。它们进入同一个 Agent 目录后，可以按实际能力参与团队和流程编排，因此已有业务 Agent 和 Coding Agent 也能够与托管 Agent 配合完成工作。
 
-首次使用时，可以先阅读本节，确定工作需要怎样的协作，再按本章"创建与运行 Team"或"编排 Workflow"完成一次执行。如果已有应用或 Coding Agent 需要参与，再阅读"需要已有能力时接入其他 Agent"，从注册 External Agent 或连接 Hosted Agent 的教程开始，遇到 SDK、运行协议或配置问题时查阅对应文档。协作能够正常执行后，再阅读"让编排融入业务工作"，将工作接入业务验收、定时触发或消息平台。
+本章的路线由此确定：先用 Managed Agent 完成一次协作（32.2 节的 Team、32.3 节的 Workflow），确认协作本身能跑通；已有应用或 Coding Agent 需要参与时，再按"需要已有能力时接入其他 Agent"接入；协作能够正常执行后，最后按"让编排融入业务工作"接入业务验收、定时触发或消息平台。
 
 ### 选择协作层次
 
-如果只是当前托管任务中的一部分需要独立分析或复核，可以使用 HarnessAgent 的 Subagent。主 Agent 在自己的执行过程中发起委派，通过子会话取得结果，再继续完成原任务。子 Agent 的配置与观察方式见第 30 章"添加 Skills 与子 Agent"和第 31 章"会话、任务与预算"。这种委派属于当前 Agent 的运行过程，不会自动创建一个平台 Team。
+**第一种局面：当前任务里只有一部分需要独立分析或复核。** 这时不需要新的协作单元，使用 HarnessAgent 的 Subagent 即可。主 Agent 在自己的执行过程中发起委派，通过子会话取得结果，再继续完成原任务。这种委派属于当前 Agent 的运行过程，不会自动创建一个平台 Team。
 
-如果几个成员需要围绕同一个目标持续分工、沟通并交付，可以创建 Service Team。Lead 根据任务安排成员，成员通过持久的任务与讨论记录协作，结果也可以进入业务验收。Team 的成员可以使用不同的运行方式，因而适合将托管助手、专用业务 Agent 和 Coding Agent 组织在一起。角色与成员的配置见本章"创建与运行 Team"。
+**第二种局面：几个成员要围绕同一个目标持续分工、沟通并交付。** 单次委派撑不起这种协作，可以创建 Service Team。Lead 根据任务安排成员，成员通过持久的任务与讨论记录协作，结果也可以进入业务验收。Team 的成员可以使用不同的运行方式，因而适合将托管助手、专用业务 Agent 和 Coding Agent 组织在一起。
 
-如果工作的步骤和推进条件已经明确，可以使用 Workflow，把依赖、分支和人工审批表达为执行图。流程中的节点可以调用 Agent 或 Team：Team 负责在某一步中组织成员完成目标，Workflow 则决定这一步何时开始，以及满足什么条件后继续。定义和发布流程的方法见本章"编排 Workflow"。
+**第三种局面：工作的步骤和推进条件已经明确。** 当业务明确规定"生成报告 → 人工审批 → 交付"这样的顺序时，可以使用 Workflow，把依赖、分支和人工审批表达为执行图。流程中的节点可以调用 Agent 或 Team：Team 负责在某一步中组织成员完成目标，Workflow 则决定这一步何时开始，以及满足什么条件后继续。
 
 三类协作层次与 Session 调用路径的关系如图 32-1 所示。
 
@@ -45,6 +47,16 @@ flowchart TB
 ```
 
 *图 32-1：Agent、Team 与 Workflow 的编排关系*
+
+三种局面可以直接对应成一张选型表：
+
+| 你的处境 | 更合适的层次 |
+| --- | --- |
+| 当前任务中只有一部分需要独立分析或复核 | HarnessAgent 的 Subagent |
+| 几个成员围绕同一目标持续分工、沟通并交付 | Service Team |
+| 步骤和推进条件已经明确，需要固定依赖、分支与人工审批 | Workflow |
+
+再补一条判断边界：需要由 Leader 动态拆分工作时用 Team；需要固定节点顺序、条件和汇合规则时用 Workflow——Workflow 内也可以调用 Team 节点，把动态协作嵌入更大的流程。Subagent 的配置与观察方式见第 30 章"添加 Skills 与子 Agent"和第 31 章"会话、任务与预算"。
 
 ### 先建立一个纯 Managed Team
 
@@ -82,7 +94,7 @@ External 和 Hosted Agent 也可以直接作为 Session 的 Agent 目标执行�
 
 ## 创建与运行 Team
 
-> **注意**：此为预览文档，正式版本尚未发布。
+概览一节把"持续分工"指向了 Team，这一节动手建一个最小的复核团队：两个 Managed Agent，一个当 Leader 整理材料，一个当成员负责复核。
 
 Team 将多个已注册 Agent 组织成一个可被分派和调用的协作单元。Leader 理解目标、选择成员并汇总交付，成员通过任务与讨论交换结果。业务应用只需提交目标和输入，不必把团队内部每次委派改写成前端流程。
 
@@ -128,7 +140,7 @@ TEAM_ID=$(jq -r '.team.id' <<<"$created")
 api "$SERVICE_URL/api/v1/teams/$TEAM_ID/overview"
 ```
 
-`instructions` 描述协作方式，成员的 `instructions` 说明各自职责，`policy` 约束并发、委派与验收。概览返回团队的配置和运行情况；创建成功不代表每个运行时已经在线，应进一步核对成员可用性并执行一个小任务。完整策略见本章"Team 角色、成员与策略参数"。
+`instructions` 描述协作方式，成员的 `instructions` 说明各自职责，`policy` 约束并发、委派与验收。概览返回团队的配置和运行情况；创建成功不代表每个运行时已经在线，应进一步核对成员可用性并执行一个小任务。完整策略见本章末"参考速查"。
 
 ### 提交团队任务并读取结果
 
@@ -152,7 +164,7 @@ Service 在后台派发 Leader 和成员任务，并将它们的进度整理到�
 
 读取 `GET /api/v1/teams/{teamId}` 获得完整配置。新增成员调用 `POST /api/v1/teams/{teamId}/members`，请求体包含 `agentId`、`role` 和可选 `instructions`；服务返回的 `member.id` 用于后续成员更新与移除。
 
-更改团队名称、指令或策略使用 `PATCH /api/v1/teams/{teamId}`，携带当前 `expectedVersion`、`name`、`leaderAgentId`，并保留要沿用的策略和说明；更改成员角色使用 `PATCH /api/v1/teams/{teamId}/members/{memberId}`，携带 `expectedTeamVersion`。这些配置用于后续执行，已经开始的任务仍要按其实际执行记录跟进。不要通过移除成员来代替取消正在运行的任务。
+更改团队名称、指令或策略使用 `PATCH /api/v1/teams/{teamId}`，携带当前 `expectedVersion`、`name`、`leaderAgentId`，并保留要沿用的策略和说明；更改成员角色使用 `PATCH /api/v1/teams/{teamId}/members/{memberId}`，携带 `expectedTeamVersion`。这些配置用于后续执行，已经开始的任务仍要按其实际执行记录跟进。不要通过移除成员来代替取消正在运行的任务。这些接口的完整行为约束见本章末"参考速查"。
 
 ### 提供给业务应用
 
@@ -168,43 +180,11 @@ Service 在后台派发 Leader 和成员任务，并将它们的进度整理到�
 
 成员可以混用 Managed、Hosted 和 External，但必须具备对应任务派发与协作能力。能在 Chat 回答并不一定能充当 coordinator。先单独验证每个成员，再把任务交给 Team。
 
-### 业务应用的协作 API
+角色定下来后，协作过程要留下持久记录：用 Comment 和 mention 传递进展、问题与后续请求，用 Artifact 交付文件，用 child Issue 拆出可独立跟踪的子目标。不要依赖某个成员进程内的消息作为唯一协作记录。处理一次输入后需要记录处理情况，避免重试时重复响应。
 
-以下操作使用用户 Bearer token 和相应工作授权。它们操作持久业务记录，不要求调用方知道成员当前在哪个运行时执行。
+Runtime Host 在任务执行中注入范围凭据和上下文。支持 Shell 的 provider 可以使用一组任务环境内的协作命令（完整清单见本章末"参考速查"）；这些命令在 Host 启动的任务环境中运行，不是在管理员普通终端里通过复制内部令牌模拟运行。MCP provider 可使用对应 collaboration 工具。Coordinator 使用节点完成/失败能力明确交付结果；普通回复不能替代流程收敛。
 
-| 操作 | API 与关键参数 |
-| --- | --- |
-| 补充信息、请求成员处理 | `POST /api/v1/issues/{issueId}/comments`：`content`、可选 `parentId`、`type`、`mentions:[{type,ref}]` |
-| 预览评论路由 | `POST /api/v1/issues/{issueId}/comments/preview-routing`：与评论相同的输入，返回 `targets` |
-| 读取讨论 | `GET /api/v1/issues/{issueId}/comments`：`limit`、`cursor`、可选 `threadId`、`rootsOnly`；返回 `items`、`nextCursor` |
-| 创建独立子目标 | `POST /api/v1/issues/{issueId}/children`：标题、说明、负责人及验收字段，返回 `issue`、`agentTask` |
-| 查询子工作 | `GET /api/v1/issues`：`tenant`、`namespace`、`parentIssueId` |
-| 文件交付 | `POST /api/v1/artifacts/uploads`：multipart 的 `tenant`、`namespace`、`issueId`、`relation`、`file` |
-| 读取产物 | `GET /api/v1/issues/{issueId}/artifacts`，随后 `POST /api/v1/artifacts/{artifactId}/download` |
-
-`mentions[].type` 选择 `agent`、`team` 或 `human`，`ref` 使用对应身份标识。正文中的名字不是结构化路由。提交评论后检查返回的 `routes`，确认是已排队、已合并还是被策略阻止；这些结果比"评论写入成功"更能说明是否产生了后续工作。仅记录进度时使用 `type:"progress"`，不设置 mentions，避免隐式派发。
-
-### 持久沟通
-
-用 Comment 和 mention 传递进展、问题与后续请求，用 Artifact 交付文件，用 child Issue 拆出可独立跟踪的子目标。不要依赖某个成员进程内的消息作为唯一协作记录。处理一次输入后需要记录处理情况，避免重试时重复响应。
-
-Runtime Host 在任务执行中注入范围凭据和上下文。支持 Shell 的 provider 可以使用：
-
-```bash
-as task context
-as issue current
-as task progress --content-file ./progress.md
-as task respond --content-file ./reply.md
-as artifact upload ./report.md
-as team current
-as task run graph
-```
-
-这些命令在 Host 启动的任务环境中运行，不是在管理员普通终端里通过复制内部令牌模拟运行。MCP provider 可使用对应 collaboration 工具。Coordinator 使用节点完成/失败能力明确交付结果；普通回复不能替代流程收敛。
-
-### 交付模板：让另一个成员能够复核
-
-当第 34 章"从故障告警生成可审查的修复"案例需要扩展为多角色团队时，Developer 的交付评论可包含以下内容，并附 PR 和实际测试记录：
+交付质量可以用模板约束。当第 34 章"从故障告警生成可审查的修复"案例需要扩展为多角色团队时，Developer 的交付评论可包含以下内容，并附 PR 和实际测试记录：
 
 ```text
 目标：实现订单筛选与分页；保留原验收检查并补充边界测试。
@@ -216,164 +196,31 @@ as task run graph
 
 模板只是交付结构，不能把其中的占位内容当作已发生的执行。Lead 打开真实 Artifact 并核对证据后再汇总；成员各自的工作目录不自动共享，评论中的本地绝对路径也不等于另一个成员可以读取的文件。
 
-### 运行时回报的身份与参数
+### 一次运行的生命周期
 
-执行适配器使用平台下发的任务凭据访问 `/api/v1/agent-tasks/{taskId}` 下的协议入口，业务用户 token 不能冒充正在执行的任务。`GET .../context` 返回当前工作上下文；`POST .../progress` 接受 `content`、可选 `parentId` 与 `mentions`；`POST .../complete` 可回报 `expectedVersion`、`summary`、`result`、`usage` 及已处理输入 ID。失败回报 `POST .../fail` 使用 `expectedVersion`、`code`、`message`。
+**定义与一次运行**。Team 定义包含 Leader、成员和策略；Run 固定这次协作的快照，便于追查当时的团队配置。控制面为 Team 创建一个 coordinator node 和初始 Leader 任务，而不是为每个成员无条件创建一次调用。Leader 根据上下文选择成员。
 
-Hosted provider 通常通过注入的 CLI / MCP 使用这些能力，External 适配器按任务接入协议（见第 30 章"用 API 观察和控制一次执行"）接入。协调节点完成/失败还有专门的 coordinator 权限；普通成员的结果回报不会自动取得 Leader 权限。
-
-页面操作见第 33 章"配置 Team 与 Workflow"与"分派、跟进与验收工作"。
-
-### 定义与一次运行的关系
-
-Team 定义包含 Leader、成员和策略；Run 固定这次协作的快照，便于追查当时的团队配置。控制面为 Team 创建一个 coordinator node 和初始 Leader 任务，而不是为每个成员无条件创建一次调用。
-
-Leader 根据上下文选择成员。需要固定节点顺序、条件和汇合规则时使用 Workflow；Workflow 内也可以调用 Team 节点，把动态协作嵌入更大的流程。
-
-### 如何结束工作
-
-成员回复、Attempt 成功、coordinator node 完成、Run 终态和 Issue 验收分别表达不同层次。Leader 的最终文字不能代替节点完成。仍有必要子工作未完成时，应等待、调整计划或明确失败，不能用"报告已生成"掩盖未完成义务。
+**如何结束工作**。成员回复、Attempt 成功、coordinator node 完成、Run 终态和 Issue 验收分别表达不同层次。Leader 的最终文字不能代替节点完成。仍有必要子工作未完成时，应等待、调整计划或明确失败，不能用"报告已生成"掩盖未完成义务。
 
 人工验收需要检查最终结果、重要来源和失败说明，再接受结果或要求修改。查看 Run succeeded/partial_succeeded 时也要核对业务验收要求。
 
-### 扩展与恢复
-
-新增成员前先单独验证它的能力，再检查 Leader 是否能正确使用该角色。混合 Managed、Hosted、External 时，用本章"Team 角色、成员与策略参数"中的检查条件逐个验收。
+**扩展与恢复**。新增成员前先单独验证它的能力，再检查 Leader 是否能正确使用该角色。混合 Managed、Hosted、External 时，用参考速查"Team 角色、成员与策略参数"中的成员混用检查逐个验收。
 
 恢复依赖持久工作和执行状态；Runtime fresh fallback 重建上下文，不迁移旧进程。排障时沿 Issue → Run → Node → Task → Attempt 检查：未派发看就绪度与策略，执行卡住看后端与确认请求，交付未结束看成员义务和协调节点状态。
 
-操作示例见本章"创建与运行 Team"，页面诊断见第 33 章"配置 Team 与 Workflow"。
-
-## Team 角色、成员与策略参数
-
-> **注意**：此为预览文档，正式版本尚未发布。
-
-Team 由一个 Leader 和可委派的成员组成。先按本章"创建与运行 Team"创建团队，再用本节参数维护成员、协作策略与运行策略。
-
-### 管理 API
-
-所有路径相对 Service 地址，使用用户 Bearer token 和已授权空间。列表请求必须提供 `tenant`、`namespace`；创建时将两者写入 JSON。示例与认证函数见本章"创建一个复核团队"。
-
-| 操作 | API | 请求与返回 |
-| --- | --- | --- |
-| 创建 | `POST /api/v1/teams` | 必填 `tenant`、`namespace`、`name`、`leaderAgentId`；可同时传 `members`、`policy`；返回 `{team}` |
-| 列表 / 详情 | `GET /api/v1/teams`、`GET /api/v1/teams/{id}` | 分别返回 `{items}`、`{team}` |
-| 更新 | `PATCH /api/v1/teams/{id}` | 必填 `name`、`leaderAgentId`，携带当前 `expectedVersion`，并保留希望沿用的 `policy` 与 `description`；返回 `{team}` |
-| 新增成员 | `POST /api/v1/teams/{id}/members` | `agentId`、`role` 及可选成员字段；返回 `{member}` |
-| 更新成员 | `PATCH /api/v1/teams/{id}/members/{memberId}` | 必填 `role`，携带 `expectedTeamVersion`；可更新职责、能力要求和运行策略；返回 `{member}` |
-| 移除成员 | `DELETE /api/v1/teams/{id}/members/{memberId}` | 成功返回 204；不取消正在运行的任务 |
-
-`PATCH Team` 目前要求提交名称和 Leader，并会应用请求中的 policy，不是任意字段的局部合并。先 GET 当前定义再改写需要的字段，避免遗漏原策略。更新成员时同样保留要沿用的配置；其 `agentId` 不可在该 PATCH 中更换，改换 Agent 应移除后重新添加。
-
-Team 响应的 `id`、`version`、`members[].id` 用于后续操作；`members[].agentId` 是注册 Agent 的身份，不能拿成员记录 ID 当作 Agent ID。Leader 不再重复放入成员列表，成员 Agent 和 role 均须唯一。
-
-### 团队和成员字段
-
-| 层次 | 字段 | 用途 |
-| --- | --- | --- |
-| Team | `name`, `description` | 团队名称与适合处理的工作 |
-| Team | `leaderAgentId` | 统一接收任务、协调并汇总的 Agent |
-| Team | `instructions` | 团队目标、委派规则、失败处理与交付要求 |
-| Team | `status` | `active` 或 `disabled` |
-| Member | `agentId` | 同一范围内的 Agent 身份 |
-| Member | `role` | 职责标签，例如 researcher、reviewer |
-| Member | `instructions` | 该成员在团队中的具体职责 |
-| Member | `capabilityRequirements` | 派发所需能力要求 |
-| Member | `runtimeBindingPolicy` | 该团队成员的运行候选及回退策略 |
-
-例如 Researcher 必须交付来源和结论，Reviewer 必须指出证据缺口；Leader 负责消除冲突、说明未完成项并提交一份最终结果。成员角色不能代替 Agent 自己的模型、工具和资源配置。
-
-### 协作限制
-
-| `policy` 字段 | 控制内容 | 零值语义 |
-| --- | --- | --- |
-| `maxActiveTasks` | 并发任务上限 | 使用默认值 32 |
-| `maxHops` | 委派跳数 | 使用默认值 8 |
-| `maxFanout` | 单次委派接收者数量 | 不增加 Team 专属限制 |
-| `maxChildDepth` | 子 Issue 深度 | 使用默认值 4 |
-| `maxChildIssues` | 每个父 Issue 的子 Issue 数量 | 不增加 Team 专属限制 |
-| `maxTaskRetries` | 每个任务的重试限制 | 不增加 Team 专属限制 |
-| `allowExternalDelegation` | 是否允许委派给名单外 Agent/Team | false |
-| `allowMentionAll` | 是否允许面向全体成员的委派 | false |
-| `requireReview` | 按执行策略要求人工复核 | false |
-
-"名单外委派"不是指 External Agent 运行模式。一个在成员名单中的 External Agent 仍然是本团队成员。
-
-API 可显式设置策略；控制台创建表单也可能传入自己的初始值。以读取到的 `team.policy` 为准，不要把所有零值都解释为无限制或禁用。所有数值限制不能为负；`maxHops` 最大 64、`maxChildDepth` 最大 32、`maxFanout` 最大 256，具体操作仍受平台约束。
-
-下面是一个小团队的策略片段，可用于理解字段组合：
-
-```json
-{
-  "policy": {
-    "maxActiveTasks": 4,
-    "maxFanout": 3,
-    "maxHops": 4,
-    "maxChildDepth": 2,
-    "maxChildIssues": 8,
-    "allowExternalDelegation": false,
-    "allowMentionAll": false,
-    "requireReview": true
-  }
-}
-```
-
-修改 Team 时 API 使用 `expectedVersion` 做版本检查。并发、层级和人数限制不构成外部模型账单的硬上限；还需按实际 provider 的用量与账户策略管理预算。
-
-其他策略参数用于限制交付与资源消耗：
-
-| 字段 | 含义 |
-| --- | --- |
-| `maxArtifactBytes`、`allowedArtifactMediaTypes` | Artifact 大小与允许的 MIME 类型 |
-| `maxIssueTokens`、`maxIssueCostMicros` | 根据已回报用量检查 Issue 预算；费用单位为 micro |
-| `issueSlaSeconds`、`taskTimeoutSeconds` | 工作截止时间默认值与任务超时限制 |
-| `secretPolicy`、`piiPolicy` | `allow` / `block`，按平台规则检查协作内容 |
-
-预算依赖运行时如实回报用量，内容检查也不能代替工具与数据权限。不要将这些字段理解为外部提供商账单的实时硬限额或完整的数据防泄漏系统。
-
-### 可以混用哪些成员
-
-| 模式 | 加入前验证 |
-| --- | --- |
-| Managed | 模型可用，Environment/Memory/Vault 绑定正确，可完成一次任务 |
-| Hosted | Host 在线、provider 可用、定义映射通过，任务协作 MCP/CLI 可用 |
-| External | 适配器具备任务入口与真实完成/失败回报；仅有观测注册不够 |
-
-Leader 必须具备团队协调能力，包括委派、查看结果和节点完成/失败。普通成员只需完成其承担的角色；并非所有能进行 Chat 的 Agent 都适合当 Leader。
-
-### Runtime policy
-
-`runtimeBindingPolicy` 包含有序 `candidates`、`selectionMode`、`fallbackMode` 和可选 `retryPolicy`。候选中的 `binding` 指定执行后端，`requiredCapabilities` 与 `securityConstraints` 限制选择条件。成员覆盖要求显式设置 `selectionMode:"ordered"`、`fallbackMode:"disabled"` 或 `"fresh"`，并提供至少一个有效 candidate。候选 binding 使用实际运行绑定结构，不填写主机进程号或任意 URL。
-
-选择遵循节点覆盖、成员覆盖、Agent 策略的层次。显式 fresh fallback 是新执行上下文，保留的工作证据必须在 Issue、评论与 Artifact 中。先验证单候选，再增加回退；扩容与回退都不会自动解决共享文件冲突。
-
-Agent 级默认策略通过 `GET/PUT /api/v1/agent-runtime-policies/{agentId}` 管理。PUT 提交 `tenant`、`namespace`、非空 `candidates`，每个 candidate 的 `binding.bindingId` 必须属于该 Agent 且可用；服务会解析实际后端。可设置 `selectionMode`、`fallbackMode`、`maxConcurrency`、`queueTimeoutSeconds`、`attemptTimeoutSeconds`、`retryPolicy`，响应为 `{policy}`。GET 查询仍需携带 tenant/namespace。
-
-相关阅读：协作用法见本章"设计可协作角色"等小节；工作原理见本章"定义与一次运行的关系"。
+> **延伸阅读**：Team 的管理 API 全表、字段与策略参数、业务协作 API、Runtime Host 协作命令与执行回报协议，见本章末"参考速查"；页面操作与诊断见第 33 章"配置 Team 与 Workflow"与"分派、跟进与验收工作"。
 
 ## 编排 Workflow
 
-> **注意**：此为预览文档，正式版本尚未发布。
-
-当业务明确规定"生成报告 → 人工审批 → 交付"时，可以用 Workflow 保存步骤和依赖。先发布一个 revision，再创建以该 Workflow 为目标的 Session，即可通过 Turn 提交任务。需要由 Leader 动态拆分工作时，使用本章"创建与运行 Team"；两者采用相同的应用调用路径。
+Team 让 Leader 现场决定怎么拆工作；当业务明确规定"生成报告 → 人工审批 → 交付"时，顺序本身已经固定，这时可以用 Workflow 保存步骤和依赖。先发布一个 revision，再创建以该 Workflow 为目标的 Session，即可通过 Turn 提交任务。需要由 Leader 动态拆分工作时，使用本章"创建与运行 Team"；两者采用相同的应用调用路径。
 
 Workflow 有可编辑的定义和发布后不可变的 revision。每次 Run 固定一个 revision，因此修改草稿不会改变已经开始的执行。
 
-可以直接使用已经验证的 Managed Agent 作为流程节点；需要分工时再让节点调用 Team。先按第 30 章"运行第一个托管 Agent"运行一个托管 Agent，再固定流程与审批人。选型见本章"多 Agent 编排概览"。
+可以直接使用已经验证的 Managed Agent 作为流程节点；需要分工时再让节点调用 Team。先按第 30 章"运行第一个托管 Agent"运行一个托管 Agent，再固定流程与审批人。选型对比见本章"多 Agent 编排概览"。
 
 ### 创建并校验流程
 
-以下示例使用 Bash、`curl` 和 `jq`。先按第 31 章"认证与空间"一节准备 `SERVICE_URL`（Service 地址）、`TOKEN`（用户 Bearer token）、`TENANT`、`NAMESPACE`，并定义请求函数：
-
-```bash
-api() {
-  curl --fail-with-body --silent --show-error \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H 'Content-Type: application/json' "$@"
-}
-```
+以下示例继续使用 Bash、`curl` 和 `jq`，并沿用 32.2 节定义的 `api` 请求函数与 `SERVICE_URL`、`TOKEN`、`TENANT`、`NAMESPACE` 变量（变量准备见第 31 章"认证与空间"一节）。
 
 将 `AGENT_ID` 设为已经可执行任务的 Agent ID，`APPROVER_ID` 设为审批人的账号标识。下面的流程先生成报告，再等待人工审批：
 
@@ -454,4 +301,173 @@ api "$SERVICE_URL/api/v1/agent-sessions/$SESSION_ID/turns/$TURN_ID/inputs" \
 
 终态后向 `/rerun` 提交 `{"idempotencyKey":"weekly-report-retry-001"}` 创建新的 Run，保留与原运行的关联；可加 `input` 替换输入。节点支持 `timeoutSeconds`、`retry` 和 `failurePolicy`，其中失败策略可选 `fail_fast`、`continue`、`partial_success`。重试不保证撤销已经发生的外部副作用。
 
-应用创建 Session 时，使用 `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`。省略 `revisionId` 时，Service 在创建会话时选择最新的已发布版本；已有会话不会自动切换到新版本。控制台设计器与运行图见第 33 章"配置 Team 与 Workflow"。
+应用创建 Session 时，使用 `target:{"type":"workflow","id":"WORKFLOW_ID","revisionId":"REVISION_ID"}`。省略 `revisionId` 时，Service 在创建会话时选择最新的已发布版本；已有会话不会自动切换到新版本。
+
+> **延伸阅读**：控制台设计器与运行图见第 33 章"配置 Team 与 Workflow"。
+
+## 本章小结
+
+这一章沿"一个 Agent 不够用"的问题线走完了三层协作：
+
+1. **选层次**：任务内一小块独立工作用 Subagent 委派；持续分工建 Team；顺序固定用 Workflow——Workflow 节点还能调用 Team，把动态协作嵌进固定流程；
+2. **Team 跑起来**：创建复核团队（Leader、成员、policy），检查就绪度，以 team 为目标创建 Session、提交 Turn，从快照和事件跟进进度；
+3. **团队可维护**：成员与配置的每次修改都带版本号（`expectedVersion` / `expectedTeamVersion`），业务应用用被显式授权的 Application 凭据调用同一个 Team；
+4. **协作可信赖**：角色要有独立可验证的输出，进展留在 Comment、Artifact 和 child Issue 里，交付模板让成员结果可复核；结束时以 coordinator node 完成和 Issue 验收为准，而不是 Leader 的最后一句话；
+5. **Workflow 固定顺序**：定义可编辑、revision 不可变，Run 固定版本执行；approval 节点把人工审批接进流程，节点类型覆盖条件、汇合、定时、信号与子流程；取消与重跑围绕 Turn 和 Run 接口进行。
+
+本章的 API 操作在 Console 页面上都有对应入口，第 33 章"配置 Team 与 Workflow"专门演示页面操作。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 面对一项具体工作，判断它该用 Subagent 委派、Team 还是 Workflow；
+- ☐ 创建一个含 Leader 和成员的 Team，并解读 Ready / Degraded / Unavailable 三种就绪度；
+- ☐ 以 Team 为目标创建 Session、提交 Turn，并从快照与事件跟进团队进度；
+- ☐ 新增、调整和移除成员，并说明 PATCH 为什么要携带 `expectedVersion`；
+- ☐ 解释 Run、coordinator node 与 Issue 验收在一次团队任务中的关系；
+- ☐ 定义、校验并发布一个 Workflow，提交 Turn 并完成 approval 节点的人工审批；
+- ☐ 取消一个流程任务，并用 rerun 创建一个新的 Run。
+
+## 参考速查
+
+本节收拢本章正文引用过的管理 API 全表、字段与策略参数，供配置和排障时查阅；正文主线中的最小路径不依赖本节。
+
+### Team 管理 API
+
+所有路径相对 Service 地址，使用用户 Bearer token 和已授权空间。列表请求必须提供 `tenant`、`namespace`；创建时将两者写入 JSON。示例与认证函数见本章"创建一个复核团队"。
+
+| 操作 | API | 请求与返回 |
+| --- | --- | --- |
+| 创建 | `POST /api/v1/teams` | 必填 `tenant`、`namespace`、`name`、`leaderAgentId`；可同时传 `members`、`policy`；返回 `{team}` |
+| 列表 / 详情 | `GET /api/v1/teams`、`GET /api/v1/teams/{id}` | 分别返回 `{items}`、`{team}` |
+| 更新 | `PATCH /api/v1/teams/{id}` | 必填 `name`、`leaderAgentId`，携带当前 `expectedVersion`，并保留希望沿用的 `policy` 与 `description`；返回 `{team}` |
+| 新增成员 | `POST /api/v1/teams/{id}/members` | `agentId`、`role` 及可选成员字段；返回 `{member}` |
+| 更新成员 | `PATCH /api/v1/teams/{id}/members/{memberId}` | 必填 `role`，携带 `expectedTeamVersion`；可更新职责、能力要求和运行策略；返回 `{member}` |
+| 移除成员 | `DELETE /api/v1/teams/{id}/members/{memberId}` | 成功返回 204；不取消正在运行的任务 |
+
+`PATCH Team` 目前要求提交名称和 Leader，并会应用请求中的 policy，不是任意字段的局部合并。先 GET 当前定义再改写需要的字段，避免遗漏原策略。更新成员时同样保留要沿用的配置；其 `agentId` 不可在该 PATCH 中更换，改换 Agent 应移除后重新添加。
+
+Team 响应的 `id`、`version`、`members[].id` 用于后续操作；`members[].agentId` 是注册 Agent 的身份，不能拿成员记录 ID 当作 Agent ID。Leader 不再重复放入成员列表，成员 Agent 和 role 均须唯一。
+
+### Team 角色、成员与策略参数
+
+**团队和成员字段**
+
+| 层次 | 字段 | 用途 |
+| --- | --- | --- |
+| Team | `name`, `description` | 团队名称与适合处理的工作 |
+| Team | `leaderAgentId` | 统一接收任务、协调并汇总的 Agent |
+| Team | `instructions` | 团队目标、委派规则、失败处理与交付要求 |
+| Team | `status` | `active` 或 `disabled` |
+| Member | `agentId` | 同一范围内的 Agent 身份 |
+| Member | `role` | 职责标签，例如 researcher、reviewer |
+| Member | `instructions` | 该成员在团队中的具体职责 |
+| Member | `capabilityRequirements` | 派发所需能力要求 |
+| Member | `runtimeBindingPolicy` | 该团队成员的运行候选及回退策略 |
+
+例如 Researcher 必须交付来源和结论，Reviewer 必须指出证据缺口；Leader 负责消除冲突、说明未完成项并提交一份最终结果。成员角色不能代替 Agent 自己的模型、工具和资源配置。
+
+**协作限制（policy）**
+
+| `policy` 字段 | 控制内容 | 零值语义 |
+| --- | --- | --- |
+| `maxActiveTasks` | 并发任务上限 | 使用默认值 32 |
+| `maxHops` | 委派跳数 | 使用默认值 8 |
+| `maxFanout` | 单次委派接收者数量 | 不增加 Team 专属限制 |
+| `maxChildDepth` | 子 Issue 深度 | 使用默认值 4 |
+| `maxChildIssues` | 每个父 Issue 的子 Issue 数量 | 不增加 Team 专属限制 |
+| `maxTaskRetries` | 每个任务的重试限制 | 不增加 Team 专属限制 |
+| `allowExternalDelegation` | 是否允许委派给名单外 Agent/Team | false |
+| `allowMentionAll` | 是否允许面向全体成员的委派 | false |
+| `requireReview` | 按执行策略要求人工复核 | false |
+
+"名单外委派"不是指 External Agent 运行模式。一个在成员名单中的 External Agent 仍然是本团队成员。
+
+API 可显式设置策略；控制台创建表单也可能传入自己的初始值。以读取到的 `team.policy` 为准，不要把所有零值都解释为无限制或禁用。所有数值限制不能为负；`maxHops` 最大 64、`maxChildDepth` 最大 32、`maxFanout` 最大 256，具体操作仍受平台约束。
+
+下面是一个小团队的策略片段，可用于理解字段组合：
+
+```json
+{
+  "policy": {
+    "maxActiveTasks": 4,
+    "maxFanout": 3,
+    "maxHops": 4,
+    "maxChildDepth": 2,
+    "maxChildIssues": 8,
+    "allowExternalDelegation": false,
+    "allowMentionAll": false,
+    "requireReview": true
+  }
+}
+```
+
+修改 Team 时 API 使用 `expectedVersion` 做版本检查。并发、层级和人数限制不构成外部模型账单的硬上限；还需按实际 provider 的用量与账户策略管理预算。
+
+**交付与资源策略**
+
+其他策略参数用于限制交付与资源消耗：
+
+| 字段 | 含义 |
+| --- | --- |
+| `maxArtifactBytes`、`allowedArtifactMediaTypes` | Artifact 大小与允许的 MIME 类型 |
+| `maxIssueTokens`、`maxIssueCostMicros` | 根据已回报用量检查 Issue 预算；费用单位为 micro |
+| `issueSlaSeconds`、`taskTimeoutSeconds` | 工作截止时间默认值与任务超时限制 |
+| `secretPolicy`、`piiPolicy` | `allow` / `block`，按平台规则检查协作内容 |
+
+预算依赖运行时如实回报用量，内容检查也不能代替工具与数据权限。不要将这些字段理解为外部提供商账单的实时硬限额或完整的数据防泄漏系统。
+
+**成员混用检查**
+
+| 模式 | 加入前验证 |
+| --- | --- |
+| Managed | 模型可用，Environment/Memory/Vault 绑定正确，可完成一次任务 |
+| Hosted | Host 在线、provider 可用、定义映射通过，任务协作 MCP/CLI 可用 |
+| External | 适配器具备任务入口与真实完成/失败回报；仅有观测注册不够 |
+
+Leader 必须具备团队协调能力，包括委派、查看结果和节点完成/失败。普通成员只需完成其承担的角色；并非所有能进行 Chat 的 Agent 都适合当 Leader。
+
+**Runtime policy**
+
+`runtimeBindingPolicy` 包含有序 `candidates`、`selectionMode`、`fallbackMode` 和可选 `retryPolicy`。候选中的 `binding` 指定执行后端，`requiredCapabilities` 与 `securityConstraints` 限制选择条件。成员覆盖要求显式设置 `selectionMode:"ordered"`、`fallbackMode:"disabled"` 或 `"fresh"`，并提供至少一个有效 candidate。候选 binding 使用实际运行绑定结构，不填写主机进程号或任意 URL。
+
+选择遵循节点覆盖、成员覆盖、Agent 策略的层次。显式 fresh fallback 是新执行上下文，保留的工作证据必须在 Issue、评论与 Artifact 中。先验证单候选，再增加回退；扩容与回退都不会自动解决共享文件冲突。
+
+Agent 级默认策略通过 `GET/PUT /api/v1/agent-runtime-policies/{agentId}` 管理。PUT 提交 `tenant`、`namespace`、非空 `candidates`，每个 candidate 的 `binding.bindingId` 必须属于该 Agent 且可用；服务会解析实际后端。可设置 `selectionMode`、`fallbackMode`、`maxConcurrency`、`queueTimeoutSeconds`、`attemptTimeoutSeconds`、`retryPolicy`，响应为 `{policy}`。GET 查询仍需携带 tenant/namespace。
+
+### 业务应用的协作 API
+
+以下操作使用用户 Bearer token 和相应工作授权。它们操作持久业务记录，不要求调用方知道成员当前在哪个运行时执行。
+
+| 操作 | API 与关键参数 |
+| --- | --- |
+| 补充信息、请求成员处理 | `POST /api/v1/issues/{issueId}/comments`：`content`、可选 `parentId`、`type`、`mentions:[{type,ref}]` |
+| 预览评论路由 | `POST /api/v1/issues/{issueId}/comments/preview-routing`：与评论相同的输入，返回 `targets` |
+| 读取讨论 | `GET /api/v1/issues/{issueId}/comments`：`limit`、`cursor`、可选 `threadId`、`rootsOnly`；返回 `items`、`nextCursor` |
+| 创建独立子目标 | `POST /api/v1/issues/{issueId}/children`：标题、说明、负责人及验收字段，返回 `issue`、`agentTask` |
+| 查询子工作 | `GET /api/v1/issues`：`tenant`、`namespace`、`parentIssueId` |
+| 文件交付 | `POST /api/v1/artifacts/uploads`：multipart 的 `tenant`、`namespace`、`issueId`、`relation`、`file` |
+| 读取产物 | `GET /api/v1/issues/{issueId}/artifacts`，随后 `POST /api/v1/artifacts/{artifactId}/download` |
+
+`mentions[].type` 选择 `agent`、`team` 或 `human`，`ref` 使用对应身份标识。正文中的名字不是结构化路由。提交评论后检查返回的 `routes`，确认是已排队、已合并还是被策略阻止；这些结果比"评论写入成功"更能说明是否产生了后续工作。仅记录进度时使用 `type:"progress"`，不设置 mentions，避免隐式派发。
+
+### Runtime Host 协作命令
+
+Runtime Host 在任务执行中注入范围凭据和上下文。支持 Shell 的 provider 可以使用：
+
+```bash
+as task context
+as issue current
+as task progress --content-file ./progress.md
+as task respond --content-file ./reply.md
+as artifact upload ./report.md
+as team current
+as task run graph
+```
+
+这些命令在 Host 启动的任务环境中运行，不是在管理员普通终端里通过复制内部令牌模拟运行。MCP provider 可使用对应 collaboration 工具。
+
+### 任务执行回报协议
+
+执行适配器使用平台下发的任务凭据访问 `/api/v1/agent-tasks/{taskId}` 下的协议入口，业务用户 token 不能冒充正在执行的任务。`GET .../context` 返回当前工作上下文；`POST .../progress` 接受 `content`、可选 `parentId` 与 `mentions`；`POST .../complete` 可回报 `expectedVersion`、`summary`、`result`、`usage` 及已处理输入 ID。失败回报 `POST .../fail` 使用 `expectedVersion`、`code`、`message`。
+
+Hosted provider 通常通过注入的 CLI / MCP 使用这些能力，External 适配器按任务接入协议（见第 30 章"用 API 观察和控制一次执行"）接入。协调节点完成/失败还有专门的 coordinator 权限；普通成员的结果回报不会自动取得 Leader 权限。

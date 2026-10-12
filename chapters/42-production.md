@@ -10,8 +10,6 @@ source: docs/others/going-to-production.md
 
 ## 快速上手：DistributedStore 一键配置
 
-> 把 `HarnessAgent` 在你笔记本上跑起来很容易，搬到生产环境是另一回事——多副本要共享会话、要隔离用户、要支持不可信代码执行、要在 pod 重启后接着上次跑。本页**只讲单机 → 分布式生产的差异**：哪些组件必须换、换成什么、为什么 builder 会在你漏配时直接抛 `IllegalStateException`。
-
 **最快上手方式**：用 `DistributedStore` 一键配置所有分布式组件：
 
 ```java
@@ -88,7 +86,7 @@ HarnessAgent.builder()
 
 > **推荐**：直接用 `distributedStore(...)` 一键配置，不需要手动设置 `stateStore`。下面的详细表格供需要单独控制 `AgentStateStore` 的高级用户参考。
 
-`AgentState`（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 `AgentStateStore`（见第 24 章）。
+`AgentState`（对话上下文、压缩摘要、权限规则、Plan Mode 状态、tool state）跨进程恢复的唯一通路就是 `AgentStateStore`（见第 24 章）。单机默认的 `JsonFileAgentStateStore` 把状态写在单个进程的本地磁盘；多副本部署时下一个请求可能落到另一台机器，pod 重启也会丢掉本地文件——这是第一个必须换的组件。
 
 | 实现 | 模块 | 何时使用 |
 |------|------|---------|
@@ -130,7 +128,7 @@ agent.call(msg, RuntimeContext.builder()
 
 ## 2. Filesystem 模式 & IsolationScope：决定"谁和谁共享文件"
 
-三种模式快速回顾（详见第 12 章“工作区与文件系统”）：
+状态放对地方之后，下一个要决定的是文件：单机默认的 `LocalFilesystemSpec` 把工作区写在进程本地，多副本部署时各 pod 看到的是各自的文件副本，共享记忆与共享文件无从谈起。三种模式快速回顾（详见第 12 章“工作区与文件系统”）：
 
 | 模式 | 配置 | 提供 shell？ | 适用 |
 |------|------|-------------|------|
@@ -163,7 +161,7 @@ HarnessAgent.builder()
 
 ## 3. Remote 模式的 BaseStore：KV 选型与"不要把 OSS 当 KV 用"
 
-`RemoteFilesystemSpec` 建在一个 `BaseStore` 接口之上。内置实现两种：
+`RemoteFilesystemSpec` 建在一个 `BaseStore` 接口之上。选定模式后，后端选型直接决定延迟与成本——工作区里高频小写入很多，选错后端会立刻把两者放大。内置实现两种：
 
 | 实现 | 依赖 | 并发安全 | 适用 |
 |------|------|---------|------|
@@ -232,6 +230,8 @@ DistributedStore jdbcStore = JdbcDistributedStore.create(dataSource);
 加速 Remote 模式下的 `ls` / `glob` / `exists` / `grep`——不开的话每次都全表扫 KV。WorkspaceIndex 是 best-effort 的 SQLite 文件（落在 `<workspace>/.index/`），失败会自动降级，不影响功能。
 
 ## 4. Skill 集中管理：选哪种 SkillRepository
+
+单机开发时技能随项目走（`workspace/skills/` 进 git 即可）；生产环境要回答的是治理问题——谁发布、agent 能否改写、变更如何审核，这就要把技能来源换成集中的 `SkillRepository`。
 
 Skill 优先级从低到高合成（详见第 15 章“技能（Skill）”）：
 
@@ -513,10 +513,14 @@ try (HarnessAgent agent = agentBuilder.build()) {
 - **`java.nio.Files` 写工作区**——在沙箱 / Remote 模式下落到错的位置。永远走 `agent.getWorkspaceManager()`。**例外**：builder 装配时的种子文件（`initWorkspaceIfAbsent` 之类）那时还没有运行时上下文，用 `java.nio.Files` 是 OK 的。
 - **`tools.json` 的 `allow` 会过滤内置工具**——用白名单时务必把 `read_file` / `memory_search` / `agent_spawn` 这些保留下来，否则整套内置工具一起被砍。
 - **`IsolationScope` 改了，旧数据不会自动迁移**——上线前定下来，别上线后改。改了等同于"换了一个命名空间"。
-- **本地 `AgentStateStore` 单机限制**：K8s 多副本部署里如果把分布式文件系统和本地 `JsonFileAgentStateStore` 搭配，第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把 agent 状态留在某个 pod 的本地磁盘上。
+- **本地 `AgentStateStore` 单机限制**——K8s 多副本部署里如果把分布式文件系统和本地 `JsonFileAgentStateStore` 搭配，第一次 build 就抛 `IllegalStateException`，**这是设计如此**——告诉你别把 agent 状态留在某个 pod 的本地磁盘上。
 - **`NacosSkillRepository` 不关闭**——会泄露订阅，集群规模大了 Nacos 会喊。Spring 注入用 `@PreDestroy` 或 `destroyMethod="close"`。
 - **OSS / NAS 走完 IAM 再上线**——`OssSnapshotSpec` 的 AK/SK 是平台凭证；用 RAM Role + STS 临时凭证更稳。
 - **本地 `AgentStateStore` + 沙箱模式仅用于开发**——构建时的 warning 日志是故意的，生产环境别忽略。
+
+## 本章小结
+
+单机到分布式的差异收敛为一组组件替换：`DistributedStore` 一行配置同时接好 `AgentStateStore`、`BaseStore`、快照与执行锁；Filesystem 按共享与隔离需求选 Remote 或 Sandbox 模式，并用 `IsolationScope` 分桶；Skill 换成集中仓库统一治理；需要 shell 的场景必配快照。动手部署前对照第 6 节 checklist 逐项确认，遇到问题先查第 8 节的坑位。
 
 ## 相关文档
 
@@ -524,8 +528,7 @@ try (HarnessAgent agent = agentBuilder.build()) {
 - 第 11 章（Harness 架构深入） —— 各能力如何协作
 - 第 8 章（上下文） —— `AgentState` / `AgentStateStore` / 跨节点恢复
 - 第 13 章（上下文管理） —— 对话摘要、工具结果卸载、溢出恢复
-- 第 12 章（工作区与文件系统） —— 目录布局、两层读、`tools.json`
-- 第 12 章（工作区与文件系统） —— 三种部署模式、`IsolationScope`
+- 第 12 章（工作区与文件系统） —— 目录布局、两层读、`tools.json`、三种部署模式、`IsolationScope`
 - 第 18 章（沙箱执行） —— 沙箱细节、五种实现、快照机制
 - 第 15 章（技能（Skill）） —— 四层合成、市场存储源、自学习闭环
 - 第 9 章（中间件） —— 自定义观测 / 限流 / fallback 中间件

@@ -6,7 +6,54 @@ source: jev/guides/tool-selection-api.md, jev/guides/tool-guard-api.md, jev/guid
 
 # 第 37 章 核心能力 API
 
-> 本章导读：本章完整收录 JEV 的 24 篇核心能力 API 指南，按十个能力域分为十节：工具选择与防护、上下文治理、监督复核、路由、检索证据、内容与草稿、代码评审、浏览器、业务分类与客服，最后以 Service 集成收尾。每篇指南保持原有结构——示例场景、分步配置代码、运行与验证、边界与失败处理——原样可抄；各指南共同引用第 36 章的客户端创建与案例构建步骤。所有概率阈值均为演示值，启用接管（ENFORCE）前须用业务样本校准；各指南间重复的免责说明已按原文保留，因为每篇都可独立阅读。
+> 本章导读：本章是 JEV 核心能力的参考大全——24 篇 API 指南按十个能力域收录，供实施时按需查阅，不必从头读到尾。37.1 节是使用入口：导航表回答"哪个能力域解决我的问题"，"全章通用约定"收拢各指南共用的客户端构建、公共组件初始化与离线示例运行步骤，各节只做引用。每篇指南保持原有结构——示例场景、分步配置代码、运行与验证、边界与失败处理——原样可抄；每节保留自己的示例与阈值解释，单独阅读仍然完整。所有概率阈值均为演示值，启用接管（ENFORCE）前须用业务样本校准。客户端与运行环境的完整准备见第 36 章，自定义评审规则与效果评测见第 38 章；带着具体任务而来时，从章末"按任务索引"反查。
+
+## 本章导航与通用约定
+
+十个能力域各解决一类问题。下表是全章地图：先在"解决什么问题"一列定位你的情况，再进入对应小节照抄配置。
+
+| 节 | 能力域 | 解决什么问题 | 核心 API 与中间件 |
+| --- | --- | --- | --- |
+| 37.2 | 工具选择与防护 | 模型面对大工具集怎么选、危险调用能不能执行 | `JevToolSelectionMiddleware`、`JevAutoModeMiddleware` |
+| 37.3 | 上下文治理 | 长任务积累的工具材料如何压缩、归档与恢复，长期记忆写入前如何把关 | `JevContextCompactor`、`JevContextPlanner`、`JevContextArchive`、`JevMemoryGate` |
+| 37.4 | 监督复核 | 长任务的进展观察、补验证请求与完成复核 | `JevSupervisionMiddleware`、`SupervisionEvidence`、`JevSupervisor` |
+| 37.5 | 路由 | 这次调用交给谁：模型、阶段路线或团队成员 | `JevModelRouterMiddleware`、`JevPhaseRouting`、`JevTeamPlanner` |
+| 37.6 | 检索证据 | 召回的材料哪些可信、答案是否真的有依据、已有 Knowledge 接口如何兼容接入 | `JevEvidenceProcessor`、`JevRag`、`JevKnowledge` |
+| 37.7 | 内容与草稿 | 发布前文本的安全检查与依据审核，未通过时的有限修订 | `JevGuardrail`、`JevResponseMiddleware`、`JevDraftPipeline` |
+| 37.8 | 代码评审 | 对 diff 或源码快照筛选风险、定位证据区域、评估严重度 | `JevCodeReviewer` |
+| 37.9 | 浏览器 | 授权页面内的只读导航与完成验证，或只取动作建议 | `JevBrowserNavigator`、`JevBrowserPlanner` |
+| 37.10 | 业务分类与客服 | 工单、文档等业务候选的多标签分类，客服分流与回复评审 | `JevCandidateSelector`、`JevCustomerSupport` |
+| 37.11 | Service 集成 | 不改应用代码，通过 session 配置启用以上能力 | `agentOverrides.jev` 配置键 |
+
+37.2 节起的每篇指南（各三级标题）结构一致：先"示例场景"说明这个 API 解决的具体问题，再给分步配置代码、运行与验证命令，最后是边界与失败处理。一个域收录多篇时，域开头的一句话会交代各篇分工，按需选读即可。
+
+### 全章通用约定
+
+以下三件事全章共用，各节不再重复。
+
+**客户端与公共组件**。各节代码中的 `client` 都按第 36 章"客户端接入"创建——`JevClient.builder().build()`，凭据从环境变量读取，依赖及密钥配置见该节。`selector` 和 `judge` 是多个能力域共用的组件，本章其他指南复用这份初始化：
+
+```java
+import io.agentscope.extensions.judge.jev.JevClient;
+import io.agentscope.extensions.judge.jev.JevExecution;
+import io.agentscope.extensions.judge.jev.JevJudge;
+import io.agentscope.extensions.judge.jev.application.JevCandidateSelector;
+import java.time.Duration;
+import java.util.Map;
+
+var client = JevClient.builder().build();
+var options = new JevExecution.Options(
+    JevExecution.Mode.SHADOW, Duration.ofSeconds(2), "ticket-routing-v1",
+    (context, record) -> System.out.println(record));
+var selector = new JevCandidateSelector(client, options, 0.2, 0.8);
+var judge = new JevJudge(client, Duration.ofSeconds(2));
+```
+
+`selector` 构造的最后两个参数划分"明确不适用"与"明确适用"的阈值边界，概率落在两者之间即进入不确定组；这里是未校准的示例值，各节结合自己的场景解释含义。
+
+**运行离线示例**。运行本章任何离线示例前，先按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`。各节的运行命令都在示例模块中，完整源码随节给出。
+
+**演示阈值**。全章概率阈值均为演示值；SHADOW 只记录建议、不改变行为，切换 ENFORCE（实际接管）前必须用业务样本校准。
 
 ## 工具选择与防护
 
@@ -67,7 +114,7 @@ var selector = JevToolSelectionMiddleware.builder(client)
     .build();
 ```
 
-`client` 按客户端接入（见第 36 章）创建。这里的配置分别服务于同一个客服场景：
+`client` 按 37.1 节"全章通用约定"创建。这里的配置分别服务于同一个客服场景：
 
 | 配置 | 对本例的影响 |
 |---|---|
@@ -109,7 +156,7 @@ var agent = HarnessAgent.builder()
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevHarnessScenarios selection
@@ -166,7 +213,7 @@ var guard = JevAutoModeMiddleware.builder(client)
     .build();
 ```
 
-客户端从环境变量读取凭据，依赖及密钥配置见客户端接入（见第 36 章）。这里几个配置项分别对应退款场景中的具体行为：
+这里几个配置项分别对应退款场景中的具体行为：
 
 | 配置 | 在这个例子中的作用 |
 |---|---|
@@ -215,7 +262,7 @@ SHADOW 用来查看判断是否符合你的业务预期，**不会阻止退款**
 
 #### 运行离线示例
 
-`JevHarnessExample` 使用合成判断展示 OFF、SHADOW、ENFORCE 下的行为。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+`JevHarnessExample` 使用合成判断展示 OFF、SHADOW、ENFORCE 下的行为。按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevHarnessExample
@@ -229,7 +276,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevHarnessExample
 - **人工已确认**：已确认的 ALLOWED 调用沿用原确认链。Service 通过 `JevConfirmedCalls` 绑定工具名和参数指纹；确认后参数变化时，ENFORCE 会以 `CONFIRMATION_CHANGED` 拒绝，必须重新确认。
 - **中间件顺序**：会修改工具参数的中间件应在此检查之前完成修改，避免执行的参数与检查时不同。
 
-运行模式和观察记录的完整契约见运行配置（见第 36 章）。使用 AgentScope Service 时，也可以通过 `agentOverrides.jev.guard` 装配同一能力，见第 37 章"在 AgentScope Service 中配置 JEV"一节。
+运行模式和观察记录的完整契约见运行配置（见第 36 章）。使用 AgentScope Service 时，也可以通过 `agentOverrides.jev.guard` 装配同一能力，见本章"在 AgentScope Service 中配置 JEV"一节。
 
 #### 退款场景对比测试
 
@@ -362,7 +409,7 @@ Service 归档使用 `SharedWorkspacePaths.resolveSessionDataPath` 下的 `jev-c
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevContextCompactionExample
@@ -405,7 +452,7 @@ var pending = planner.plan(
     ctx, "根据当前测试证据修复问题", exchanges);
 ```
 
-`selector` 使用"初始化"小节（见本章"对业务候选进行多标签分类"）的方法创建，`ctx` 属于当前调用。模型明确判为不需要的交换对进入 `archive()`；不确定项仍在 `retained()` 中。
+`selector` 按 37.1 节"全章通用约定"创建，`ctx` 属于当前调用。模型明确判为不需要的交换对进入 `archive()`；不确定项仍在 `retained()` 中。
 
 #### 3. 查看精简建议，按需恢复
 
@@ -421,7 +468,7 @@ var observed = pending.doOnNext(plan -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios context
@@ -479,7 +526,7 @@ var observed = pending.doOnNext(previous ->
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevContextCompactionExample
@@ -528,7 +575,7 @@ var observed = pending.doOnNext(result -> {
 });
 ```
 
-`judge` 的初始化见"初始化"小节（见本章"对业务候选进行多标签分类"）。应用应把这个 Mono 组合到自己的写入流程，先观察结果再决定是否接管。只有 PASS 表示两项评审都通过，仍须经过宿主权限、来源和幂等检查。
+`judge` 按 37.1 节"全章通用约定"初始化。应用应把这个 Mono 组合到自己的写入流程，先观察结果再决定是否接管。只有 PASS 表示两项评审都通过，仍须经过宿主权限、来源和幂等检查。
 
 | 状态 | 在偏好记忆中的处理 |
 |---|---|
@@ -539,7 +586,7 @@ var observed = pending.doOnNext(result -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios memory
@@ -694,7 +741,7 @@ HTTP Session overrides 不接收任意证据路径或"验证成功"声明。默�
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevSupervisionExample
@@ -756,7 +803,7 @@ REVIEW_COMPLETION 表示可以进入复核，不意味着监督器已替你完�
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevSupervisionExample
@@ -790,7 +837,7 @@ var supervisor = new JevSupervisor(judge);
 var pending = supervisor.assess(task, evidence, false);
 ```
 
-`judge` 使用"初始化"小节（见本章"对业务候选进行多标签分类"）的方法创建。示例证据为简短说明；真实应用应提供经过授权的变更和检查结果，而不只转发 worker 的"已经完成"。最后的 false 明确表示尚无成功验证。
+`judge` 按 37.1 节"全章通用约定"创建。示例证据为简短说明；真实应用应提供经过授权的变更和检查结果，而不只转发 worker 的"已经完成"。最后的 false 明确表示尚无成功验证。
 
 #### 2. 按建议推进下一步
 
@@ -812,7 +859,7 @@ var observed = pending.doOnNext(report -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios task-review
@@ -865,7 +912,7 @@ var router = JevModelRouterMiddleware.builder(client)
     .build();
 ```
 
-`client` 按客户端接入（见第 36 章）创建；`fastModel`、`strongModel` 是应用已配置的 Model 实例。示例集合代表宿主能力目录，不是对具体模型的能力声明。
+`client` 按 37.1 节"全章通用约定"创建；`fastModel`、`strongModel` 是应用已配置的 Model 实例。示例集合代表宿主能力目录，不是对具体模型的能力声明。
 
 | 配置 | 本例中解决的问题 |
 |---|---|
@@ -907,7 +954,7 @@ var agent = HarnessAgent.builder()
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevHarnessScenarios routing
@@ -933,7 +980,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevHarnessScenarios routing
 
 #### 1. 配置路线与观察模式
 
-`client` 的初始化见客户端接入（见第 36 章）。以下先用 SHADOW 观察建议，不改变实际模型：
+`client` 按 37.1 节"全章通用约定"创建。以下先用 SHADOW 观察建议，不改变实际模型：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevExecution;
@@ -1061,7 +1108,7 @@ CallRecord.dispatchedModel 是框架配置的 Model.getModelName，requestedEffo
 
 #### 可运行案例
 
-`JevPhaseRoutingExample` 包含自动判断、显式规划、显式执行三个独立调用。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
+`JevPhaseRoutingExample` 包含自动判断、显式规划、显式执行三个独立调用。按 37.1 节"全章通用约定"设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevPhaseRoutingExample
@@ -1104,13 +1151,13 @@ var pending = planner.recommend(ctx, "review",
     member -> availableAndAuthorized.contains(member.id()));
 ```
 
-`selector` 使用"初始化"小节（见本章"对业务候选进行多标签分类"）的方法创建。`stage` 必须显式提供；筛选后不可重复的成员 ID 作为建议结果的稳定标识。检查 `status()` 为 DECIDED 后，再读取 `value().selected()` 与 `value().uncertain()`。
+`selector` 按 37.1 节"全章通用约定"创建。`stage` 必须显式提供；筛选后不可重复的成员 ID 作为建议结果的稳定标识。检查 `status()` 为 DECIDED 后，再读取 `value().selected()` 与 `value().uncertain()`。
 
 在 SHADOW 下，宿主只记录"建议给 reviewer"，继续沿用原分派。即使采用建议，实际启动成员前仍应复核其授权和可用状态。
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios team
@@ -1140,7 +1187,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios team
 
 #### 1. 配置处理器，先观察建议
 
-`client` 的初始化见客户端接入（见第 36 章）。SHADOW 保留原有授权材料，只记录筛选建议：
+`client` 按 37.1 节"全章通用约定"创建。SHADOW 保留原有授权材料，只记录筛选建议：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevExecution;
@@ -1257,7 +1304,7 @@ Agent 得到的 Result 只包含实际 delivered 段落的 id、version、text�
 
 #### 可运行案例
 
-`JevEvidenceExample` 提供上面三段候选及完整检索、回答、修订流程。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
+`JevEvidenceExample` 提供上面三段候选及完整检索、回答、修订流程。按 37.1 节"全章通用约定"设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevEvidenceExample
@@ -1291,7 +1338,7 @@ var pending = rag.retrieve(ctx, query, documents,
     document -> !document.id().equals("private"), 2);
 ```
 
-`selector`、`judge` 使用"初始化"小节（见本章"对业务候选进行多标签分类"）的方法创建。示例 predicate 模拟访问控制；生产要用当前用户的真实 ACL。过滤发生在调用 JEV 之前，私有文档不会因"很相关"而被发给判断模型。
+`selector`、`judge` 按 37.1 节"全章通用约定"创建。示例 predicate 模拟访问控制；生产要用当前用户的真实 ACL。过滤发生在调用 JEV 之前，私有文档不会因"很相关"而被发给判断模型。
 
 最后的 2 表示最多保留两份明确相关文档；不是要求强行凑够数量。可见文档 ID 不得重复，版本用于宿主关联实际引用。
 
@@ -1313,7 +1360,7 @@ var checked = pending.flatMap(retrieval -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios rag
@@ -1339,7 +1386,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios rag
 
 #### 1. 包装现有 Knowledge
 
-下面的 `existingKnowledge` 是应用已有实现，`client` 见客户端接入（见第 36 章）。`canRead` 是应用提供的 `BiPredicate<RuntimeContext, Document>`，必须根据当前用户、租户和文档权限做确定性检查。
+下面的 `existingKnowledge` 是应用已有实现，`client` 按 37.1 节"全章通用约定"创建。`canRead` 是应用提供的 `BiPredicate<RuntimeContext, Document>`，必须根据当前用户、租户和文档权限做确定性检查。
 
 ```java
 import io.agentscope.extensions.judge.jev.JevExecution;
@@ -1383,7 +1430,7 @@ ENFORCE 下只有明确相关的授权文档进入结果。不确定或调用失
 
 #### 运行离线案例
 
-`JevIntegrationExample` 包含一个固定 Knowledge 后端，返回"未使用且七天内"的退款政策，并把相关证据提供给 Agent。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+`JevIntegrationExample` 包含一个固定 Knowledge 后端，返回"未使用且七天内"的退款政策，并把相关证据提供给 Agent。按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevIntegrationExample
@@ -1421,7 +1468,7 @@ OFF/SHADOW 返回 ACL 后的原排序候选，SHADOW 仅记录建议；ENFORCE �
 
 #### 1. 配置检查策略与预算
 
-`client` 的构建见客户端接入（见第 36 章）。先使用 SHADOW 观察真实样本中的建议：
+`client` 按 37.1 节"全章通用约定"创建。先使用 SHADOW 观察真实样本中的建议：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevGuardrail;
@@ -1473,7 +1520,7 @@ var agent = HarnessAgent.builder()
 
 #### 运行离线案例
 
-`JevIntegrationExample` 演示"检索退款政策 → 输入与输出检查 → 草稿修订 → 发布"。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP`：
+`JevIntegrationExample` 演示"检索退款政策 → 输入与输出检查 → 草稿修订 → 发布"。按 37.1 节"全章通用约定"设置 `JEV_CP`：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevIntegrationExample
@@ -1493,7 +1540,7 @@ SHADOW 保持原事件对象及顺序，不进行修订；检查建议记录在 
 
 与修订一起使用同一个 `JevResponseMiddleware`：先安全检查，再质量评审；每份修订稿再次安全检查，安全拒绝不能通过质量重试绕过。
 
-离线组合案例见第 36 章"运行案例与功能入口"一节，Service 配置见第 37 章"在 AgentScope Service 中配置 JEV"一节。
+离线组合案例见第 36 章"运行案例与功能入口"一节，Service 配置见本章"在 AgentScope Service 中配置 JEV"一节。
 
 ### Agent 最终草稿审核与修订
 
@@ -1507,7 +1554,7 @@ SHADOW 保持原事件对象及顺序，不进行修订；检查建议记录在 
 
 #### 1. 定义回答必须满足的条件
 
-`client` 的初始化见客户端接入（见第 36 章）。检查使用 `assistant_answer` 与 `supporting_context`，后者由已配对的成功工具结果构成：
+`client` 按 37.1 节"全章通用约定"创建。检查使用 `assistant_answer` 与 `supporting_context`，后者由已配对的成功工具结果构成：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevJudge;
@@ -1564,7 +1611,7 @@ var agent = HarnessAgent.builder()
 
 #### 运行离线案例
 
-`JevIntegrationExample` 提供上述完整退款场景。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+`JevIntegrationExample` 提供上述完整退款场景。按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevIntegrationExample
@@ -1600,7 +1647,7 @@ OFF 完全委托原流程；SHADOW 评审但不修订、不替换。每订阅独
 
 #### 1. 分别定义输入和草稿检查
 
-`judge` 的初始化见"初始化"小节（见本章"对业务候选进行多标签分类"）。输入检查接收原始请求；输出检查接收包含 `request`、`evidence`、`draft` 的状态。定义问题时必须对应这些字段：
+`judge` 按 37.1 节"全章通用约定"初始化。输入检查接收原始请求；输出检查接收包含 `request`、`evidence`、`draft` 的状态。定义问题时必须对应这些字段：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevJudge;
@@ -1666,7 +1713,7 @@ if (outcome.publishedText() != null) {
 
 #### 运行离线案例
 
-`JevApplicationScenarios` 的 `draft` 场景提供上述请求、证据和两份草稿。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+`JevApplicationScenarios` 的 `draft` 场景提供上述请求、证据和两份草稿。按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios draft
@@ -1690,7 +1737,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios draft
 
 #### 1. 构造快照并发起评审
 
-`client` 的初始化见客户端接入（见第 36 章），`context` 为当前运行上下文：
+`client` 按 37.1 节"全章通用约定"创建，`context` 为当前运行上下文：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevExecution;
@@ -1810,7 +1857,7 @@ OFF 不获取证据、不请求模型，Service 也不注册工具。SHADOW 必�
 
 #### 可运行案例
 
-`JevCodeReviewExample` 提供上述权限检查删除的 diff，通过真实 Agent 调用只读评审工具。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
+`JevCodeReviewExample` 提供上述权限检查删除的 diff，通过真实 Agent 调用只读评审工具。按 37.1 节"全章通用约定"设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevCodeReviewExample
@@ -1834,7 +1881,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevCodeReviewExample
 
 #### 1. 注册只读浏览器工具
 
-`client` 的初始化见客户端接入（见第 36 章），`model` 是生成回答的模型。先使用 SHADOW 检查建议，浏览器停留在起始页，不实际点击：
+`client` 按 37.1 节"全章通用约定"创建，`model` 是生成回答的模型。先使用 SHADOW 检查建议，浏览器停留在起始页，不实际点击：
 
 ```java
 import io.agentscope.extensions.judge.jev.JevExecution;
@@ -1948,7 +1995,7 @@ var session = new JevPlaywrightSession(
 
 #### 可运行案例
 
-`JevBrowserExample` 提供脚本会话和独立验证器。按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后运行：
+`JevBrowserExample` 提供脚本会话和独立验证器。按 37.1 节"全章通用约定"设置 `JEV_CP` 后运行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevBrowserExample
@@ -1999,7 +2046,7 @@ var pending = planner.propose(ctx, "读取退款期限",
     () -> browser.currentPageVersion(), false);
 ```
 
-`selector` 的配置见"初始化"小节（见本章"对业务候选进行多标签分类"）。`browser.currentPageVersion()` 是你已有驱动的接口占位，不是框架内置方法。最后的 `false` 表示宿主尚未独立验证任务完成，所以即使模型推荐 DONE 也不能直接宣布完成。
+`selector` 按 37.1 节"全章通用约定"创建。`browser.currentPageVersion()` 是你已有驱动的接口占位，不是框架内置方法。最后的 `false` 表示宿主尚未独立验证任务完成，所以即使模型推荐 DONE 也不能直接宣布完成。
 
 #### 3. 宿主决定是否执行建议
 
@@ -2015,7 +2062,7 @@ var observed = pending.doOnNext(proposal -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios browser
@@ -2045,23 +2092,7 @@ java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios browser
 
 #### 初始化
 
-```java
-import io.agentscope.extensions.judge.jev.JevClient;
-import io.agentscope.extensions.judge.jev.JevExecution;
-import io.agentscope.extensions.judge.jev.JevJudge;
-import io.agentscope.extensions.judge.jev.application.JevCandidateSelector;
-import java.time.Duration;
-import java.util.Map;
-
-var client = JevClient.builder().build();
-var options = new JevExecution.Options(
-    JevExecution.Mode.SHADOW, Duration.ofSeconds(2), "ticket-routing-v1",
-    (context, record) -> System.out.println(record));
-var selector = new JevCandidateSelector(client, options, 0.2, 0.8);
-var judge = new JevJudge(client, Duration.ofSeconds(2));
-```
-
-依赖与凭据见客户端接入（见第 36 章）。本章其他指南中的 `selector`、`judge` 可以复用这里的初始化；本节分流只用到 `selector`。
+`client`、`options`、`selector`、`judge` 的构造见 37.1 节"全章通用约定"；本节分流只用到 `selector`。
 
 两个阈值分别表示"明确不适用"和"明确适用"。例如概率为 0.5 的账单队列应进入不确定组，应用可以继续澄清，不能把它当作明确不需要。示例阈值未校准。
 
@@ -2095,7 +2126,7 @@ var observed = pending.doOnNext(decision -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios classification
@@ -2133,7 +2164,7 @@ var pending = support.review(ctx,
     Map.of("refund", "尚未执行"));
 ```
 
-`selector` 和 `judge` 使用"初始化"小节（见本章"对业务候选进行多标签分类"）的方法创建，`ctx` 为当前调用。草稿取自尚未发送的文本，业务记录应来自实际执行结果；不能用 Agent 自述代替退款成功凭据。
+`selector` 和 `judge` 按 37.1 节"全章通用约定"创建，`ctx` 为当前调用。草稿取自尚未发送的文本，业务记录应来自实际执行结果；不能用 Agent 自述代替退款成功凭据。
 
 #### 2. 分别处理分流与草稿质量
 
@@ -2155,7 +2186,7 @@ var observed = pending.doOnNext(report -> {
 
 #### 运行与验证
 
-按第 36 章"构建一次，运行多个案例"一节设置 `JEV_CP` 后执行：
+按 37.1 节"全章通用约定"设置 `JEV_CP` 后执行：
 
 ```bash
 java -cp "$JEV_CP" io.agentscope.examples.jev.JevApplicationScenarios support
@@ -2278,4 +2309,41 @@ GET /api/sessions/{id}/events/stream
 无需启动 Service，也能先用 `JevHarnessScenarios`（见第 36 章"运行案例与功能入口"一节）与退款防护用例（见 `agentscope-examples/jev/benchmarks/tool-guard` 的 README）验证相同中间件的选择、拒绝与权限链行为。运行方式和模拟数据随示例提供。
 
 接入 Service 后，再针对上面的会话提交一次"先查订单，未发货再退款"，查询同一 run 的 `tool-selection`、`tool-guard` 决策与实际工具结果（对应配置键 `tools`、`guard`）。SHADOW 记录的拒绝建议不能计作已阻止退款；配置关闭或更新后，应在新调用中检查是否生效。离线中间件测试不能代替你部署环境中的鉴权、Source 和事件存储验证。
+
+## 按任务索引
+
+参考大全不必通读。带着任务而来、还不确定属于哪个能力域时，从下表反查；表中的小节标题即正文标题：
+
+| 想做的事 | 看哪一节 |
+| --- | --- |
+| 限制每轮推理可见的工具数量 | 37.2"筛选适用工具并限制候选数量" |
+| 在退款等受保护操作执行前增加结合上下文的判断 | 37.2"在工具执行前检查受保护操作" |
+| 压缩长任务积累的工具历史，并保留恢复能力 | 37.3"压缩工具历史并恢复归档" |
+| 自行管理上下文，生成保留与卸载计划 | 37.3"显式规划工具交换对的保留与卸载" |
+| 回看已被移出上下文的旧材料 | 37.3"持久归档与材料恢复" |
+| 在写入长期记忆前评审价值与事实冲突 | 37.3"检查长期记忆的价值与事实冲突" |
+| 长任务运行中获得补验证、复核方向等建议 | 37.4"持续观察进展与交付状态" |
+| 让完成复核建立在可信验证收据上 | 37.4"为交付监督提供可信验证证据" |
+| 在应用指定的检查点对任务做一次性评估 | 37.4"对任务产物做单次复核" |
+| 简单问答与复杂分析使用不同模型 | 37.5"在一次 Agent 调用内选择模型" |
+| 多阶段任务配置有序模型候选池 | 37.5"按能力、配额与显式阶段路由" |
+| 为显式阶段推荐团队成员 | 37.5"为显式阶段选择团队候选" |
+| 过滤检索结果中的提示注入与前提冲突 | 37.6"分类、过滤和重排检索证据" |
+| 筛选相关文档并检查回答是否有依据 | 37.6"筛选相关文档并检查回答依据" |
+| 已有 Knowledge 检索实现做兼容接入 | 37.6"Knowledge 与检索工具适配" |
+| 检查输入与输出文本的内容安全 | 37.7"审核输入与输出内容" |
+| 发布前审核 Agent 最终草稿并有限修订 | 37.7"Agent 最终草稿审核与修订" |
+| 应用自己生成草稿时的审核流水线 | 37.7"独立应用中的审核与有限修订" |
+| 对 diff 或源码快照做代码评审 | 37.8"评审变更与定位代码证据" |
+| Agent 在授权页面内只读导航并验证完成 | 37.9"在授权页面中只读导航并验证完成" |
+| 已有浏览器驱动，只取语义动作建议 | 37.9"只生成浏览器动作建议" |
+| 工单、文档、成员等多标签分类 | 37.10"对业务候选进行多标签分类" |
+| 客服分流建议与回复草稿评审合并为一份报告 | 37.10"客服多诉求分流与回复评审" |
+| 不改应用代码，按会话启用以上能力 | 37.11"在 AgentScope Service 中配置 JEV" |
+| 采集并评估 Agent 轨迹 | 第 38 章"采集并评估 Agent 轨迹" |
+| 自定义准入政策或评审规则 | 第 38 章（`JevJudge`） |
+| 评测自己的 Harness 与判断后端 | 第 38 章"评测自己的 Harness 与判断后端" |
+| 配置预算与消费决策记录 | 第 38 章"配置预算与消费决策记录" |
+
+每篇指南末尾的"运行与验证"给出离线用例与预期输出；要评估真实模型效果、自定义 Judge 规则或批量评测，第 38 章提供了完整方法。
 

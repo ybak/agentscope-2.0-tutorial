@@ -6,13 +6,15 @@ source: service/service-api.md, service/api-reference.md, service/agent-api-chat
 
 # 第 31 章 Session API：从调用到交付
 
-> 本章导读：这是全书篇幅最长的一章，按"提交 → 事件 → 文件 → 记忆 → 密钥 → 工具 → 渠道"组织 Session API 的完整调用面。开篇是接入指南：创建 Application 签发凭据、创建 Session、提交 Turn、观察进度并参与交互；随后是 API 路径索引和一个可恢复聊天应用的完整前端接入示例。中段覆盖提交后的会话操作（补充要求、回答待办、取消恢复、预算与 checkpoint）、Run/Task/Attempt 执行参考、SSE 事件续传与 Webhook、文件与产物。后段是三类运行资源——Memory 共享知识、Vault 工具凭据、工具与 MCP 配置——以及消息渠道接入。读完本章，你可以把业务应用完整接入 Service，并管理 Agent 运行所需的一切资源。
+> 本章导读：第 30 章里，你在 Console 和 curl 里让一个托管 Agent 回答了问题。把它接进真实业务应用时，问题立刻变得具体：应用后端用什么身份调用，才能不和某个人的浏览器登录绑在一起？用户刷新页面，已经生成的内容从哪里恢复？Agent 执行中要求确认或补充资料，页面怎么把决定递进去？产出的文件如何交到用户手上？本章沿这些问题走完一条接入路线：先用最小路径跑通"凭据 → 创建 Session → 提交 Turn → 读快照 → 订阅事件 → 答复待办 → 检查交付"；再逐个处理接入后会遇到的问题——页面刷新与断线（SSE 与事件续传）、执行中的调整（补充、取消、恢复与预算）、文件与产物交付；然后配置 Agent 运行所需的三类资源：Memory 共享知识、Vault 工具凭据、工具与 MCP 连接；最后接入消息渠道。两块内容按需选读：可恢复聊天应用的完整接入示例，以及面向排障的 Run/Task/Attempt 执行参考。读完本章，你可以把业务应用完整接入 Service，并管理 Agent 运行所需的运行资源。
+
+> **注意**：本章"执行参考：Session、Run 与 Attempt"、"Memory：维护共享知识"、"Vault：为工具提供凭据"与"接入消息渠道"四节基于预览文档，正式版本尚未发布，接口可能调整。
 
 ## 通过 Session API 接入应用
 
-配置好 Agent 后，业务应用就可以通过 Session API 把工作交给它。应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
+在 Console 里点一次提交，就能看到 Agent 回答——但业务应用不能依赖人工打开页面。应用需要一个程序化的入口：把工作交给 Agent，在后台等它执行，随时回来查看进度，并在需要时替用户递入决定。这就是 Session API 的职责。
 
-本节从调用凭据开始，说明如何创建 Session、提交任务并处理结果。首次接入可以沿用第 30 章创建的 Managed Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。
+应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
 
 从创建 Session 到读取交付物的一轮任务生命周期如图 31-1 所示。
 
@@ -43,11 +45,35 @@ sequenceDiagram
 
 *图 31-1：一轮任务的调用生命周期*
 
+本节沿图中的每一步动手：准备身份变量、签发应用凭据、创建 Session、提交 Turn、观察执行、参与交互、检查交付。首次接入可以沿用第 30 章创建的 Managed Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。
+
+### 认证与空间
+
+第一次调用前，先分清两类身份，并准备好贯穿全章的变量。
+
+**平台用户**通过 `POST /api/auth/login` 登录，请求体为 `{"username":"...","password":"..."}`，将返回的 `token` 放入 `Authorization: Bearer TOKEN`。管理 Agent、Team、Workflow 和 Application 时使用这个身份。**应用后端**则使用 Application 下签发的 `X-API-Key`，只能访问凭据明确授权的目标和操作——下一小节签发。
+
+空间请求使用 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。如果请求体或查询参数中也包含空间字段，它们必须一致。Runtime Host、Task/Attempt 和 Environment 的执行凭据只用于相应运行协议，不能拿来调用业务 Session API。
+
+下面的变量贯穿本章所有示例。假定已经完成部署（见第 29 章），并按第 30 章"运行第一个托管 Agent"创建了一个可以正常执行的 Managed Agent：
+
+```bash
+set -euo pipefail
+export BASE_URL="http://localhost:18080"
+export TOKEN="YOUR_USER_TOKEN"
+export TENANT="YOUR_TENANT"
+export NAMESPACE="YOUR_NAMESPACE"
+export AGENT_ID="YOUR_MANAGED_AGENT_ID"
+export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
+```
+
+消息渠道一节的示例以 `SERVICE_URL` 指代这里的 `BASE_URL`，两者是同一个 Service 地址。
+
 ### 为应用准备调用凭据
 
-在开发和调试阶段，可以使用登录得到的用户 Bearer token。接入业务后端时，建议创建 Application，为它签发独立的 API key，并明确授予它可以使用的 Agent、Team 或 Workflow。凭据属于 Application，因此同一应用更换 key 后仍能访问自己的 Session；其他应用即使使用同一个 Agent，也不能读取这些记录。API key 应保存在业务后端，由后端检查最终用户的业务权限。
+在开发和调试阶段，可以使用登录得到的用户 Bearer token（上一小节的 `TOKEN`）。接入业务后端时，建议创建 Application，为它签发独立的 API key，并明确授予它可以使用的 Agent、Team 或 Workflow。凭据属于 Application，因此同一应用更换 key 后仍能访问自己的 Session；其他应用即使使用同一个 Agent，也不能读取这些记录。API key 应保存在业务后端，由后端检查最终用户的业务权限。
 
-下面的命令假定已经完成部署（见第 29 章），并按第 30 章"运行第一个托管 Agent"创建了一个可以正常执行的 Managed Agent 并准备了 API 凭据。请保留这些步骤中的 `BASE_URL`、`TOKEN`、`TENANT`、`NAMESPACE` 和 `AGENT_ID`。创建 Application 和签发凭据属于管理操作，需要使用该 Application 所有者的用户身份。
+创建 Application 和签发凭据属于管理操作，需要使用该 Application 所有者的用户身份。
 
 ```bash
 set -euo pipefail
@@ -101,7 +127,7 @@ AGENTSCOPE_API_KEY=$(jq -er '.apiKey' <<< "$KEY_JSON")
 CREDENTIAL_ID=$(jq -er '.credential.id' <<< "$KEY_JSON")
 ```
 
-服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。这些 scope 不会把应用变成人工审批人，指定人员的确认仍需由有权限的用户完成。
+服务只在创建凭据时返回明文 key。轮换时先签发新 key，更新应用配置并确认调用成功，再撤销旧凭据。`invoke` 允许提交工作，`read` 允许读取记录，`interact` 允许补充输入，`cancel` 允许取消；注册和管理回调还需要 `webhooks:write`。这些 scope 不会把应用变成人工审批人，指定人员的确认仍需由有权限的用户完成。Application 的完整 API 与成员角色见本章末"参考速查"。
 
 #### 列出与撤销旧凭据
 
@@ -233,7 +259,7 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
 
 ### 恢复页面并观察执行
 
-应用应保存业务对象、Session ID 和 Turn ID 的关联。用户刷新页面时，先读取 Session 的 `/snapshot` 恢复已有内容，再从其中的 `as_of` 游标订阅 `/events/stream`。刷新只是在恢复显示，不应重新发送任务输入。如果页面仍保留之前的状态，则可以从最后已经成功处理的事件游标继续读取。
+任务提交后，应用应保存业务对象、Session ID 和 Turn ID 的关联。用户刷新页面时，先读取 Session 的 `/snapshot` 恢复已有内容，再从其中的 `as_of` 游标订阅 `/events/stream`。刷新只是在恢复显示，不应重新发送任务输入。如果页面仍保留之前的状态，则可以从最后已经成功处理的事件游标继续读取。
 
 ```bash
 SNAPSHOT=$(
@@ -252,7 +278,7 @@ curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
 
 需要只观察某一轮任务时，可以使用 `/turns/{turnId}/snapshot` 和 `/turns/{turnId}/events/stream`。Session 游标与 Turn 游标分别属于各自的事件记录，不能交叉使用。Session 事件流会继续等待后续 Turn，因此连接关闭不表示业务完成。完成判断应读取对应 Turn 的 `status`：`completed` 表示成功，`partial_succeeded` 表示部分成功，`failed`、`cancelled` 和 `timed_out` 表示其他终态。
 
-单轮快照中的 `items`、`tools`、`required_actions`、`steps`、`artifacts` 和 `usage` 按标识组织，便于应用更新界面。Managed Session 快照同时保留完整的会话消息、子 Agent 和原生交互记录。具体接口见本章"API、SDK 与目录管理"；事件续传和回调验证见本章"SSE 与事件续传"。
+单轮快照中的 `items`、`tools`、`required_actions`、`steps`、`artifacts` 和 `usage` 按标识组织，便于应用更新界面。Managed Session 快照同时保留完整的会话消息、子 Agent 和原生交互记录。Session 与 Turn 的全部路径见本章末"参考速查"；断线续传在下一节展开。
 
 ### 在执行中参与交互
 
@@ -303,7 +329,7 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 
 #### 外部工具结果
 
-仅适用于 Managed 的 `external_execution` 待办。将 `output` 替换为实际执行结果；失败时使用 `is_error: true` 并提供真实错误信息。
+仅适用于 Managed 的 `external_execution` 待办。将 `output` 替换为实际执行结果；失败时使用 `is_error: true` 并提供真实错误信息。不要把它当作工具允许/拒绝的答复。
 
 ```bash
 COMMAND_JSON=$(
@@ -326,7 +352,7 @@ COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 
 #### 业务审批
 
-从待办读取当前版本号，将下面的 `1` 替换为实际数字，并使用指定审批人的 `TOKEN`。同意使用 `approved`，拒绝使用 `rejected`；此类答复不使用 `payload.allow`。
+从待办读取当前版本号，将下面的 `1` 替换为实际数字，并使用指定审批人的 `TOKEN`。业务审批必须使用待办中的最新版本号。`decision` 同意使用 `approved`，拒绝使用 `rejected`；此类答复不使用 `payload.allow`。
 
 ```bash
 EXPECTED_VERSION=1
@@ -348,21 +374,21 @@ JSON
 COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
 ```
 
-请求返回 `202 Accepted` 只表示答复已接收。使用返回的命令 ID 查询回执，直到 `command.status` 为 `completed` 或 `failed`；失败时检查 `command.error` 并重新读取待办。网络重试沿用同一个幂等键和请求体。
+请求返回 `202 Accepted` 只表示答复已接收。使用返回的命令 ID 查询回执，直到 `command.status` 为 `completed` 或 `failed`；失败时检查 `command.error` 并重新读取待办。相同答复重试时沿用同一个幂等键和请求体，修改答复时先重新读取待办。`interact` scope 只允许调用交互接口，不会把应用密钥变成指定的人工审批人；涉及身份约束的业务审批仍需使用被授权的用户身份。
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
   -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-命令完成表示该答复已处理，整个任务仍可能继续执行。继续观察事件或读取 Turn 状态；补充背景、调整要求等其他输入方式见本章"会话、任务与预算"。
+命令完成表示该答复已处理，整个任务仍可能继续执行。继续观察事件或读取 Turn 状态：
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
   -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-每种运行绑定能提供的交互不同。先读取 Session 的 `/capabilities` 了解目标支持范围，在显示取消、补充输入或恢复按钮前，再读取 Turn 的 `/capabilities` 中的 `available_commands`。取消请求被接受后，仍需继续观察状态，直到确认执行已经停止。需要进一步了解如何补充要求、回答待办或恢复执行时，可以继续阅读本章"会话、任务与预算"。
+每种运行绑定能提供的交互不同。先读取 Session 的 `/capabilities` 了解目标支持范围，在显示取消、补充输入或恢复按钮前，再读取 Turn 的 `/capabilities` 中的 `available_commands`。取消请求被接受后，仍需继续观察状态，直到确认执行已经停止。补充要求、取消、恢复与预算的完整用法见本章"会话、任务与预算"。
 
 ```bash
 curl -sS --fail-with-body "$SESSION_URL/capabilities" \
@@ -503,6 +529,12 @@ JSON
 
 如果业务还需要保存负责人、讨论和人工验收记录，可以使用 Issue（见第 33 章"工作分派、审批与验收"）来组织交付。Issue 的验收与 Session 中一次执行的完成是两个不同的判断：前者确认业务工作是否被接受，后者记录这轮执行是否结束。
 
+### 出错时先看这里
+
+遇到 `400` 时先检查请求内容，`401` 表示凭据无效，`403` 表示当前身份没有相应权限。`404` 可能表示资源不存在，也可能表示当前身份无权访问，不应据此推断其他用户的数据。`409` 需要检查资源状态、版本或幂等请求是否改变；事件 `410` 则需要重新加载快照。限流和临时服务错误应退避重试，并保留同一个逻辑请求的幂等键。
+
+管理资源更新前先读取当前版本。Issue 决策与 Workflow 发布使用 `expectedVersion`，Agent 定义等更新使用各自的 `version` 字段，不能自动用新版本重放已经过期的人工决定。
+
 ### 使用 SDK 与可运行示例
 
 Python `ServiceClient` 封装了相同的 Session API。下面的代码使用已经授予目标权限的应用 key；这里的 `AGENT_ID` 是平台 Agent ID。
@@ -510,116 +542,6 @@ Python `ServiceClient` 封装了相同的 Session API。下面的代码使用已
 ```bash
 export BASE_URL AGENTSCOPE_API_KEY AGENT_ID
 ```
-
-```python
-import os
-from agentscope_service import ServiceClient
-
-api = ServiceClient(os.environ["BASE_URL"], os.environ["AGENTSCOPE_API_KEY"])
-session = api.create_session({"type": "agent", "id": os.environ["AGENT_ID"]},
-                             idempotency_key="sdk-report-session-001")
-turn = api.submit(session["id"], message="整理报告并给出来源。",
-                  idempotency_key="sdk-report-task-001")
-print(api.turn(session["id"], turn["id"]))
-```
-
-仓库中的 `agentscope-service/service-controlplane/examples/service-api` 提供 Agent、Team 和 Workflow 的注册与调用示例。管理对象使用 `ManagementClient`，应用执行使用 `ServiceClient`。接口入口见本章"API、SDK 与目录管理"。
-
-## API、SDK 与目录管理
-
-业务应用统一通过 Session API 调用 Agent、Team 和 Workflow。管理 API 用于准备这些资源、配置权限和发布 Workflow revision；应用调用时直接选择目标创建 Session，不需要再发布一层服务入口。完整接入流程见本章"通过 Session API 接入应用"，本节用于查找路径和参数。
-
-### 认证与空间
-
-平台用户通过 `POST /api/auth/login` 登录，请求体为 `{"username":"...","password":"..."}`，将返回的 `token` 放入 `Authorization: Bearer TOKEN`。管理 Agent、Team、Workflow 和 Application 时使用这个身份。应用后端则使用 Application 下签发的 `X-API-Key`，只能访问凭据明确授权的目标和操作。
-
-空间请求使用 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。如果请求体或查询参数中也包含空间字段，它们必须一致。Runtime Host、Task/Attempt 和 Environment 的执行凭据只用于相应运行协议，不能拿来调用业务 Session API。
-
-### Application 与调用凭据
-
-Application 保存调用方身份、成员和额度。创建凭据时需要显式给出 `targets` 和 `scopes`，服务只返回一次完整的 `apiKey`；列表接口不会返回明文。应用凭据不会自动获得管理资源或替指定人员审批的权限。
-
-| API | 参数与行为 |
-| --- | --- |
-| `POST /api/v1/applications` | `name`, `tenant`, `namespace`; `description`, `members`, `maxConcurrent`, `tokenBudget` |
-| `GET /api/v1/applications` / `/{id}` | 列表或详情 |
-| `PATCH /api/v1/applications/{id}` | `version`, `name`, `description`, `status`, `members`, `maxConcurrent`, `tokenBudget` |
-| `POST /api/v1/applications/{id}/credentials` | `name`, `targets:[{type,id}]`, `scopes`; `expiresAt` |
-| `GET /api/v1/applications/{id}/credentials` | 凭据元数据 |
-| `DELETE /api/v1/applications/{id}/credentials/{credentialId}` | 撤销凭据 |
-
-凭据 scope 包括 `invoke`、`read`、`interact`、`cancel` 和 `webhooks:write`。Application 成员角色为 `viewer`、`operator`、`approver`。并发限制用于控制应用待处理的工作数量；tokenBudget 依据已报告用量限制后续调用，不是供应商的预付费硬额度。
-
-### Session 与 Turn API
-
-以下路径以 `/api/v1/agent-sessions` 为前缀。创建 Session 时，`target.type` 为 `agent`、`team` 或 `workflow`，`target.id` 为相应资源 ID。Agent 可指定 `version`，Workflow 可指定 `revisionId`。省略版本时，Service 在创建会话时解析并固定版本，后续 Turn 沿用该配置。
-
-Managed Session 还可指定 `environmentId`、`memoryStoreIds`、`vaultIds`、`agentOverrides` 和 `resources`。通用参数包括 `timeoutSeconds`、`budget.maxTokens`、`inputSchema`、`outputSchema` 和 `resultMapping`；需要约束业务输入和输出时，应在创建 Session 时提供这些契约。
-
-| API | 用途 |
-| --- | --- |
-| `POST /` | 创建会话；可携带幂等键 |
-| `GET /` | 列表：agentId、status、limit、offset |
-| `GET /{session}` | 读取会话及固定目标 |
-| `PATCH /{session}` | 更新 Managed 的环境与资源设置 |
-| `POST /{session}/archive, /restore` | 归档与解除归档 |
-| `DELETE /{session}` | 停止应用访问该会话 |
-| `GET /{session}/capabilities` | 目标能力与上下文语义 |
-| `POST /{session}/turns` | message 或 input；必须携带幂等键 |
-| `GET /{session}/turns, /turns/{turn}` | 任务列表与状态 |
-| `GET /{session}/snapshot, /events, /events/stream` | 会话快照和持久事件 |
-| `GET /{session}/turns/{turn}/snapshot, /events, /events/stream` | 单个任务的快照和事件 |
-| `GET /{session}/turns/{turn}/capabilities` | 读取 available_commands |
-| `POST /{session}/turns/{turn}/actions, /inputs, /cancel, /resume` | 交互命令；必须携带幂等键 |
-| `GET /{session}/turns/{turn}/commands/{command}` | 命令回执状态 |
-| `POST/GET /{session}/files` | 上传字节或列出会话文件 |
-| `GET /{session}/files/{file}/content` | 读取已授权的文件内容 |
-| `POST/GET /{session}/webhooks` | 注册或查看通知订阅 |
-
-表中逗号后的路径与同一行第一个路径共享前缀。Turn 下也提供 `/actions`、`/usage`、`/artifacts` 和 `/webhooks` 查询；Webhook 撤销与重试分别使用 `DELETE /webhooks/{id}` 和 `POST /webhooks/{id}/retry`。
-
-Managed Agent 的 `/budget`、`/checkpoints`、`/fork`、`/inputs/inject`、`/subagents` 与 `/export` 是同一套 API 的能力扩展。并非每个目标都支持这些操作，请按本章"会话、任务与预算"与 capabilities 使用。文件格式见本章"文件与产物"，事件与签名见本章"SSE 与事件续传"。
-
-### 统一 Agent 目录与运行绑定
-
-以下接口使用平台身份；创建和列表的 `tenant`、`namespace` 与请求头范围保持一致。Agent 的 `id`、`agentKey` 和展示名称不是同一个字段。创建/注册的操作示例见本章"运行第一个托管 Agent"与"注册 External Agent"。
-
-| 方法和路径 | 请求参数 | 响应与用途 |
-| --- | --- | --- |
-| `POST /api/v1/agents` | `agentKey`；`tenant`、`namespace`、`displayName`、`description`；可带 `binding`、`definition` | `{agent,binding,policy,definition}`；Managed/Hosted 一次准备运行绑定与行为定义；没有绑定只创建目录记录 |
-| `GET /api/v1/agents` | 查询 `tenant`、`namespace`、`status`、`includeArchived`、`limit` | `{items:[Agent]}` |
-| `GET/PATCH /api/v1/agents/{id}` | PATCH：`version`，及 `displayName`、`description`、`status` 等修改项 | `{agent}`；归档使用 `status:"archived"`，不是删除运行历史 |
-| `GET/PATCH /api/v1/agents/{id}/definition` | PATCH：`name`、定义 `version` 和完整保留后的行为字段 | `{definition}`，更新响应还包含 `agent`；定义参数见第 30 章"配置 Agent 与模型" |
-| `GET /api/v1/agents/{id}/versions` / `/{version}` | Agent ID；单版查询用定义版本号 | 定义历史；创建 Session 时可指定版本 |
-| `GET/POST /api/v1/agents/{id}/bindings` | 创建使用 `kind`、`configuration`、`priority`、`enabled` | 从列表读取绑定；修改使用 `PATCH .../bindings/{bindingId}` 和 `version`，完整提交 `configuration`、`priority`、`enabled` |
-| `GET /api/v1/agents/{id}/instances` / `/runtime-inventory` / `/overview` | Agent ID | 实例、External 运行报告、概览；无报告不能推断为执行就绪 |
-| `GET/PUT /api/v1/agent-runtime-policies/{id}` | PUT：`tenant`、`namespace`、`agentId`、`selectionMode`、`fallbackMode`、`candidates` 等 | 选择运行候选；参数见第 32 章"Team 角色、成员与策略参数" |
-| `GET /api/v1/agents/runtime-options` | 查询 `tenant`、`namespace` | `{runtimes,profiles,pools}`，供 Hosted 选择 Runtime |
-
-`binding.kind` 使用 `managed`、`hosted-runtime` 或 `external-application`。Managed 创建时由平台生成绑定配置；Hosted 配置使用 `runtimeProfileId`、`runtimePoolId`。External 使用独立注册流程，不通过普通创建接口直接伪造一个在线实例。
-
-`POST /api/v1/agent-registrations` 接受 `agentKey`、`instanceKey`、范围、`framework`、`routingKey`、`capabilities` 等，返回 `agent`、`binding`、`instance`、`registrationCredential`。当前注册入口不校验调用身份，需由部署方限制受信任接入范围；返回注册凭据不代表首次注册已经通过身份认证。字段和实际传输接入见第 30 章"注册 API"一节。
-
-### 任务、编排、自动化与资源参数
-
-以下参考覆盖创建、更新和反馈参数；各页同时给出 API 操作与返回值衔接，Console 操作另列在第 33 章"可视化 Console"。
-
-| 资源 | API 起点 | 参数与使用参考 |
-| --- | --- | --- |
-| Issue / AgentTask / Inbox / Approval | `/api/v1/issues`、`/agent-tasks`、`/inbox`、`/approvals` | 任务分派与反馈见第 33 章"工作分派、审批与验收"；执行记录见本章"执行参考：Session、Run 与 Attempt" |
-| Team 与成员 | `/api/v1/teams` | Team 参数见第 32 章"Team 角色、成员与策略参数"；协作协议见第 32 章"设计可协作的角色" |
-| Workflow definition / revision / run | `/api/v1/orchestration-definitions`、`/orchestration-runs` | 节点、发布、启动与信号见第 32 章"编排 Workflow" |
-| Automation 与投递 | `/api/v1/automations` | 触发器、action、运行和反馈参数见第 33 章"计划与事件触发" |
-| Channel 与工作接入 | `/api/channels` | 渠道配置、路由和工作回传见本章"接入消息渠道" |
-| Workspace | `/api/workspaces` | 文件、版本、发布与绑定见第 30 章"Workspace、Skills 与子 Agent" |
-| Environment | `/api/environments` | type、config 与 Worker 见第 29 章"Environments：配置执行位置" |
-| Memory | `/api/memory-stores` | 文档、版本和访问策略见本章"Memory：维护共享知识" |
-| Vault | `/api/vaults` | secret、作用范围与引用见本章"Vault：为工具提供凭据" |
-| Namespace 与权限 | 见授权资源的具体接口 | 访问控制参考见第 29 章"账号、Namespace 与权限 API" |
-
-### SDK 与可运行示例
-
-Python 的 `ManagementClient` 用于准备资源与凭据，`ServiceClient` 用于创建 Session、提交 Turn 和读取结果。前端 TypeScript 客户端位于 `frontend/src/api/serviceSessions.ts`。运行时注册和任务回报 SDK 则用于接入执行器，与应用调用客户端的职责不同。
 
 ```python
 import os
@@ -635,354 +557,171 @@ print(client.turn(session["id"], turn["id"]))
 print(client.snapshot(session["id"]))
 ```
 
-完整示例位于 `service-controlplane/examples/service-api`，可以分别对 Agent、Team 和 Workflow 创建 Session。HTTP 客户端不会替应用批准工具操作，也不会在网络失败时擅自创建新任务；应用应保存 Session ID、Turn ID 和幂等键，按本章"使用 SDK 与可运行示例"一节处理恢复。
+完整示例位于仓库 `agentscope-service/service-controlplane/examples/service-api`，可以分别对 Agent、Team 和 Workflow 创建 Session。管理对象使用 `ManagementClient`，应用执行使用 `ServiceClient`；前端 TypeScript 客户端位于 `frontend/src/api/serviceSessions.ts`。运行时注册和任务回报 SDK 则用于接入执行器，与应用调用客户端的职责不同。HTTP 客户端不会替应用批准工具操作，也不会在网络失败时擅自创建新任务；应用应保存 Session ID、Turn ID 和幂等键，按本章"恢复页面并观察执行"一节处理恢复。
 
-### 错误与版本冲突
+> **延伸阅读**：创建与配置 Agent 本身见第 30 章"运行第一个托管 Agent"与"配置 Agent 与模型"；多 Agent 编排见第 32 章；Console 页面操作见第 33 章"可视化 Console"；六个业务案例见第 34 章。
 
-遇到 `400` 时先检查请求内容，`401` 表示凭据无效，`403` 表示当前身份没有相应权限。`404` 可能表示资源不存在，也可能表示当前身份无权访问，不应据此推断其他用户的数据。`409` 需要检查资源状态、版本或幂等请求是否改变；事件 `410` 则需要重新加载快照。限流和临时服务错误应退避重试，并保留同一个逻辑请求的幂等键。
+## 用户刷新页面怎么办：SSE 与事件续传
 
-管理资源更新前先读取当前版本。Issue 决策与 Workflow 发布使用 `expectedVersion`，Agent 定义等更新使用各自的 `version` 字段，不能自动用新版本重放已经过期的人工决定。
+上一节的事件订阅在页面存活的几分钟里够用，但生产环境里连接总会断：用户刷新页面、切换网络、直接离开。这一节处理三件事——刷新后如何恢复已发生的内容、断线后如何从断点继续、用户彻底离线时业务后端如何收到通知。
 
-机器可读契约位于 `agentscope-service/docs/service-api/openapi-v1.json`，其中列出当前 Session API 和应用凭据路径。旧调用入口的迁移说明位于同目录的 `session-api-migration.md`。
+任务提交后，应用需要把后台的执行进度展示给用户。Session API 会保存快照与事件日志：快照用于恢复已经发生的工作，后续事件用于更新页面上的消息、工具调用和待办。应用通过 SSE 持续接收这些事件，因此用户刷新页面或网络断开后，仍可以继续观察同一项任务；关闭连接不会取消执行。
 
-## 接入示例：可恢复的聊天应用
+首次创建 Session 和提交 Turn 的流程见本章"通过 Session API 接入应用"。下面沿用该节的 `SESSION_URL` 和应用凭据。如果业务后端需要在用户离线后收到通知，可以直接阅读本节的"用户离线后的 Webhook 通知"，它与页面上的 SSE 订阅可以同时使用。
 
-本例把一个 Managed"资料助手"接到业务聊天页面。用户提交整理资料的任务后，页面持续展示 Agent 的回复和工具调用；如果执行需要确认，页面让用户检查请求并作出决定。用户离开后再返回同一会话，应用会恢复已经保存的消息、工具结果和待办，再继续接收后续进度。
+### 先恢复快照，再接收增量
 
-本例使用本章"通过 Session API 接入应用"中介绍的同一套接口，并选择 Managed Agent 展示连续对话和运行中的交互。调用 Team、Workflow 或其他类型的 Agent 时，也通过这个入口创建 Session 和提交 Turn；具体能展示哪些内容、提供哪些操作，取决于目标的执行能力。
+应用第一次打开页面时，应先读取 Session 的 `/snapshot`，用返回内容恢复消息、工具和待办，然后把其中的 `as_of` 作为 `/events/stream` 的 `after` 参数。每处理完一个事件，再保存它的 cursor。网络重连时从最后成功应用的 cursor 继续；如果页面状态也丢失了，则重新加载快照。
 
-开始前，先按第 30 章"运行第一个托管 Agent"配置模型和 Environment，并验证 Agent 能正常回答。要体验工具调用，需要按本章"工具、MCP 与权限"绑定可用工具；要体验用户确认，还应将对应工具的 `permissionPolicy.type` 设置为 `always_ask`。尚未配置工具时，也可以先完成文字对话和刷新恢复部分。
-
-### 1. 创建会话，提交任务
-
-下面使用 curl、jq 和登录取得的用户 token（认证方式见本章"认证与空间"一节），方便在本地验证与控制台相同的交互。接入业务后端时，可以改用入口指南中已经授权的 Application key。将示例中的 ID 替换为实际资源 ID；如果 Agent 已配置默认 Environment，也可以省略创建请求中的 `environmentId`。本地安装的 Gateway 默认端口为 18080。
-
-```bash
-set -euo pipefail
-export BASE_URL="http://localhost:18080"
-export TOKEN="YOUR_USER_TOKEN"
-export TENANT="YOUR_TENANT"
-export NAMESPACE="YOUR_NAMESPACE"
-export AGENT_ID="YOUR_MANAGED_AGENT_ID"
-export ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
-```
-
-创建这段对话的 Session：
-
-```bash
-SESSION_JSON=$(
-  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notes-session-001" \
-    --data-binary @- <<JSON
-{
-  "target": {
-    "type": "agent",
-    "id": "$AGENT_ID"
-  },
-  "environmentId": "$ENVIRONMENT_ID"
-}
-JSON
-)
-SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
-SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
-```
-
-提交第一个问题：
-
-```bash
-TURN_KEY="notes-chat-001"
-TURN_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: $TURN_KEY" \
-    --data-binary @- <<'JSON'
-{
-  "message": "整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。列出还需要核实的信息。"
-}
-JSON
-)
-TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
-```
-
-创建成功后，应用保存 `SESSION_ID`，让聊天页面的路由能够定位这段对话；同时保存 `TURN_ID`，用于识别刚提交的任务。只有用户新建会话时才创建新的 Session。如果用户只是刷新页面，应用应读取原有记录，而不是再次创建会话或发送问题。
-
-示例中的两个幂等键分别用于创建会话和提交任务。网络超时后重试同一次操作时，应沿用原来的 key 和相同的请求内容。用户确实新建另一段对话或提出下一个问题时，应用才为相应请求生成新的 key。
-
-### 2. 先恢复内容，再订阅 SSE
+下面使用应用凭据。平台用户也可以用有权访问该 Session 的 Bearer token 完成相同操作。
 
 ```bash
 SNAPSHOT=$(
   curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE"
+    -H "X-API-Key: $AGENTSCOPE_API_KEY"
 )
-jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
 
-在终端按 Ctrl-C 只会关闭事件订阅，后台任务仍然继续。再次运行这一段时，快照先恢复断开期间已经保存的消息和工具结果，事件订阅再从快照的游标继续更新页面。这样，刷新后的页面既能显示之前的内容，也能接上尚未结束的执行。
+若只显示一个任务，则使用 `/turns/{turnId}/snapshot` 与 `/turns/{turnId}/events/stream`。Session、Turn 和子 Agent 各有自己的事件日志，游标只能用在产生它的资源上。它不是时间戳，也不能通过解析其中的字符推断事件序号。服务支持 `Last-Event-ID`；这个请求头存在时优先于查询参数。
 
-同一个 Session 的 SSE 连接可以跨越多个 Turn 保持打开，因此应用不能把连接关闭当作任务完成。应根据目标 `turn_id` 的 `turn.completed` 事件或查询得到的 Turn 状态，判断这次任务是否成功。事件去重、断线续传和后台通知的完整说明见本章"SSE 与事件续传"。
+#### 单个 Turn 订阅与断线续传
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
-```
-
-### 3. 接到自己的页面
-
-控制台 Session 的 **Execution** 页签已经把这些交互连接起来，对应的组件是 `agentscope-service/frontend/src/components/SessionExecution.tsx`。可以先在这里提交任务、查看工具调用和回答待办，了解一次完整交互如何进行，再把相同能力接到自己的业务页面。
-
-下面的连接代码可以放在控制台的 `src/` 下，复用 `api/agentSessions.ts` 读取快照和事件，再通过 `api/agentSessionView.ts` 把事件应用到页面状态。这两个文件是控制台的客户端实现。迁移到其他应用时，还需要一并适配 `api/http.ts` 的认证依赖和会话类型，并使用自己的 Gateway 地址与登录方式。
-
-```typescript
-import {
-  AgentStreamError, getAgentSessionSnapshot, streamAgentSession,
-} from './api/agentSessions';
-import { AgentSessionView } from './api/agentSessionView';
-import type { AgentSessionSnapshot } from './api/agentSessions';
-
-export function mountConversation(
-  sessionId: string,
-  render: (snapshot: AgentSessionSnapshot) => void,
-  showError: (error: unknown) => void,
-): () => void {
-  const controller = new AbortController();
-  const { signal } = controller;
-  const follow = async () => {
-    // Reload once if the stream rejects a stale cursor.
-    for (let attempt = 0; attempt < 2 && !signal.aborted; attempt++) {
-      const snapshot = await getAgentSessionSnapshot(sessionId, signal);
-      if (signal.aborted) return;
-      const view = new AgentSessionView(snapshot);
-      render(view.snapshot());
-      try {
-        await streamAgentSession(sessionId, {
-          after: snapshot.as_of, signal,
-          onEvent(event) {
-            if (signal.aborted) return;
-            view.apply(event);
-            render(view.snapshot());
-          },
-        });
-        return;
-      } catch (error) {
-        if (signal.aborted) return;
-        if (attempt === 0 && error instanceof AgentStreamError
-            && [400, 409, 410].includes(error.status)) continue;
-        throw error;
-      }
-    }
-  };
-  void follow().catch(error => { if (!signal.aborted) showError(error); });
-  return () => controller.abort();
-}
-```
-
-页面打开一个会话时，调用 `mountConversation(sessionId, render, showError)` 来恢复内容并订阅后续事件。离开页面或切换到另一个会话之前，调用它返回的清理函数，停止接收旧会话的事件。`render` 根据消息 ID 和工具调用 ID 更新已有卡片，让一次回复或工具调用在同一个位置持续展示。
-
-短暂断网时，客户端从已经成功应用的 cursor 重连；刷新后走新 snapshot。不要只把 cursor 放入 localStorage 却丢掉对应视图，否则前半段内容不会再次播放。非可恢复的认证/请求错误通过 showError 交给页面处理。
-
-| 页面区域 | 读取 / 更新规则 |
-| --- | --- |
-| 消息列表 | snapshot.items 的 data.item；按 item_id 更新，item.completed 用完整内容替换 |
-| 工具卡 | snapshot.tools；按 turn_id + tool_call_id 更新参数、进度、结果和状态 |
-| 待办 | snapshot.required_actions；保留 request_id、turn_id 和 kind |
-| 发送中 / 已结束 | snapshot.turns 或目标 turn 事件；run.ended 只表示一次执行结束 |
-| 产物与子任务 | snapshot.artifacts / subagents；展开子任务时读取其独立快照与事件 |
-
-工具参数还在生成时，也可能刷新页面；状态更新器利用 snapshot 中保留的 active_tool_call_id 接上省略调用 ID 的后续参数片段。同一任务可产生多条 assistant item 和多个工具调用，不能把全部增量拼到最后一条消息。
-
-### 4. 把用户操作接到正确的 API
-
-下面将聊天页面上的操作对应到 Session API。所有路径都相对于 `SESSION_URL`；应用使用服务返回的 Session、Turn 和请求 ID 定位已有工作，由服务管理具体执行过程。
-
-显示按钮前读取当前 Turn 的能力；以下操作按用户意图选择，并不需要依次执行：
+只观察一个 Turn 时，使用这一对接口：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/capabilities" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
-```
-
-| 按钮 / 场景 | 请求 | 后续处理 |
-| --- | --- | --- |
-| 发送新问题 | POST `/turns`，`{message}` | 新 turn、新 key，继续同一个 session 流 |
-| 调整当前任务 | POST `/turns/{turn}/steer`，`{message}` | 等 input.applied；409 时重新查看当前任务 |
-| 仅补充背景 | POST `/inputs/inject`，`{message}` | 不唤醒空闲 Agent；后续步骤应用 |
-| 允许 / 拒绝工具 | POST `/turns/{turn}/actions` | 按实际待办构造答复，继续观察命令状态和待办变化 |
-| 停止 | POST `/turns/{turn}/cancel` | 等明确 turn 结果，不把 cancel_requested 当作已停止 |
-| 继续中断任务 | POST `/turns/{turn}/resume` | 先处理待办和未知工具结果；沿用 turn，可能产生新 run |
-
-#### 调整当前要求，或仅补充背景
-
-调整正在执行的任务：
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/steer" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: notes-correction-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "先列出待确认事项，暂时不要写入文件。"
-}
-JSON
-```
-
-仅保存背景材料，不启动推理：
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/inputs/inject" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: notes-context-001" \
-  --data-binary @- <<'JSON'
-{
-  "message": "补充背景：评审参与人还包括安装说明的维护者。"
-}
-JSON
-```
-
-#### 停止当前任务
-
-```bash
-CANCEL_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/cancel" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Idempotency-Key: notes-cancel-001"
+TURN_URL="$SESSION_URL/turns/$TURN_ID"
+TURN_SNAPSHOT=$(
+  curl -sS --fail-with-body "$TURN_URL/snapshot" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY"
 )
-CANCEL_COMMAND_ID=$(jq -er '.command.id' <<< "$CANCEL_JSON")
-```
-
-查询取消命令，再读取 Turn 状态确认终态：
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$CANCEL_COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+TURN_CURSOR=$(jq -er '.as_of' <<< "$TURN_SNAPSHOT")
 ```
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body -N -G "$TURN_URL/events/stream" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+  -H "Accept: text/event-stream" \
+  --data-urlencode "after=$TURN_CURSOR"
 ```
 
-#### 继续可恢复的任务
-
-只有 `available_commands` 包含 `resume`，并已处理待办和未知工具结果时，才提交恢复请求：
+重连 Session 流时，将 `LAST_APPLIED_CURSOR` 替换为最后成功应用的 Session 事件游标。本例使用请求头续传，无需同时传 `after`：
 
 ```bash
-RESUME_JSON=$(
-  curl -sS --fail-with-body -X POST "$SESSION_URL/turns/$TURN_ID/resume" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Idempotency-Key: notes-resume-001"
+LAST_APPLIED_CURSOR="LAST_APPLIED_SESSION_CURSOR"
+curl -sS --fail-with-body -N "$SESSION_URL/events/stream" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+  -H "Accept: text/event-stream" \
+  -H "Last-Event-ID: $LAST_APPLIED_CURSOR"
+```
+
+### 理解事件与状态
+
+SSE 的 `id` 字段是续传游标，`event` 是事件类型，`data` 是 JSON 事件。公共事件包含 `schema_version`、`id`、`type`、`session_id`、`created_at`、`cursor` 和 `data`；属于某个任务的事件还会关联 `turn_id`。应用应按事件 ID 去重，并按资源 ID 更新已有内容，不能每收到一次通知就添加一张新卡片。
+
+`item.delta` 用于追加消息增量，`item.completed` 提供该消息的累计内容。处理完成事件时应替换累计内容，避免把同一段文字追加两次。工具事件描述单次工具调用，`required_action.*` 描述待办和答复，`step.*` 描述协作或流程步骤。只有目标 Turn 的明确状态才能判断任务是否结束，单个工具或子任务完成不代表整个任务完成。
+
+Managed Session 快照使用运行时的资源数组，可以展示输入、子 Agent 和运行尝试；通用 Turn 与 Team、Workflow 快照使用按 ID 索引的集合。前端可复用 `agentSessions.ts` 与 `agentSessionView.ts` 处理 Managed 执行视图，或用 `serviceSessions.ts` 处理通用 Turn 视图。不要把这两种快照形状当成完全相同的数据结构。
+
+### 分页、断线与过期
+
+无需持续连接时，可以使用 `GET /events?after=...&limit=100` 分页读取。响应中的 `next_cursor` 用于下一页，`has_more` 表示当前还有可读事件。空页并不表示任务已完成；应用仍应读取 Turn 状态，或继续等待后续事件。
+
+```bash
+EVENT_PAGE=$(
+  curl -sS --fail-with-body -G "$SESSION_URL/events" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+    --data-urlencode "after=$CURSOR" \
+    --data-urlencode "limit=100"
 )
-RESUME_COMMAND_ID=$(jq -er '.command.id' <<< "$RESUME_JSON")
+jq . <<< "$EVENT_PAGE"
 ```
 
+仅当 `has_more` 为 true 时立即读取下一页；处理完当前页后再推进游标。
+
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$RESUME_COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+if jq -e '.has_more == true' <<< "$EVENT_PAGE" > /dev/null; then
+  NEXT_CURSOR=$(jq -er '.next_cursor' <<< "$EVENT_PAGE")
+  curl -sS --fail-with-body -G "$SESSION_URL/events" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+    --data-urlencode "after=$NEXT_CURSOR" \
+    --data-urlencode "limit=100"
+fi
 ```
 
-创建 Turn、调整要求、补充背景和回答待办时，都应为这一次操作提供稳定的 `Idempotency-Key`。下面演示用户检查工具请求并点击"允许"后，应用如何提交确认答复。`REQUEST_ID` 必须来自当前待办卡片中的 `request_id`，不能用工具调用 ID 替代：
+如果请求返回 `410` 和 `cursor_expired`，说明该资源的增量历史已超过保留范围。此时读取新的快照，并从新的 `as_of` 恢复订阅。不要为了恢复观察而重新提交任务。不同资源的游标不可交换，错误的游标会被拒绝。
+
+### 用户离线后的 Webhook 通知
+
+页面关掉之后呢？业务后端可以在 Session 的 `/webhooks` 注册通知，覆盖该会话中的后续任务；如果只关心一个任务，则在对应 Turn 的 `/webhooks` 注册。应用凭据需要 `webhooks:write`。下面的目标地址应替换为你实际部署的 HTTPS 接收端：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
-```
-
-```bash
-REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
-COMMAND_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
+WEBHOOKS_URL="$SESSION_URL/webhooks"
+WEBHOOK_JSON=$(
+  curl -sS --fail-with-body "$WEBHOOKS_URL" \
+    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
     -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notes-approval-001" \
-    --data-binary @- <<JSON
+    -H "Idempotency-Key: notifications-001" \
+    --data-binary @- <<'JSON'
 {
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "allow": true,
-    "reason": "用户已确认"
-  }
+  "url": "https://your-app.example/agent-events",
+  "event_types": [
+    "turn.completed",
+    "turn.failed",
+    "required_action.created"
+  ]
 }
 JSON
 )
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
+WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
+SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
 ```
 
-答复被接收后，应用应继续查询返回的命令状态，并观察待办是否已经处理、任务是否继续执行。HTTP 请求成功只说明服务接收了这次操作，不能立即把待办标为完成。如果命令失败或待办仍然存在，应重新读取最新记录，让用户了解当前状态后再决定是否重试。
+保存返回的 `signing_secret`，不要将它暴露给浏览器。接收端使用这个 secret，对 `时间戳 + '.' + 原始请求体` 计算 HMAC-SHA256，并与 `X-AgentScope-Signature: t=<秒>,v1=<hex>` 比较。同时检查时间窗口，并按事件 ID 去重。验签必须使用原始请求字节，不能先解析 JSON 再序列化。
+
+如果只通知一个 Turn，在注册前改用 `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"`。下面的管理请求继续使用注册时的 `WEBHOOKS_URL` 和返回的 `WEBHOOK_ID`。
+
+Webhook 是至少一次投递，因此同一个事件可能收到多次。接收端应先可靠保存通知，再返回成功，并按需要读取 Session 或 Turn 的最新状态。`GET /webhooks` 可检查投递状态；失败后可以调用 `POST /webhooks/{webhookId}/retry` 重试，或者通过 `DELETE` 撤销订阅。Webhook 不会替业务系统完成幂等处理，也不表示外部业务事务已经提交。
+
+#### 查看、重试与停用 Webhook
+
+查看订阅及投递状态：
 
 ```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
+curl -sS --fail-with-body "$WEBHOOKS_URL" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
 ```
 
-待办要求外部工具执行结果时，应在 `payload` 中提交实际的 `output` 和 `is_error`；需要指定人员确认时，则使用该人员有权限的用户身份。如何定位待办和处理命令回执见本章"回答 required action"一节。这些答复是在推进原来的任务，最终是否完成仍以 Turn 的结果为准。
+接收端恢复后，按需重试失败投递：
 
-### 5. 用真实工具走完一次流程
+```bash
+curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
 
-要验证整个交互过程，可以给资料助手绑定至少两个可用的工具操作，并让其中一个需要用户确认。随后提交与工具能力匹配的任务，例如"读取两份材料，分别核对后写出汇总"。当 Agent 调用工具并继续整理结果时，分别尝试下面的页面操作，检查应用是否能恢复已有内容并接上后续执行。
+不再需要通知时停用订阅：
 
-| 尝试 | 应看到的结果 |
-| --- | --- |
-| 文字生成途中刷新 | 先显示已提交前缀，再继续生成同一条消息 |
-| 工具参数生成中刷新 | 同一工具卡接着更新参数 |
-| 工具执行中关闭页面，稍后返回 | 离开期间完成的工具结果、后续工具和助手消息均可恢复 |
-| 等待确认时刷新 | 待办保留；答复后继续原 turn |
-| 断开 SSE 后查看任务 | 服务仍执行；连接中断不会触发 cancel |
-| 完成后继续追问 | 同一 session 新建 turn，历史仍在 |
+```bash
+curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID" \
+  -H "X-API-Key: $AGENTSCOPE_API_KEY"
+```
 
-上面的页面恢复只是在重新显示已有工作。恢复旧 checkpoint 会改变 Agent 的上下文，之后需要提交新的 Turn；如果需要继续被中断的原任务，则应检查恢复条件后使用 `resume`。这两类执行操作见本章"会话、任务与预算"。
+自动化的入站 Webhook 用于让外部系统触发工作，与这里用于通知结果的出站 Webhook 用途不同。配置入口见第 33 章"计划与事件触发"，保留和恢复策略见第 33 章"运维、恢复与排障"。
 
-当聊天页面还需要让用户上传材料或下载结果时，可以按本章"文件与产物"接入对应能力。如果希望用户离开后由业务后端接收完成通知，则在"用户离线后的 Webhook 通知"一节中继续配置 Webhook。
+## 执行中要调整怎么办：会话、任务与预算
 
-## 会话、任务与预算
+最小路径假设任务一次跑完。真实使用中，用户常常在执行途中改变主意：补充一句要求、修改当前任务的走向、干脆停下，或者希望 Agent 回到之前的上下文重新试验。这一节说明这些操作如何作用于已有的 Session 和 Turn。
 
 Session 保存应用与执行目标之间的一段工作记录，Turn 表示其中一次提交的任务。Agent、Team 和 Workflow 都通过同一套 Session API 接收工作；Managed Agent 在这个入口上进一步提供连续对话、运行中补充输入、上下文恢复和子 Agent 等能力。关闭页面或断开事件连接不会取消后台任务。
 
-首次接入请先完成本章"通过 Session API 接入应用"，取得 `SESSION_URL`、`TURN_ID` 和应用凭据 `AGENTSCOPE_API_KEY`。提交任务后，用户可能需要调整要求、回答 Agent 的询问，或者停止并恢复执行，本节说明这些操作如何作用于已有的 Session 和 Turn。请求也可以使用有权访问该 Session 的平台用户 Bearer token；应用凭据必须同时具有相应 scope 和目标资源授权。
+首次接入请先完成本章"通过 Session API 接入应用"，取得 `SESSION_URL`、`TURN_ID` 和应用凭据 `AGENTSCOPE_API_KEY`。请求也可以使用有权访问该 Session 的平台用户 Bearer token；应用凭据必须同时具有相应 scope 和目标资源授权。
 
 ### 理解 Session 与 Turn 的关系
 
@@ -1086,87 +825,11 @@ JSON
 
 ### 回答 required action
 
-Agent 需要用户确认或等待外部执行结果时，会生成 required action。应用应保存快照或事件中的 `request_id`，向用户说明所请求的操作，再将真实决定提交到对应 Turn。下面是一条工具确认答复，`request_id` 必须使用实际收到的值：
+Agent 需要用户确认或等待外部执行结果时，会生成 required action。应用应保存快照或事件中的 `request_id`，向用户说明所请求的操作，再将真实决定提交到对应 Turn。
 
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
-```
+三种答复的完整请求——工具确认（`payload.allow`）、外部工具结果（`payload.output` 与 `is_error`）、业务审批（`expected_version` 与 `decision`）——已在本章"在执行中参与交互"一节逐一给出，此处补充几条通用的答复规则。`request_id` 必须来自当前待办卡片中的实际值，不能用工具调用 ID 替代；保留服务返回的 `native:` 等前缀。接口返回命令回执和状态地址，应用继续查询回执，直到命令执行完毕，同时等待任务状态变化；提交答复成功不代表整个任务已经完成。相同答复重试时沿用原来的 key，修改答复时先重新读取待办。
 
-从返回的待办中选取实际 `request_id`，并核对它要求的答复类型。工具允许/拒绝答复如下；拒绝时将 `allow` 改为 `false` 并说明原因。
-
-```bash
-REQUEST_ID="REQUEST_ID_FROM_PENDING_ACTION"
-COMMAND_JSON=$(
-  curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H "X-AgentScope-Tenant: $TENANT" \
-    -H "X-AgentScope-Namespace: $NAMESPACE" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: approval-001" \
-    --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "allow": true,
-    "reason": "用户已确认"
-  }
-}
-JSON
-)
-COMMAND_ID=$(jq -er '.command.id' <<< "$COMMAND_JSON")
-```
-
-接口返回命令回执和状态地址。应用继续查询回执，直到命令执行完毕，同时等待任务状态变化；提交答复成功不代表整个任务已经完成。相同答复重试时沿用原来的 key，修改答复时先重新读取待办。`interact` scope 只允许调用交互接口，不会把应用密钥变成指定的人工审批人；涉及身份约束的业务审批仍需使用被授权的用户身份。
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/commands/$COMMAND_ID" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE"
-```
-
-#### 外部工具结果与指定人员的审批
-
-仅在待办要求外部工具结果时提交真实 `output`；执行失败时设 `is_error: true` 并提供实际错误。不要把它当作工具允许/拒绝的答复。
-
-```bash
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: tool-result-001" \
-  --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "payload": {
-    "output": "真实工具执行结果",
-    "is_error": false
-  }
-}
-JSON
-```
-
-业务审批必须使用待办中的最新版本号，并由指定审批人的 `TOKEN` 提交。将 `EXPECTED_VERSION` 替换为实际数字；拒绝时使用 `decision: "rejected"`。
-
-```bash
-REQUEST_ID="BUSINESS_APPROVAL_REQUEST_ID"
-EXPECTED_VERSION=1
-curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/actions" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "X-AgentScope-Tenant: $TENANT" \
-  -H "X-AgentScope-Namespace: $NAMESPACE" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: business-approval-001" \
-  --data-binary @- <<JSON
-{
-  "request_id": "$REQUEST_ID",
-  "expected_version": $EXPECTED_VERSION,
-  "decision": "approved"
-}
-JSON
-```
+`interact` scope 只允许调用交互接口，不会把应用密钥变成指定的人工审批人；涉及身份约束的业务审批仍需使用被授权的用户身份。仅在待办要求外部工具结果时提交真实 `output`；执行失败时设 `is_error: true` 并提供实际错误。业务审批必须使用待办中的最新版本号，并由指定审批人的 `TOKEN` 提交。
 
 ### 取消与恢复任务
 
@@ -1373,263 +1036,202 @@ curl -sS --fail-with-body "$SESSION_URL/export" \
 
 如果要把这些操作接入自己的聊天页面，可以继续阅读本章"接入示例：可恢复的聊天应用"。示例把任务提交、进度展示和用户操作连在一起，并说明用户离开或刷新页面后如何继续同一段工作。
 
-## 执行参考：Session、Run 与 Attempt
+## 接入示例：可恢复的聊天应用
 
-> **注意**：此为预览文档，正式版本尚未发布。
+前面各节分别讲了提交、观察和调整，现在把它们连成一个完整的前端。本例把一个 Managed"资料助手"接到业务聊天页面。用户提交整理资料的任务后，页面持续展示 Agent 的回复和工具调用；如果执行需要确认，页面让用户检查请求并作出决定。用户离开后再返回同一会话，应用会恢复已经保存的消息、工具结果和待办，再继续接收后续进度。
 
-应用通常从 Agent API 会话、Issue 或 Session API 提交工作。本节用于沿业务请求查找 Run、Task、Attempt 和 Session，理解它们的状态与控制接口。执行详情仍受空间、工作自身权限及运维能力约束。
+本例使用本章"通过 Session API 接入应用"中介绍的同一套接口，并选择 Managed Agent 展示连续对话和运行中的交互。调用 Team、Workflow 或其他类型的 Agent 时，也通过这个入口创建 Session 和提交 Turn；具体能展示哪些内容、提供哪些操作，取决于目标的执行能力。
 
-### 关联一项工作
+开始前，先按第 30 章"运行第一个托管 Agent"配置模型和 Environment，并验证 Agent 能正常回答。要体验工具调用，需要按本章"工具、MCP 与权限"绑定可用工具；要体验用户确认，还应将对应工具的 `permissionPolicy.type` 设置为 `always_ask`。尚未配置工具时，也可以先完成文字对话和刷新恢复部分。
 
-从 Issue ID 查询关联 Run，先看输入、运行方式与实际目标，然后查询节点、AgentTask 和最新 Attempt。Session 记录模型或 provider 上下文。提交排障信息时保留这些 ID，避免只提供可重复的显示名称。
+### 1. 创建会话，提交任务
 
-| Run mode | 形态 |
-| --- | --- |
-| direct | 单 Agent 工作 |
-| adaptive | Lead 动态协调的 Team 工作 |
-| declared | 固定 Workflow revision |
-| subrun | 父节点调用的子流程 |
+下面使用 curl、jq 和登录取得的用户 token（认证方式见本章"认证与空间"一节），方便在本地验证与控制台相同的交互。接入业务后端时，可以改用入口指南中已经授权的 Application key。将示例中的 ID 替换为实际资源 ID；如果 Agent 已配置默认 Environment，也可以省略创建请求中的 `environmentId`。本地安装的 Gateway 默认端口为 18080。
 
-### 查询执行的 API
+创建这段对话的 Session：
 
-以下接口使用用户 Bearer token，并携带相同的 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。列表查询还需显式提供 `tenant`、`namespace`。完整请求示例见第 32 章"编排 Workflow"与第 33 章"工作分派、审批与验收"。
+```bash
+SESSION_JSON=$(
+  curl -sS --fail-with-body "$BASE_URL/api/v1/agent-sessions" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: notes-session-001" \
+    --data-binary @- <<JSON
+{
+  "target": {
+    "type": "agent",
+    "id": "$AGENT_ID"
+  },
+  "environmentId": "$ENVIRONMENT_ID"
+}
+JSON
+)
+SESSION_ID=$(jq -er '.id' <<< "$SESSION_JSON")
+SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
+```
 
-| 操作 | API | 查询参数 / 返回 |
-| --- | --- | --- |
-| 查关联 Run | `GET /api/v1/orchestration-runs` | `issueId`、`definitionId`、`state`、`active`、`offset`、`limit`；返回 `{runs}` |
-| 查 Run | `GET /api/v1/orchestration-runs/{runId}` | 返回 `{run}`，含 `state`、`input`、`output`、`waitReason`、失败信息 |
-| 查执行图 | `GET /api/v1/orchestration-runs/{runId}/graph` | `run`、`nodes`、`edges`、`tasks`、`attempts`、可选 `childRuns` |
-| 查历史事件 | `GET /api/v1/orchestration-runs/{runId}/events` | `after` 为 sequence 游标，`limit` 控制数量；返回 `{events}` |
-| 查任务 | `GET /api/v1/agent-tasks/{taskId}` | 返回 `{task,inputSummaries}`，含结果和待处理输入概览 |
-| 查 Attempt | `GET /api/v1/execution-attempts` | `taskId`、`state`、`limit`；返回 `{attempts}` |
-| 查单次 Attempt | `GET /api/v1/execution-attempts/{attemptId}` | 返回 `{attempt}`，含后端、执行状态、结果和会话关联 |
+提交第一个问题：
 
-`RunEvent.sequence` 用于本 Run 内增量读取，`type` 表示事件类型，`nodeId` / `agentTaskId` / `attemptId` 关联受影响对象。这里的 events 是 JSON 查询，不是 SSE。发布服务的业务客户端应优先使用 Turn 返回的 statusUrl / eventsUrl，见本章"通过 Session API 接入应用"。
+```bash
+TURN_KEY="notes-chat-001"
+TURN_JSON=$(
+  curl -sS --fail-with-body "$SESSION_URL/turns" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $TURN_KEY" \
+    --data-binary @- <<'JSON'
+{
+  "message": "整理会议待办：小李周五完成安装说明，下周一评审，时间待确认。列出还需要核实的信息。"
+}
+JSON
+)
+TURN_ID=$(jq -er '.id' <<< "$TURN_JSON")
+```
 
-### Run 状态与控制
+创建成功后，应用保存 `SESSION_ID`，让聊天页面的路由能够定位这段对话；同时保存 `TURN_ID`，用于识别刚提交的任务。只有用户新建会话时才创建新的 Session。如果用户只是刷新页面，应用应读取原有记录，而不是再次创建会话或发送问题。
 
-planned 表示尚未开始，running 表示正在推进，waiting 表示等待条件、信号或外部结果。paused 停止新节点派发，cancelling 等待取消收敛。终态为 cancelled、succeeded、partial_succeeded 或 failed。
+示例中的两个幂等键分别用于创建会话和提交任务。网络超时后重试同一次操作时，应沿用原来的 key 和相同的请求内容。用户确实新建另一段对话或提出下一个问题时，应用才为相应请求生成新的 key。
 
-Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产生的文件或外部操作，更不会自动接受 Issue。查看节点和 Attempt 的最终状态确认取消是否完成。
-
-控制 Run 使用 `POST /api/v1/orchestration-runs/{runId}/pause`、`/resume`、`/cancel`，请求体 `{}`，返回 `{run}`。终态后用 `/rerun` 提交必填 `idempotencyKey` 和可选 `input`，返回新的 `{run}`，其中 `rerunOfRunId` 保留来源。
-
-任务取消使用 `POST /api/v1/agent-tasks/{taskId}/cancel` 与当前 `expectedVersion`；任务重试使用 `/retry`。不要把 Task ID 传到 Run 控制接口，也不要直接改写 Attempt 状态来代替取消。
-
-### 三种重复执行
-
-基础设施重试可以为同一 Task 产生新的 Attempt；节点策略重试可以产生新 Task；终态 Run 的人工 Rerun 创建新 Run 并保留来源。每次都要查看实际执行目标和输入，避免把旧的失败和新的成功混为一次运行。
-
-显式配置 fresh fallback 才允许按策略跨候选后端重建执行上下文，恢复依赖 Issue、Comment 和 Artifact，而非原进程内状态。
-
-### 等待与失败
-
-先看 waitReason/error，再判断是否需要人工动作、在线 Host、Worker、模型凭据或更多容量。`requires_action` 的 Session 可能在等待工具结果，不能只依据该状态判断是人工审批。
-
-工具事件、最终回复、Attempt 成功和 Issue 验收是不同证据。对最终交付使用验收 API（第 33 章"Inbox 通知与审批"一节）；Managed 结果语义见第 33 章"状态、结果与验收"。
-
-### 断线后继续观察
-
-刷新页面后重新打开原工作，查询当前状态和已保存事件。SSE 长连接结束不代表任务失败。代理应及时转发事件；不要因为前端连接断开就用新的幂等键重复提交。
-
-### 查询 Session 诊断
-
-`GET /api/v1/sessions` 列出授权范围内的会话；具体会话使用 `GET /api/v1/sessions/{sessionRef}`。优先使用 Attempt 返回的 `sessionRef`（控制面记录 ID），不要混用运行时的 `sessionId` 或 provider 的 `providerSessionId`。查询时同时携带正确的 tenant/namespace。
-
-诊断接口包括 `/messages`（`offset`、`limit`、`fromEnd`）、`/context`、`/events`、`/events/stream`、`/turns`。内容是否可用取决于运行时提供的观测与查询能力，注册为 Agent 不代表都支持完整上下文或恢复。该组接口用于执行诊断；业务侧会话管理优先使用下述 Agent API。
-
-### Managed Session 的日志与恢复入口
-
-Agent API 使用 session_id → turn_id → run_id 关联推理工作；run_id 不是编排 Run ID。GET snapshot 返回已保存的 items/tools/turns/required_actions 与公共 as_of cursor，再从 events/stream 续传。GET turns 按提交返回的 turn ID 查询队列和结果。
-
-完整执行历史与 checkpoint 在原生 Session Log；普通客户端读公共投影，授权管理员才能读取 trace/recovery。断线只重连，不再 POST 输入；中断的执行先检查未知工具结果，再按 actions/resume 流程继续。具体位置、HTTP 示例和边界见本章"会话、任务与预算"。
-
-### 一次排障应记录什么
-
-用第 34 章"从故障告警生成可审查的修复"案例练习：从主 Issue 查询 Run graph，在使用 Hosted 目标时找到执行任务与最新 Attempt，再核对其 Session、日志与文件。需要图形入口时参阅第 33 章"配置 Team 与 Workflow"。
-
-| 记录 | 用途 |
-| --- | --- |
-| Issue ID 与验收要求 | 确定要交付什么，以及是否仍待人工验收 |
-| Run ID、mode 与目标 revision | 确定是哪次执行、采用哪种编排和定义 |
-| Node / Task / Attempt ID | 找到实际失败步骤，区分重试层级 |
-| Session ID、Host/provider（如果适用） | 定位上下文与执行主机 |
-| 状态、错误、时间与最后事件游标 | 区分正在等待、已经终止和仅观察连接中断 |
-| Artifact 与测试日志 | 判断结果是否满足要求，而非仅查看状态标签 |
-
-若第二次 Attempt 成功，仍保留第一次失败的记录，并把交付指向成功执行的文件。若只有 SSE 断线，按本章"SSE 与事件续传"使用原调用的游标恢复观察；不要把它当作新的业务任务。
-
-### Managed 执行与持久化
-
-控制面解析 Agent 定义、版本、环境及知识与凭据引用。Dataplane 将定义文件准备到会话目录，构建 Harness，并连接持久状态存储。定义快照、执行文件和共享资源各有自己的生命周期：保存 Agent 配置不等于修改正在执行的所有实例。
-
-Workspace 保存能力定义；Environment 决定文件和命令在哪执行；Memory Store 是共享知识；Vault 在连接工具前解析凭据。资源用法集中在本章与第 29、30 章的资源小节。
-
-Harness 使用显式 Model 或部署默认 Model，按指令进行推理、请求工具并读取结果。`maxIters` 限制迭代，工具权限决定操作能否执行。需要确认时任务可能等待用户决定；这时重复发送相同工作可能造成额外执行。
-
-Local 工具在 Dataplane 环境执行，sandbox 使用 E2B，remote 使用共享文件存储，self_hosted 将工具工作交给 Worker。self_hosted 中模型仍由 Dataplane 驱动；Worker 的职责是接收工具工作并返回结果。
-
-会话状态、事件和协调记录存储在部署配置的持久存储中。多副本使用协调租约约束执行；恢复仍依赖数据库、工作文件、所选环境和外部工具可用。一次工具成功后的外部副作用不会因服务重启自动撤销。
-
-共享 Memory 是按需访问的实时平台知识，不应理解为每次调用都完整复制进模型提示。修改它需要按共享知识维护流程处理，不能假设 Agent 定义版本同时固定所有外部知识。
-
-## SSE 与事件续传
-
-任务提交后，应用需要把后台的执行进度展示给用户。Session API 会保存快照与事件日志：快照用于恢复已经发生的工作，后续事件用于更新页面上的消息、工具调用和待办。应用通过 SSE 持续接收这些事件，因此用户刷新页面或网络断开后，仍可以继续观察同一项任务；关闭连接不会取消执行。
-
-首次创建 Session 和提交 Turn 的流程见本章"通过 Session API 接入应用"。下面沿用该节的 `SESSION_URL` 和应用凭据。如果业务后端需要在用户离线后收到通知，可以直接阅读本节的"用户离线后的 Webhook 通知"，它与页面上的 SSE 订阅可以同时使用。
-
-### 先恢复快照，再接收增量
-
-应用第一次打开页面时，应先读取 Session 的 `/snapshot`，用返回内容恢复消息、工具和待办，然后把其中的 `as_of` 作为 `/events/stream` 的 `after` 参数。每处理完一个事件，再保存它的 cursor。网络重连时从最后成功应用的 cursor 继续；如果页面状态也丢失了，则重新加载快照。
-
-下面使用应用凭据。平台用户也可以用有权访问该 Session 的 Bearer token 完成相同操作。
+### 2. 先恢复内容，再订阅 SSE
 
 ```bash
 SNAPSHOT=$(
   curl -sS --fail-with-body "$SESSION_URL/snapshot" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
+    -H "Authorization: Bearer $TOKEN" \
+    -H "X-AgentScope-Tenant: $TENANT" \
+    -H "X-AgentScope-Namespace: $NAMESPACE"
 )
+jq '{items, tools, turns, required_actions}' <<< "$SNAPSHOT"
 CURSOR=$(jq -er '.as_of' <<< "$SNAPSHOT")
 ```
 
 ```bash
 curl -sS --fail-with-body -N -G "$SESSION_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE" \
   -H "Accept: text/event-stream" \
   --data-urlencode "after=$CURSOR"
 ```
 
-若只显示一个任务，则使用 `/turns/{turnId}/snapshot` 与 `/turns/{turnId}/events/stream`。Session、Turn 和子 Agent 各有自己的事件日志，游标只能用在产生它的资源上。它不是时间戳，也不能通过解析其中的字符推断事件序号。服务支持 `Last-Event-ID`；这个请求头存在时优先于查询参数。
+在终端按 Ctrl-C 只会关闭事件订阅，后台任务仍然继续。再次运行这一段时，快照先恢复断开期间已经保存的消息和工具结果，事件订阅再从快照的游标继续更新页面。这样，刷新后的页面既能显示之前的内容，也能接上尚未结束的执行。
 
-#### 单个 Turn 订阅与断线续传
-
-只观察一个 Turn 时，使用这一对接口：
+同一个 Session 的 SSE 连接可以跨越多个 Turn 保持打开，因此应用不能把连接关闭当作任务完成。应根据目标 `turn_id` 的 `turn.completed` 事件或查询得到的 Turn 状态，判断这次任务是否成功。事件去重、断线续传和后台通知的完整说明见本章"用户刷新页面怎么办：SSE 与事件续传"。
 
 ```bash
-TURN_URL="$SESSION_URL/turns/$TURN_ID"
-TURN_SNAPSHOT=$(
-  curl -sS --fail-with-body "$TURN_URL/snapshot" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY"
-)
-TURN_CURSOR=$(jq -er '.as_of' <<< "$TURN_SNAPSHOT")
+curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "X-AgentScope-Tenant: $TENANT" \
+  -H "X-AgentScope-Namespace: $NAMESPACE"
 ```
 
-```bash
-curl -sS --fail-with-body -N -G "$TURN_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
-  -H "Accept: text/event-stream" \
-  --data-urlencode "after=$TURN_CURSOR"
-```
+### 3. 接到自己的页面
 
-重连 Session 流时，将 `LAST_APPLIED_CURSOR` 替换为最后成功应用的 Session 事件游标。本例使用请求头续传，无需同时传 `after`：
+控制台 Session 的 **Execution** 页签已经把这些交互连接起来，对应的组件是 `agentscope-service/frontend/src/components/SessionExecution.tsx`。可以先在这里提交任务、查看工具调用和回答待办，了解一次完整交互如何进行，再把相同能力接到自己的业务页面。
 
-```bash
-LAST_APPLIED_CURSOR="LAST_APPLIED_SESSION_CURSOR"
-curl -sS --fail-with-body -N "$SESSION_URL/events/stream" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY" \
-  -H "Accept: text/event-stream" \
-  -H "Last-Event-ID: $LAST_APPLIED_CURSOR"
-```
+下面的连接代码可以放在控制台的 `src/` 下，复用 `api/agentSessions.ts` 读取快照和事件，再通过 `api/agentSessionView.ts` 把事件应用到页面状态。这两个文件是控制台的客户端实现。迁移到其他应用时，还需要一并适配 `api/http.ts` 的认证依赖和会话类型，并使用自己的 Gateway 地址与登录方式。
 
-### 理解事件与状态
+```typescript
+import {
+  AgentStreamError, getAgentSessionSnapshot, streamAgentSession,
+} from './api/agentSessions';
+import { AgentSessionView } from './api/agentSessionView';
+import type { AgentSessionSnapshot } from './api/agentSessions';
 
-SSE 的 `id` 字段是续传游标，`event` 是事件类型，`data` 是 JSON 事件。公共事件包含 `schema_version`、`id`、`type`、`session_id`、`created_at`、`cursor` 和 `data`；属于某个任务的事件还会关联 `turn_id`。应用应按事件 ID 去重，并按资源 ID 更新已有内容，不能每收到一次通知就添加一张新卡片。
-
-`item.delta` 用于追加消息增量，`item.completed` 提供该消息的累计内容。处理完成事件时应替换累计内容，避免把同一段文字追加两次。工具事件描述单次工具调用，`required_action.*` 描述待办和答复，`step.*` 描述协作或流程步骤。只有目标 Turn 的明确状态才能判断任务是否结束，单个工具或子任务完成不代表整个任务完成。
-
-Managed Session 快照使用运行时的资源数组，可以展示输入、子 Agent 和运行尝试；通用 Turn 与 Team、Workflow 快照使用按 ID 索引的集合。前端可复用 `agentSessions.ts` 与 `agentSessionView.ts` 处理 Managed 执行视图，或用 `serviceSessions.ts` 处理通用 Turn 视图。不要把这两种快照形状当成完全相同的数据结构。
-
-### 分页、断线与过期
-
-无需持续连接时，可以使用 `GET /events?after=...&limit=100` 分页读取。响应中的 `next_cursor` 用于下一页，`has_more` 表示当前还有可读事件。空页并不表示任务已完成；应用仍应读取 Turn 状态，或继续等待后续事件。
-
-```bash
-EVENT_PAGE=$(
-  curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
-    --data-urlencode "after=$CURSOR" \
-    --data-urlencode "limit=100"
-)
-jq . <<< "$EVENT_PAGE"
-```
-
-仅当 `has_more` 为 true 时立即读取下一页；处理完当前页后再推进游标。
-
-```bash
-if jq -e '.has_more == true' <<< "$EVENT_PAGE" > /dev/null; then
-  NEXT_CURSOR=$(jq -er '.next_cursor' <<< "$EVENT_PAGE")
-  curl -sS --fail-with-body -G "$SESSION_URL/events" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
-    --data-urlencode "after=$NEXT_CURSOR" \
-    --data-urlencode "limit=100"
-fi
-```
-
-如果请求返回 `410` 和 `cursor_expired`，说明该资源的增量历史已超过保留范围。此时读取新的快照，并从新的 `as_of` 恢复订阅。不要为了恢复观察而重新提交任务。不同资源的游标不可交换，错误的游标会被拒绝。
-
-### 用户离线后的 Webhook 通知
-
-业务后端可以在 Session 的 `/webhooks` 注册通知，覆盖该会话中的后续任务；如果只关心一个任务，则在对应 Turn 的 `/webhooks` 注册。应用凭据需要 `webhooks:write`。下面的目标地址应替换为你实际部署的 HTTPS 接收端：
-
-```bash
-WEBHOOKS_URL="$SESSION_URL/webhooks"
-WEBHOOK_JSON=$(
-  curl -sS --fail-with-body "$WEBHOOKS_URL" \
-    -H "X-API-Key: $AGENTSCOPE_API_KEY" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: notifications-001" \
-    --data-binary @- <<'JSON'
-{
-  "url": "https://your-app.example/agent-events",
-  "event_types": [
-    "turn.completed",
-    "turn.failed",
-    "required_action.created"
-  ]
+export function mountConversation(
+  sessionId: string,
+  render: (snapshot: AgentSessionSnapshot) => void,
+  showError: (error: unknown) => void,
+): () => void {
+  const controller = new AbortController();
+  const { signal } = controller;
+  const follow = async () => {
+    // Reload once if the stream rejects a stale cursor.
+    for (let attempt = 0; attempt < 2 && !signal.aborted; attempt++) {
+      const snapshot = await getAgentSessionSnapshot(sessionId, signal);
+      if (signal.aborted) return;
+      const view = new AgentSessionView(snapshot);
+      render(view.snapshot());
+      try {
+        await streamAgentSession(sessionId, {
+          after: snapshot.as_of, signal,
+          onEvent(event) {
+            if (signal.aborted) return;
+            view.apply(event);
+            render(view.snapshot());
+          },
+        });
+        return;
+      } catch (error) {
+        if (signal.aborted) return;
+        if (attempt === 0 && error instanceof AgentStreamError
+            && [400, 409, 410].includes(error.status)) continue;
+        throw error;
+      }
+    }
+  };
+  void follow().catch(error => { if (!signal.aborted) showError(error); });
+  return () => controller.abort();
 }
-JSON
-)
-WEBHOOK_ID=$(jq -er '.webhook.id' <<< "$WEBHOOK_JSON")
-SIGNING_SECRET=$(jq -er '.signing_secret' <<< "$WEBHOOK_JSON")
 ```
 
-保存返回的 `signing_secret`，不要将它暴露给浏览器。接收端使用这个 secret，对 `时间戳 + '.' + 原始请求体` 计算 HMAC-SHA256，并与 `X-AgentScope-Signature: t=<秒>,v1=<hex>` 比较。同时检查时间窗口，并按事件 ID 去重。验签必须使用原始请求字节，不能先解析 JSON 再序列化。
+页面打开一个会话时，调用 `mountConversation(sessionId, render, showError)` 来恢复内容并订阅后续事件。离开页面或切换到另一个会话之前，调用它返回的清理函数，停止接收旧会话的事件。`render` 根据消息 ID 和工具调用 ID 更新已有卡片，让一次回复或工具调用在同一个位置持续展示。
 
-如果只通知一个 Turn，在注册前改用 `WEBHOOKS_URL="$SESSION_URL/turns/$TURN_ID/webhooks"`。下面的管理请求继续使用注册时的 `WEBHOOKS_URL` 和返回的 `WEBHOOK_ID`。
+短暂断网时，客户端从已经成功应用的 cursor 重连；刷新后走新 snapshot。不要只把 cursor 放入 localStorage 却丢掉对应视图，否则前半段内容不会再次播放。非可恢复的认证/请求错误通过 showError 交给页面处理。
 
-Webhook 是至少一次投递，因此同一个事件可能收到多次。接收端应先可靠保存通知，再返回成功，并按需要读取 Session 或 Turn 的最新状态。`GET /webhooks` 可检查投递状态；失败后可以调用 `POST /webhooks/{webhookId}/retry` 重试，或者通过 `DELETE` 撤销订阅。Webhook 不会替业务系统完成幂等处理，也不表示外部业务事务已经提交。
+| 页面区域 | 读取 / 更新规则 |
+| --- | --- |
+| 消息列表 | snapshot.items 的 data.item；按 item_id 更新，item.completed 用完整内容替换 |
+| 工具卡 | snapshot.tools；按 turn_id + tool_call_id 更新参数、进度、结果和状态 |
+| 待办 | snapshot.required_actions；保留 request_id、turn_id 和 kind |
+| 发送中 / 已结束 | snapshot.turns 或目标 turn 事件；run.ended 只表示一次执行结束 |
+| 产物与子任务 | snapshot.artifacts / subagents；展开子任务时读取其独立快照与事件 |
 
-#### 查看、重试与停用 Webhook
+工具参数还在生成时，也可能刷新页面；状态更新器利用 snapshot 中保留的 active_tool_call_id 接上省略调用 ID 的后续参数片段。同一任务可产生多条 assistant item 和多个工具调用，不能把全部增量拼到最后一条消息。
 
-查看订阅及投递状态：
+### 4. 把用户操作接到正确的 API
 
-```bash
-curl -sS --fail-with-body "$WEBHOOKS_URL" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
-```
+下面将聊天页面上的操作对应到 Session API。所有路径都相对于 `SESSION_URL`；应用使用服务返回的 Session、Turn 和请求 ID 定位已有工作，由服务管理具体执行过程。
 
-接收端恢复后，按需重试失败投递：
+显示按钮前读取当前 Turn 的能力（`/turns/{turn}/capabilities` 的 `available_commands`，请求见本章"在执行中参与交互"一节）；以下操作按用户意图选择，并不需要依次执行。各行请求的完整示例见本章"补充要求与背景材料""回答 required action"与"取消与恢复任务"三节。
 
-```bash
-curl -sS --fail-with-body -X POST "$WEBHOOKS_URL/$WEBHOOK_ID/retry" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
-```
+| 按钮 / 场景 | 请求 | 后续处理 |
+| --- | --- | --- |
+| 发送新问题 | POST `/turns`，`{message}` | 新 turn、新 key，继续同一个 session 流 |
+| 调整当前任务 | POST `/turns/{turn}/steer`，`{message}` | 等 input.applied；409 时重新查看当前任务 |
+| 仅补充背景 | POST `/inputs/inject`，`{message}` | 不唤醒空闲 Agent；后续步骤应用 |
+| 允许 / 拒绝工具 | POST `/turns/{turn}/actions` | 按实际待办构造答复，继续观察命令状态和待办变化 |
+| 停止 | POST `/turns/{turn}/cancel` | 等明确 turn 结果，不把 cancel_requested 当作已停止 |
+| 继续中断任务 | POST `/turns/{turn}/resume` | 先处理待办和未知工具结果；沿用 turn，可能产生新 run |
 
-不再需要通知时停用订阅：
+提交这些操作时都应为这一次操作提供稳定的 `Idempotency-Key`。HTTP 请求成功只说明服务接收了这次操作，不能立即把待办标为完成。如果命令失败或待办仍然存在，应重新读取最新记录，让用户了解当前状态后再决定是否重试。待办要求外部工具执行结果时，应在 `payload` 中提交实际的 `output` 和 `is_error`；需要指定人员确认时，则使用该人员有权限的用户身份。如何定位待办和处理命令回执见本章"回答 required action"一节。这些答复是在推进原来的任务，最终是否完成仍以 Turn 的结果为准。
 
-```bash
-curl -sS --fail-with-body -X DELETE "$WEBHOOKS_URL/$WEBHOOK_ID" \
-  -H "X-API-Key: $AGENTSCOPE_API_KEY"
-```
+### 5. 用真实工具走完一次流程
 
-自动化的入站 Webhook 用于让外部系统触发工作，与这里用于通知结果的出站 Webhook 用途不同。配置入口见第 33 章"计划与事件触发"，保留和恢复策略见第 33 章"运维、恢复与排障"。
+要验证整个交互过程，可以给资料助手绑定至少两个可用的工具操作，并让其中一个需要用户确认。随后提交与工具能力匹配的任务，例如"读取两份材料，分别核对后写出汇总"。当 Agent 调用工具并继续整理结果时，分别尝试下面的页面操作，检查应用是否能恢复已有内容并接上后续执行。
 
-## 文件与产物
+| 尝试 | 应看到的结果 |
+| --- | --- |
+| 文字生成途中刷新 | 先显示已提交前缀，再继续生成同一条消息 |
+| 工具参数生成中刷新 | 同一工具卡接着更新参数 |
+| 工具执行中关闭页面，稍后返回 | 离开期间完成的工具结果、后续工具和助手消息均可恢复 |
+| 等待确认时刷新 | 待办保留；答复后继续原 turn |
+| 断开 SSE 后查看任务 | 服务仍执行；连接中断不会触发 cancel |
+| 完成后继续追问 | 同一 session 新建 turn，历史仍在 |
 
-当一项任务需要处理报告、图片或其他文件时，应用可以先把材料上传到 Session，再在任务输入中引用返回的文件 ID。任务完成后，应用读取实际产物记录，将能够访问的结果交付给用户。本节沿着这个过程说明如何传入材料和取得文件结果。
+上面的页面恢复只是在重新显示已有工作。恢复旧 checkpoint 会改变 Agent 的上下文，之后需要提交新的 Turn；如果需要继续被中断的原任务，则应检查恢复条件后使用 `resume`。这两类执行操作见本章"会话、任务与预算"。
 
-Agent 通过工具读写文件时，工作位置由 Environment 决定；上传到 Session 的文件用于传递材料，而 Artifact 记录明确交付的结果。因此，Agent 在工作目录里写出了一个文件，并不意味着业务应用已经能下载它。应用应根据服务返回的文件或产物记录获取内容。
+当聊天页面还需要让用户上传材料或下载结果时，可以按本章"文件与产物"接入对应能力。如果希望用户离开后由业务后端接收完成通知，则在"用户离线后的 Webhook 通知"一节中继续配置 Webhook。
+
+## Agent 要写文件，文件去哪了：文件与产物
+
+示例里的对话已经能恢复，接下来是材料与结果：任务需要处理报告、图片或其他文件时，应用先把材料上传到 Session，再在任务输入中引用返回的文件 ID。任务完成后，应用读取实际产物记录，将能够访问的结果交付给用户。
+
+先说清一个容易误解的点：Agent 通过工具读写文件时，工作位置由 Environment 决定（第 29 章）；上传到 Session 的文件用于传递材料，而 Artifact 记录明确交付的结果。因此，Agent 在工作目录里写出了一个文件，并不意味着业务应用已经能下载它。应用应根据服务返回的文件或产物记录获取内容。
 
 ### 上传会话文件
 
@@ -1789,7 +1391,7 @@ curl -sS --fail-with-body "$SESSION_URL/turns/$TURN_ID/artifacts/$TURN_ARTIFACT_
 
 > **注意**：此为预览文档，正式版本尚未发布。
 
-Memory Store 保存多个任务可以复用的知识文档，例如产品术语、操作说明和已核对的事实。创建 Store 并写入内容后，还需要把它的 ID 加入 Agent 的 `defaultMemoryStoreIds`，或在创建 Session 时通过 `memoryStoreIds` 选择它。运行中的 Agent 通过 `memory_store_list` 和 `memory_store_read` 按需读取这些文档，正文不会自动出现在每次模型请求中。
+会话文件解决单次任务的材料问题，下一个问题是反过来的：有些知识要在多次任务间复用——产品术语、操作说明、已核对的事实。每次都在输入里重贴一遍既浪费也不可靠。Memory Store 就是保存这些可复用知识文档的地方。创建 Store 并写入内容后，还需要把它的 ID 加入 Agent 的 `defaultMemoryStoreIds`，或在创建 Session 时通过 `memoryStoreIds` 选择它。运行中的 Agent 通过 `memory_store_list` 和 `memory_store_read` 按需读取这些文档，正文不会自动出现在每次模型请求中。
 
 共享知识与会话记录分别管理。当前 Managed HarnessAgent 将共享 Store 按只读方式挂载，文档的新增和修改由有权限的用户或业务后端通过管理 API 完成。Agent 在会话里形成的工作笔记、聊天历史和任务产物不会自动写回 Store；可复用的行为步骤则更适合放入第 30 章"Workspace、Skills 与子 Agent"。
 
@@ -1797,7 +1399,7 @@ Memory Store 保存多个任务可以复用的知识文档，例如产品术语�
 
 ### 创建 Store 并写入知识
 
-下面先创建"产品知识"Store，并把项目对 Lark 的定义写入 `product/glossary.md`。`expectedVersion: 0` 表示这个路径应当还不存在，能够避免重复练习时意外覆盖已有正文。保存响应中的 `STORE_ID`，后面用它建立资源关联。
+先创建"产品知识"Store，并把项目对 Lark 的定义写入 `product/glossary.md`。`expectedVersion: 0` 表示这个路径应当还不存在，能够避免重复练习时意外覆盖已有正文。保存响应中的 `STORE_ID`，后面用它建立资源关联。
 
 ```bash
 STORE_JSON=$(curl --fail-with-body -sS "$BASE_URL/api/memory-stores" \
@@ -1873,7 +1475,7 @@ Session 固定的是 Store ID，并未把共享正文冻结成会话快照。管
 
 如果 Agent 未读取预期知识，检查 Store 绑定、是否归档、内容路径和工具能力，再用新会话验证。仅在指令中写出 Store 名称不会建立资源绑定。
 
-下一步：可继续阅读本章"Vault：为工具提供凭据"，也可回到第 29 章"什么是 AgentScope Service"回顾 Managed Agent 的整体概念。
+下一步：可继续阅读本章"Vault：为工具提供凭据"，也可回到第 29 章回顾 Service 与 Managed Agent 的整体概念。
 
 动手练习：先用第 34 章"在 CRM 中生成客户方案"案例的内联资料验证来源引用与缺失信息处理，再把三份来源迁移到 Memory，验证授权读取和资料更新。
 
@@ -1885,32 +1487,13 @@ Session 固定的是 Store ID，并未把共享正文冻结成会话快照。管
 
 在 **Resources → Memory** 维护 Store 和文档，再到 Managed Agent 的 **Runtime configuration → Session defaults → Default memory stores** 选择默认知识来源。创建新会话时检查 Memory 选择；资源维护页面中的文档存在，不代表所有 Agent 都已经绑定了它。
 
-### 管理 API 与版本
-
-请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见第 29 章"部署 AgentScope Service"。读取需要资源 inspect 权限，修改需要 edit，创建需要空间资源创建权限；列表只返回当前身份可检查的 Store。
-
-下表 `path` 是 Store 内的文档路径，例如 `product/glossary.md`。URL 按路径段编码，保留目录分隔符。`versions/` 是读取历史的保留前缀，不应用作文档路径前缀。
-
-| 操作 | API | 参数与响应 |
-| --- | --- | --- |
-| 列出、创建 Store | `GET/POST /api/memory-stores` | GET 返回数组；POST 传 `name`、可选 `description`，返回 `id`、名称、说明与时间戳 |
-| 读取、删除 Store | `GET/DELETE /api/memory-stores/{id}` | GET 返回资源对象；DELETE 返回 204 并删除其文档 |
-| 归档 | `POST /api/memory-stores/{id}/archive` | 返回 `id`、`archivedAt` |
-| 列出文档 | `GET /api/memory-stores/{id}/memories` | 返回包含 `path`、`content`、`headVersion` 的文档数组 |
-| 读取、写入文档 | `GET/PUT /api/memory-stores/{id}/memories/{path}` | PUT 传 `content`、可选 `expectedVersion`；返回文档及新 `headVersion` |
-| 版本历史 | `GET /api/memory-stores/{id}/memories/versions/{path}` | 返回按版本倒序排列的 `memoryId`、`version`、`content`、`createdAt` 数组 |
-| 删除文档 | `DELETE /api/memory-stores/{id}/memories/{path}` | 删除正文与版本历史，返回 204 |
-| 脱敏 | `POST /api/memory-stores/{id}/redact` | `path`、可选 `replacement`；替换正文并清除旧历史，默认替换为 `[REDACTED]` |
-
-Store 列表支持 `limit`（1–500）、`offset`（须与 limit 一起使用），总数在 `X-Total-Count`。当前没有 Store 名称或描述的 PATCH 接口。
-
-文档每次 PUT 都生成新版本。建议新建时传 `expectedVersion:0`，更新时先读取并传入当前 `headVersion`；版本已变化则返回 409，重新读取后再合并。省略条件表示允许覆盖当前正文。普通更新保留旧版本，Redact 会移除旧版本中的敏感内容，但不会自动修改此前已经复制到会话、产物或其他系统的文本。
+管理 API 与版本控制的全表见本章末"参考速查"。
 
 ## Vault：为工具提供凭据
 
 > **注意**：此为预览文档，正式版本尚未发布。
 
-Vault 保存 Agent 访问外部工具时使用的凭据。要让某次执行使用它，先把凭据保存到 Vault，再把 Vault ID 加入 Agent 的 `defaultVaultIds`，或在创建 Session 时通过 `vaultIds` 指定。运行时解析这些已挂载的凭据，并将它们提供给匹配的 MCP 连接。创建 Vault 或保存 secret 本身，不会自动为某个 Agent 建立认证。
+Memory 解决了知识复用，下一个问题是认证：Agent 要通过 MCP 连接访问外部系统，凭据放在哪里？写进指令或代码都不安全，也难以轮换。Vault 保存 Agent 访问外部工具时使用的凭据。要让某次执行使用它，先把凭据保存到 Vault，再把 Vault ID 加入 Agent 的 `defaultVaultIds`，或在创建 Session 时通过 `vaultIds` 指定。运行时解析这些已挂载的凭据，并将它们提供给匹配的 MCP 连接。创建 Vault 或保存 secret 本身，不会自动为某个 Agent 建立认证。
 
 Agent 定义说明连接地址和可用工具，Vault 则保存认证内容，便于同一个 Agent 在不同 Session 中使用不同的授权。它与调用 Service API 的用户 `TOKEN` 或 Application key 分开管理：前者认证 Agent 访问外部系统，后者认证应用访问 Service。Secret 写入后，公开资源接口只返回类型、标签和目标等元数据，不重新返回明文。
 
@@ -2034,25 +1617,11 @@ printf '%s' "$SESSION_JSON" | jq '{id, target, vaultIds}'
 
 在 **Resources → Vault** 创建集合并维护凭据，再到 Managed Agent 的 **Runtime configuration → Session defaults → Default vaults** 选择默认集合。新建会话时还可以调整 Vault 选择。截图只展示演示凭据元数据；资源列表中出现某个 Vault，并不代表当前 Agent 或 Session 已经挂载它。
 
-### 管理 API
-
-请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见第 30 章"运行第一个托管 Agent"中的 API 身份准备。资源读取需要 inspect、修改需要 edit，创建需要空间资源创建权限。列表按可检查资源过滤，绑定到 Agent 时还会检查依赖访问权限。
-
-| 操作 | API | 参数与响应 |
-| --- | --- | --- |
-| 列表、创建 | `GET/POST /api/vaults` | GET 返回数组；POST 传 `displayName`、可选 `metadata`，返回 Vault 对象 |
-| 读取、修改 | `GET/PATCH /api/vaults/{id}` | `id`、`displayName`、`metadata`、`ownerId`、时间戳；PATCH 修改名称或整体替换 metadata |
-| 归档、删除 | `POST /api/vaults/{id}/archive`、`DELETE /api/vaults/{id}` | 归档返回 `id`、`archivedAt`；删除返回 204 |
-| 列出、添加凭据 | `GET/POST /api/vaults/{id}/credentials` | POST 传 `type`、`label`、`target`、非空 `secret`；响应不含 secret |
-| 更新或轮换凭据 | `PATCH /api/vaults/{id}/credentials/{credentialId}` | 可选 `label`、`target`、`secret`；非空 secret 替换旧值，type 不可修改 |
-| 删除凭据 | `DELETE /api/vaults/{id}/credentials/{credentialId}` | 返回 204 |
-| 检查凭据 | `POST /api/vaults/{id}/credentials/{credentialId}/validate` | 返回 `ok`、`checks`、`checkedAt` |
-
-Vault 列表支持 `limit`（1–500）和 `offset`（须与 limit 同时提供），总数在 `X-Total-Count`。Vault 与静态凭据 PATCH 当前没有版本条件参数；更新前检查现有元数据，避免并发覆盖。返回的凭据字段为 `id`、`type`、`label`、`target`、`createdAt`。
+Vault 管理 API 的全表见本章末"参考速查"。
 
 ## 工具、MCP 与权限
 
-工具让 Managed Agent 能够读取文件、执行命令和访问业务系统。要让某个 Agent 使用这些能力，需要把工具配置保存到它的 **Agent 定义**中。随后，应用使用这个 Agent 的 ID 创建 Session，Service 就会按照该 Session 选定的定义版本，为运行中的 HarnessAgent 装配工具。应用提交任务时无需重新声明工具。
+知识有了来源、凭据有了去处，还差最核心的一块：Agent 到底能做什么。工具让 Managed Agent 能够读取文件、执行命令和访问业务系统。要让某个 Agent 使用这些能力，需要把工具配置保存到它的 **Agent 定义**中。随后，应用使用这个 Agent 的 ID 创建 Session，Service 就会按照该 Session 选定的定义版本，为运行中的 HarnessAgent 装配工具。应用提交任务时无需重新声明工具。
 
 本节说明如何完成这条配置路径。开始前，请先按第 29 章"部署 AgentScope Service"准备 `BASE_URL`、`TOKEN`、`TENANT`、`NAMESPACE` 和 `ENVIRONMENT_ID`，并确认所选环境可用。只想先体验文件读写时，可以先完成第 30 章"运行第一个托管 Agent"；需要连接自己的业务系统时，再继续下面的 MCP 配置。
 
@@ -2236,7 +1805,7 @@ SESSION_URL="$BASE_URL/api/v1/agent-sessions/$SESSION_ID"
 
 `always_allow` 允许直接调用，`always_ask` 要求确认，`deny` 拒绝执行。可以在工具集的 `defaultConfig.permissionPolicy` 中设置默认策略，再由 `configs` 中的单项策略覆盖。未显式配置时，内置工具的默认策略为允许，MCP 工具集的默认策略为询问；对业务操作建议像本节示例一样明确配置，便于维护者理解 Agent 的行为。
 
-当示例 Agent 尝试写入文件时，Session 快照的 `required_actions` 会出现确认请求。应用应向用户说明实际工具和参数，再使用返回的 `request_id`，向 `POST /api/v1/agent-sessions/{sessionId}/turns/{turnId}/actions` 提交决定，并跟踪命令回执和任务状态。完整请求见本章"回答 required action"一节。具有交互 scope 的应用密钥不能冒充指定的人工审批人。
+当示例 Agent 尝试写入文件时，Session 快照的 `required_actions` 会出现确认请求。应用应向用户说明实际工具和参数，再使用返回的 `request_id`，向 `POST /api/v1/agent-sessions/{sessionId}/turns/{turnId}/actions` 提交决定，并跟踪命令回执和任务状态。完整请求见本章"在执行中参与交互"一节。具有交互 scope 的应用密钥不能冒充指定的人工审批人。
 
 工具确认允许的是这次操作，不会扩大操作系统或业务系统中的权限，也不同于 Workflow 步骤审批和 Issue 结果验收。拒绝或取消之后，应检查已经发生的外部操作；取消任务不能保证撤销这些操作。
 
@@ -2262,7 +1831,7 @@ curl --fail-with-body -sS "$SESSION_URL/snapshot" \
 
 > **注意**：此为预览文档，正式版本尚未发布。
 
-Channel 将外部消息平台连接到 AgentScope Service，负责接收消息、匹配目标并回传结果。创建渠道、配置路由、启停连接和查询回传状态都可以通过 API 完成。自有业务应用若只需要 HTTP 调用入口，使用 Session API（见本章开篇）；Channel 适合让用户从已有聊天平台发起工作。
+到这一节，业务应用接入的完整调用面已经讲完。还剩一种入口：用户不打开你的应用，而是在已有的聊天平台里直接提出工作。Channel 将外部消息平台连接到 AgentScope Service，负责接收消息、匹配目标并回传结果。创建渠道、配置路由、启停连接和查询回传状态都可以通过 API 完成。自有业务应用若只需要 HTTP 调用入口，使用 Session API（见本章开篇）；Channel 适合让用户从已有聊天平台发起工作。
 
 当前适配器包含钉钉、飞书、企业微信、GitHub 和 GitLab，具体配置通过类型接口查询。其中把外部消息关联为持久 Issue、路由给 Agent / Team 并回传工作进展的完整流程，目前仅支持飞书。其他适配器不能据此推定具有相同的任务协作能力。与第 25 章 IM 渠道集成不同，本节的渠道是 Service 平台内的 Channel 资源。
 
@@ -2344,6 +1913,258 @@ activity 包含当前用户可访问的消息接收、工作关联与发送记�
 
 控制台配置表单、工作路由和身份绑定入口见第 33 章"定时工作、事件与消息渠道"。
 
+## 执行参考：Session、Run 与 Attempt
 
+> **注意**：此为预览文档，正式版本尚未发布。
 
+> 本节是选读内容。业务应用接入使用本章前面各节的 Session API 即可；本节面向需要沿业务请求排障的读者——从 Issue 追到 Run、Task、Attempt，理解它们的状态与控制接口。执行详情仍受空间、工作自身权限及运维能力约束。
 
+### 关联一项工作
+
+从 Issue ID 查询关联 Run，先看输入、运行方式与实际目标，然后查询节点、AgentTask 和最新 Attempt。Session 记录模型或 provider 上下文。提交排障信息时保留这些 ID，避免只提供可读性好的显示名称。
+
+| Run mode | 形态 |
+| --- | --- |
+| direct | 单 Agent 工作 |
+| adaptive | Lead 动态协调的 Team 工作 |
+| declared | 固定 Workflow revision |
+| subrun | 父节点调用的子流程 |
+
+### Run 状态与控制
+
+planned 表示尚未开始，running 表示正在推进，waiting 表示等待条件、信号或外部结果。paused 停止新节点派发，cancelling 等待取消收敛。终态为 cancelled、succeeded、partial_succeeded 或 failed。
+
+Pause 不冻结已经开始的外部进程。Cancel 也不自动回滚已经产生的文件或外部操作，更不会自动接受 Issue。查看节点和 Attempt 的最终状态确认取消是否完成。
+
+控制 Run 使用 `POST /api/v1/orchestration-runs/{runId}/pause`、`/resume`、`/cancel`，请求体 `{}`，返回 `{run}`。终态后用 `/rerun` 提交必填 `idempotencyKey` 和可选 `input`，返回新的 `{run}`，其中 `rerunOfRunId` 保留来源。
+
+任务取消使用 `POST /api/v1/agent-tasks/{taskId}/cancel` 与当前 `expectedVersion`；任务重试使用 `/retry`。不要把 Task ID 传到 Run 控制接口，也不要直接改写 Attempt 状态来代替取消。
+
+### 三种重复执行
+
+基础设施重试可以为同一 Task 产生新的 Attempt；节点策略重试可以产生新 Task；终态 Run 的人工 Rerun 创建新 Run 并保留来源。每次都要查看实际执行目标和输入，避免把旧的失败和新的成功混为一次运行。
+
+显式配置 fresh fallback 才允许按策略跨候选后端重建执行上下文，恢复依赖 Issue、Comment 和 Artifact，而非原进程内状态。
+
+### 等待与失败
+
+先看 waitReason/error，再判断是否需要人工动作、在线 Host、Worker、模型凭据或更多容量。`requires_action` 的 Session 可能在等待工具结果，不能只依据该状态判断是人工审批。
+
+工具事件、最终回复、Attempt 成功和 Issue 验收是不同证据。对最终交付使用验收 API（第 33 章"Inbox 通知与审批"一节）；Managed 结果语义见第 33 章"状态、结果与验收"。
+
+### 断线后继续观察
+
+刷新页面后重新打开原工作，查询当前状态和已保存事件。SSE 长连接结束不代表任务失败。代理应及时转发事件；不要因为前端连接断开就用新的幂等键重复提交。
+
+### 查询 Session 诊断
+
+`GET /api/v1/sessions` 列出授权范围内的会话；具体会话使用 `GET /api/v1/sessions/{sessionRef}`。优先使用 Attempt 返回的 `sessionRef`（控制面记录 ID），不要混用运行时的 `sessionId` 或 provider 的 `providerSessionId`。查询时同时携带正确的 tenant/namespace。
+
+诊断接口包括 `/messages`（`offset`、`limit`、`fromEnd`）、`/context`、`/events`、`/events/stream`、`/turns`。内容是否可用取决于运行时提供的观测与查询能力，注册为 Agent 不代表都支持完整上下文或恢复。该组接口用于执行诊断；业务侧会话管理优先使用前述 Agent API。
+
+### Managed Session 的日志与恢复入口
+
+Agent API 使用 session_id → turn_id → run_id 关联推理工作；run_id 不是编排 Run ID。GET snapshot 返回已保存的 items/tools/turns/required_actions 与公共 as_of cursor，再从 events/stream 续传。GET turns 按提交返回的 turn ID 查询队列和结果。
+
+完整执行历史与 checkpoint 在原生 Session Log；普通客户端读公共投影，授权管理员才能读取 trace/recovery。断线只重连，不再 POST 输入；中断的执行先检查未知工具结果，再按 actions/resume 流程继续。具体位置、HTTP 示例和边界见本章"会话、任务与预算"。
+
+查询执行的 API 全表见本章末"参考速查"。
+
+### 一次排障应记录什么
+
+用第 34 章"从故障告警生成可审查的修复"案例练习：从主 Issue 查询 Run graph，在使用 Hosted 目标时找到执行任务与最新 Attempt，再核对其 Session、日志与文件。需要图形入口时参阅第 33 章"配置 Team 与 Workflow"。
+
+| 记录 | 用途 |
+| --- | --- |
+| Issue ID 与验收要求 | 确定要交付什么，以及是否仍待人工验收 |
+| Run ID、mode 与目标 revision | 确定是哪次执行、采用哪种编排和定义 |
+| Node / Task / Attempt ID | 找到实际失败步骤，区分重试层级 |
+| Session ID、Host/provider（如果适用） | 定位上下文与执行主机 |
+| 状态、错误、时间与最后事件游标 | 区分正在等待、已经终止和仅观察连接中断 |
+| Artifact 与测试日志 | 判断结果是否满足要求，而非仅查看状态标签 |
+
+若第二次 Attempt 成功，仍保留第一次失败的记录，并把交付指向成功执行的文件。若只有 SSE 断线，按本章"用户刷新页面怎么办：SSE 与事件续传"使用原调用的游标恢复观察；不要把它当作新的业务任务。
+
+### Managed 执行与持久化
+
+控制面解析 Agent 定义、版本、环境及知识与凭据引用。Dataplane 将定义文件准备到会话目录，构建 Harness，并连接持久状态存储。定义快照、执行文件和共享资源各有自己的生命周期：保存 Agent 配置不等于修改正在执行的所有实例。
+
+Workspace 保存能力定义；Environment 决定文件和命令在哪执行；Memory Store 是共享知识；Vault 在连接工具前解析凭据。资源用法集中在本章与第 29、30 章的资源小节。
+
+Harness 使用显式 Model 或部署默认 Model，按指令进行推理、请求工具并读取结果。`maxIters` 限制迭代，工具权限决定操作能否执行。需要确认时任务可能等待用户决定；这时重复发送相同工作可能造成额外执行。
+
+Local 工具在 Dataplane 环境执行，sandbox 使用 E2B，remote 使用共享文件存储，self_hosted 将工具工作交给 Worker。self_hosted 中模型仍由 Dataplane 驱动；Worker 的职责是接收工具工作并返回结果。
+
+会话状态、事件和协调记录存储在部署配置的持久存储中。多副本使用协调租约约束执行；恢复仍依赖数据库、工作文件、所选环境和外部工具可用。一次工具成功后的外部副作用不会因服务重启自动撤销。
+
+共享 Memory 是按需访问的实时平台知识，不应理解为每次调用都完整复制进模型提示。修改它需要按共享知识维护流程处理，不能假设 Agent 定义版本同时固定所有外部知识。
+
+## 本章小结
+
+这一章沿一条接入路线走完了 Session API 的完整调用面：
+
+1. **凭据与空间**：平台用户 Bearer 管理资源，Application 的 `X-API-Key` 提交工作，scope 精确到 invoke / read / interact / cancel / webhooks:write；
+2. **最小路径**：创建 Session 固定目标配置 → 幂等键提交 Turn → 读快照恢复页面 → 订阅事件流 → 答复 required_action → 检查交付；
+3. **刷新与断线**：快照先恢复、游标后续传，`Last-Event-ID` 优先于 `after`；410 就重读快照；用户离线靠 Webhook，验签并按事件 ID 去重；
+4. **执行中调整**：steer 改后续步骤、inject 只存背景、cancel 要等终态、resume 先处理待办；预算在 Turn、Session、Application 三层分别生效；
+5. **文件与产物**：文件上传到 Session 传递材料，Artifact 登记交付——Agent 在工作目录写的文件不会自动可下载；
+6. **运行资源**：Memory 共享知识（当前只读挂载）、Vault 工具凭据（`vaultIds` 按会话挂载）、工具与 MCP（定义内声明，连接名对应工具集）；
+7. **消息渠道**（预览）：飞书适配器把聊天平台消息接成 Issue 并回传结果；
+8. **执行参考**（选读）：Run / Task / Attempt 三层记录用于排障定位。
+
+这套接口在 Team 与 Workflow 上同样适用——第 32 章用同一套 Session API 组织多 Agent 协作；第 34 章的六个案例则是本章最好的练习场。
+
+**验收清单**——读到这里，你应该能：
+
+- ☐ 创建 Application 并签发授权指定 Agent 的 key，说明各 scope 的用途；
+- ☐ 跑通"创建 Session → 提交 Turn → 读快照 → 订阅事件"最小路径，并用幂等键安全重试；
+- ☐ 回答一次工具确认待办，并把命令回执跟踪到 `completed`；
+- ☐ 解释用户刷新页面后应用如何恢复内容（快照 + `as_of` + `after` / `Last-Event-ID`）；
+- ☐ 区分 steer、inject、cancel、resume 各自的作用与前提条件；
+- ☐ 上传会话文件、在输入中引用文件 ID，并把结果文件发布为 Artifact；
+- ☐ 创建 Memory Store 并验证 Agent 确实读取了文档，而不是凭相似表述猜测；
+- ☐ 创建 Vault、绑定 MCP 连接，并用一次真实只读调用验证认证；
+- ☐ （选做）从飞书发起一项工作，跟完接收、执行、回传的完整往返。
+
+## 参考速查：API、SDK 与目录管理
+
+本节收拢本章各节引用过的 API 全表与参数索引，供实施时查阅；正文主线中的最小路径不依赖本节。
+
+### Application 与调用凭据
+
+Application 保存调用方身份、成员和额度。创建凭据时需要显式给出 `targets` 和 `scopes`，服务只返回一次完整的 `apiKey`；列表接口不会返回明文。应用凭据不会自动获得管理资源或替指定人员审批的权限。
+
+| API | 参数与行为 |
+| --- | --- |
+| `POST /api/v1/applications` | `name`, `tenant`, `namespace`; `description`, `members`, `maxConcurrent`, `tokenBudget` |
+| `GET /api/v1/applications` / `/{id}` | 列表或详情 |
+| `PATCH /api/v1/applications/{id}` | `version`, `name`, `description`, `status`, `members`, `maxConcurrent`, `tokenBudget` |
+| `POST /api/v1/applications/{id}/credentials` | `name`, `targets:[{type,id}]`, `scopes`; `expiresAt` |
+| `GET /api/v1/applications/{id}/credentials` | 凭据元数据 |
+| `DELETE /api/v1/applications/{id}/credentials/{credentialId}` | 撤销凭据 |
+
+凭据 scope 包括 `invoke`、`read`、`interact`、`cancel` 和 `webhooks:write`。Application 成员角色为 `viewer`、`operator`、`approver`。并发限制用于控制应用待处理的工作数量；tokenBudget 依据已报告用量限制后续调用，不是供应商的预付费硬额度。
+
+### Session 与 Turn API
+
+以下路径以 `/api/v1/agent-sessions` 为前缀。创建 Session 时，`target.type` 为 `agent`、`team` 或 `workflow`，`target.id` 为相应资源 ID。Agent 可指定 `version`，Workflow 可指定 `revisionId`。省略版本时，Service 在创建会话时解析并固定版本，后续 Turn 沿用该配置。
+
+Managed Session 还可指定 `environmentId`、`memoryStoreIds`、`vaultIds`、`agentOverrides` 和 `resources`。通用参数包括 `timeoutSeconds`、`budget.maxTokens`、`inputSchema`、`outputSchema` 和 `resultMapping`；需要约束业务输入和输出时，应在创建 Session 时提供这些契约。
+
+| API | 用途 |
+| --- | --- |
+| `POST /` | 创建会话；可携带幂等键 |
+| `GET /` | 列表：agentId、status、limit、offset |
+| `GET /{session}` | 读取会话及固定目标 |
+| `PATCH /{session}` | 更新 Managed 的环境与资源设置 |
+| `POST /{session}/archive, /restore` | 归档与解除归档 |
+| `DELETE /{session}` | 停止应用访问该会话 |
+| `GET /{session}/capabilities` | 目标能力与上下文语义 |
+| `POST /{session}/turns` | message 或 input；必须携带幂等键 |
+| `GET /{session}/turns, /turns/{turn}` | 任务列表与状态 |
+| `GET /{session}/snapshot, /events, /events/stream` | 会话快照和持久事件 |
+| `GET /{session}/turns/{turn}/snapshot, /events, /events/stream` | 单个任务的快照和事件 |
+| `GET /{session}/turns/{turn}/capabilities` | 读取 available_commands |
+| `POST /{session}/turns/{turn}/actions, /inputs, /cancel, /resume` | 交互命令；必须携带幂等键 |
+| `GET /{session}/turns/{turn}/commands/{command}` | 命令回执状态 |
+| `POST/GET /{session}/files` | 上传字节或列出会话文件 |
+| `GET /{session}/files/{file}/content` | 读取已授权的文件内容 |
+| `POST/GET /{session}/webhooks` | 注册或查看通知订阅 |
+
+表中逗号后的路径与同一行第一个路径共享前缀。Turn 下也提供 `/actions`、`/usage`、`/artifacts` 和 `/webhooks` 查询；Webhook 撤销与重试分别使用 `DELETE /webhooks/{id}` 和 `POST /webhooks/{id}/retry`。
+
+Managed Agent 的 `/budget`、`/checkpoints`、`/fork`、`/inputs/inject`、`/subagents` 与 `/export` 是同一套 API 的能力扩展。并非每个目标都支持这些操作，请按本章"会话、任务与预算"与 capabilities 使用。文件格式见本章"文件与产物"，事件与签名见本章"SSE 与事件续传"。
+
+### 统一 Agent 目录与运行绑定
+
+以下接口使用平台身份；创建和列表的 `tenant`、`namespace` 与请求头范围保持一致。Agent 的 `id`、`agentKey` 和展示名称不是同一个字段。创建/注册的操作示例见第 30 章"运行第一个托管 Agent"与"注册 External Agent"。
+
+| 方法和路径 | 请求参数 | 响应与用途 |
+| --- | --- | --- |
+| `POST /api/v1/agents` | `agentKey`；`tenant`、`namespace`、`displayName`、`description`；可带 `binding`、`definition` | `{agent,binding,policy,definition}`；Managed/Hosted 一次准备运行绑定与行为定义；没有绑定只创建目录记录 |
+| `GET /api/v1/agents` | 查询 `tenant`、`namespace`、`status`、`includeArchived`、`limit` | `{items:[Agent]}` |
+| `GET/PATCH /api/v1/agents/{id}` | PATCH：`version`，及 `displayName`、`description`、`status` 等修改项 | `{agent}`；归档使用 `status:"archived"`，不是删除运行历史 |
+| `GET/PATCH /api/v1/agents/{id}/definition` | PATCH：`name`、定义 `version` 和完整保留后的行为字段 | `{definition}`，更新响应还包含 `agent`；定义参数见第 30 章"配置 Agent 与模型" |
+| `GET /api/v1/agents/{id}/versions` / `/{version}` | Agent ID；单版查询用定义版本号 | 定义历史；创建 Session 时可指定版本 |
+| `GET/POST /api/v1/agents/{id}/bindings` | 创建使用 `kind`、`configuration`、`priority`、`enabled` | 从列表读取绑定；修改使用 `PATCH .../bindings/{bindingId}` 和 `version`，完整提交 `configuration`、`priority`、`enabled` |
+| `GET /api/v1/agents/{id}/instances` / `/runtime-inventory` / `/overview` | Agent ID | 实例、External 运行报告、概览；无报告不能推断为执行就绪 |
+| `GET/PUT /api/v1/agent-runtime-policies/{id}` | PUT：`tenant`、`namespace`、`agentId`、`selectionMode`、`fallbackMode`、`candidates` 等 | 选择运行候选；参数见第 32 章"Team 角色、成员与策略参数" |
+| `GET /api/v1/agents/runtime-options` | 查询 `tenant`、`namespace` | `{runtimes,profiles,pools}`，供 Hosted 选择 Runtime |
+
+`binding.kind` 使用 `managed`、`hosted-runtime` 或 `external-application`。Managed 创建时由平台生成绑定配置；Hosted 配置使用 `runtimeProfileId`、`runtimePoolId`。External 使用独立注册流程，不通过普通创建接口直接伪造一个在线实例。
+
+`POST /api/v1/agent-registrations` 接受 `agentKey`、`instanceKey`、范围、`framework`、`routingKey`、`capabilities` 等，返回 `agent`、`binding`、`instance`、`registrationCredential`。当前注册入口不校验调用身份，需由部署方限制受信任接入范围；返回注册凭据不代表首次注册已经通过身份认证。字段和实际传输接入见第 30 章"注册 API"一节。
+
+### 任务、编排、自动化与资源参数
+
+以下参考覆盖创建、更新和反馈参数；各页同时给出 API 操作与返回值衔接，Console 操作另列在第 33 章"可视化 Console"。
+
+| 资源 | API 起点 | 参数与使用参考 |
+| --- | --- | --- |
+| Issue / AgentTask / Inbox / Approval | `/api/v1/issues`、`/agent-tasks`、`/inbox`、`/approvals` | 任务分派与反馈见第 33 章"工作分派、审批与验收"；执行记录见本章"执行参考：Session、Run 与 Attempt" |
+| Team 与成员 | `/api/v1/teams` | Team 参数见第 32 章"Team 角色、成员与策略参数"；协作协议见第 32 章"设计可协作的角色" |
+| Workflow definition / revision / run | `/api/v1/orchestration-definitions`、`/orchestration-runs` | 节点、发布、启动与信号见第 32 章"编排 Workflow" |
+| Automation 与投递 | `/api/v1/automations` | 触发器、action、运行和反馈参数见第 33 章"计划与事件触发" |
+| Channel 与工作接入 | `/api/channels` | 渠道配置、路由和工作回传见本章"接入消息渠道" |
+| Workspace | `/api/workspaces` | 文件、版本、发布与绑定见第 30 章"Workspace、Skills 与子 Agent" |
+| Environment | `/api/environments` | type、config 与 Worker 见第 29 章"Environments：配置执行位置" |
+| Memory | `/api/memory-stores` | 文档、版本和访问策略见本章"Memory：维护共享知识" |
+| Vault | `/api/vaults` | secret、作用范围与引用见本章"Vault：为工具提供凭据" |
+| Namespace 与权限 | 见授权资源的具体接口 | 访问控制参考见第 29 章"账号、Namespace 与权限 API" |
+
+### Memory 管理 API 与版本
+
+请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见第 29 章"部署 AgentScope Service"。读取需要资源 inspect 权限，修改需要 edit，创建需要空间资源创建权限；列表只返回当前身份可检查的 Store。
+
+下表 `path` 是 Store 内的文档路径，例如 `product/glossary.md`。URL 按路径段编码，保留目录分隔符。`versions/` 是读取历史的保留前缀，不应用作文档路径前缀。
+
+| 操作 | API | 参数与响应 |
+| --- | --- | --- |
+| 列出、创建 Store | `GET/POST /api/memory-stores` | GET 返回数组；POST 传 `name`、可选 `description`，返回 `id`、名称、说明与时间戳 |
+| 读取、删除 Store | `GET/DELETE /api/memory-stores/{id}` | GET 返回资源对象；DELETE 返回 204 并删除其文档 |
+| 归档 | `POST /api/memory-stores/{id}/archive` | 返回 `id`、`archivedAt` |
+| 列出文档 | `GET /api/memory-stores/{id}/memories` | 返回包含 `path`、`content`、`headVersion` 的文档数组 |
+| 读取、写入文档 | `GET/PUT /api/memory-stores/{id}/memories/{path}` | PUT 传 `content`、可选 `expectedVersion`；返回文档及新 `headVersion` |
+| 版本历史 | `GET /api/memory-stores/{id}/memories/versions/{path}` | 返回按版本倒序排列的 `memoryId`、`version`、`content`、`createdAt` 数组 |
+| 删除文档 | `DELETE /api/memory-stores/{id}/memories/{path}` | 删除正文与版本历史，返回 204 |
+| 脱敏 | `POST /api/memory-stores/{id}/redact` | `path`、可选 `replacement`；替换正文并清除旧历史，默认替换为 `[REDACTED]` |
+
+Store 列表支持 `limit`（1–500）、`offset`（须与 limit 一起使用），总数在 `X-Total-Count`。当前没有 Store 名称或描述的 PATCH 接口。
+
+文档每次 PUT 都生成新版本。建议新建时传 `expectedVersion:0`，更新时先读取并传入当前 `headVersion`；版本已变化则返回 409，重新读取后再合并。省略条件表示允许覆盖当前正文。普通更新保留旧版本，Redact 会移除旧版本中的敏感内容，但不会自动修改此前已经复制到会话、产物或其他系统的文本。
+
+### Vault 管理 API
+
+请求使用平台用户 Bearer token 和 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`，变量准备见第 30 章"运行第一个托管 Agent"中的 API 身份准备。资源读取需要 inspect、修改需要 edit，创建需要空间资源创建权限。列表按可检查资源过滤，绑定到 Agent 时还会检查依赖访问权限。
+
+| 操作 | API | 参数与响应 |
+| --- | --- | --- |
+| 列表、创建 | `GET/POST /api/vaults` | GET 返回数组；POST 传 `displayName`、可选 `metadata`，返回 Vault 对象 |
+| 读取、修改 | `GET/PATCH /api/vaults/{id}` | `id`、`displayName`、`metadata`、`ownerId`、时间戳；PATCH 修改名称或整体替换 metadata |
+| 归档、删除 | `POST /api/vaults/{id}/archive`、`DELETE /api/vaults/{id}` | 归档返回 `id`、`archivedAt`；删除返回 204 |
+| 列出、添加凭据 | `GET/POST /api/vaults/{id}/credentials` | POST 传 `type`、`label`、`target`、非空 `secret`；响应不含 secret |
+| 更新或轮换凭据 | `PATCH /api/vaults/{id}/credentials/{credentialId}` | 可选 `label`、`target`、`secret`；非空 secret 替换旧值，type 不可修改 |
+| 删除凭据 | `DELETE /api/vaults/{id}/credentials/{credentialId}` | 返回 204 |
+| 检查凭据 | `POST /api/vaults/{id}/credentials/{credentialId}/validate` | 返回 `ok`、`checks`、`checkedAt` |
+
+Vault 列表支持 `limit`（1–500）和 `offset`（须与 limit 同时提供），总数在 `X-Total-Count`。Vault 与静态凭据 PATCH 当前没有版本条件参数；更新前检查现有元数据，避免并发覆盖。返回的凭据字段为 `id`、`type`、`label`、`target`、`createdAt`。
+
+### 查询执行的 API
+
+以下接口使用用户 Bearer token，并携带相同的 `X-AgentScope-Tenant`、`X-AgentScope-Namespace`。列表查询还需显式提供 `tenant`、`namespace`。完整请求示例见第 32 章"编排 Workflow"与第 33 章"工作分派、审批与验收"。
+
+| 操作 | API | 查询参数 / 返回 |
+| --- | --- | --- |
+| 查关联 Run | `GET /api/v1/orchestration-runs` | `issueId`、`definitionId`、`state`、`active`、`offset`、`limit`；返回 `{runs}` |
+| 查 Run | `GET /api/v1/orchestration-runs/{runId}` | 返回 `{run}`，含 `state`、`input`、`output`、`waitReason`、失败信息 |
+| 查执行图 | `GET /api/v1/orchestration-runs/{runId}/graph` | `run`、`nodes`、`edges`、`tasks`、`attempts`、可选 `childRuns` |
+| 查历史事件 | `GET /api/v1/orchestration-runs/{runId}/events` | `after` 为 sequence 游标，`limit` 控制数量；返回 `{events}` |
+| 查任务 | `GET /api/v1/agent-tasks/{taskId}` | 返回 `{task,inputSummaries}`，含结果和待处理输入概览 |
+| 查 Attempt | `GET /api/v1/execution-attempts` | `taskId`、`state`、`limit`；返回 `{attempts}` |
+| 查单次 Attempt | `GET /api/v1/execution-attempts/{attemptId}` | 返回 `{attempt}`，含后端、执行状态、结果和会话关联 |
+
+`RunEvent.sequence` 用于本 Run 内增量读取，`type` 表示事件类型，`nodeId` / `agentTaskId` / `attemptId` 关联受影响对象。这里的 events 是 JSON 查询，不是 SSE。发布服务的业务客户端应优先使用 Turn 返回的 statusUrl / eventsUrl，见本章"通过 Session API 接入应用"。
+
+### 机器可读契约与迁移说明
+
+机器可读契约位于 `agentscope-service/docs/service-api/openapi-v1.json`，其中列出当前 Session API 和应用凭据路径。旧调用入口的迁移说明位于同目录的 `session-api-migration.md`。
