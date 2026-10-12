@@ -3,16 +3,20 @@
 ![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 ![语言](https://img.shields.io/badge/语言-中文-red.svg)
 ![章节](https://img.shields.io/badge/章节-44+-green.svg)
-![图表](https://img.shields.io/badge/架构图-52张-orange.svg)
+![图表](https://img.shields.io/badge/架构图-97张-orange.svg)
 
-> 一本开源的 AgentScope Java 中文教程：**7 篇 44 章、839 页成书体量的完整 Markdown 源稿**，由浅入深覆盖从第一个 Agent 到生产级 Agent 平台的全部主题。
+<p align="center">
+  <img src="assets/images/knowledge-map.png" alt="全书知识地图：7 篇 44 章，三条学习路线配色" width="100%" />
+</p>
 
-本书是对 [AgentScope Java](https://github.com/agentscope-ai/agentscope-java) 官方中文文档（v2）的**系统性重排与整合**：按学习曲线重新组织为教程结构，补充了章间衔接、阅读地图、52 张 mermaid 架构图 / 时序图 / 部署图（GitHub 原生渲染），并对 10 家模型提供商等重复性文档做了合并精编。**仅供学习与交流使用**，具体声明见 [NOTICE.md](NOTICE.md)。
+> 一本开源的 AgentScope Java 中文教程：**7 篇 44 章、900+ 页成书体量的完整 Markdown 源稿**，由浅入深覆盖从第一个 Agent 到生产级 Agent 平台的全部主题。
+
+本书是对 [AgentScope Java](https://github.com/agentscope-ai/agentscope-java) 官方中文文档（v2）的**系统性重排与整合**：按学习曲线重新组织为教程结构，每章配有场景化导读与章首导览图，全书 97 张 mermaid 架构图 / 时序图 / 部署图（GitHub 原生渲染），并对 10 家模型提供商等重复性文档做了合并精编。**仅供学习与交流使用**，具体声明见 [NOTICE.md](NOTICE.md)。
 
 ## ✨ 这本书有什么不同
 
 - **由浅入深的教程结构** —— 不是文档的搬运：序言给出三类读者（Java 应用开发者 / 平台建设者 / 质量与评估）的学习路线，每章有导读与前后衔接
-- **52 张 mermaid 图** —— 时序图、流程图、部署图，全部可在 GitHub / VS Code / Typora 中直接渲染
+- **97 张 mermaid 图** —— 章首导览图 + 时序图、流程图、部署图，全部可在 GitHub / VS Code / Typora 中直接渲染
 - **案例驱动** —— 6 个 Service 实战案例（每个都配时序图）+ 4 个行业级案例（物流 / 金融 / AIDC / Coding Agent）
 - **生产视角** —— 多副本部署、分布式存储选型、沙箱隔离、权限与人工介入（HITL）、上生产清单
 - **进阶专题** —— JEV 语义判断（高频小决策的类型化处理）与 Agent 轨迹评估
@@ -114,7 +118,7 @@ try (var agent = builder.build()) {
 pandoc chapters/*.md -o book.pdf --pdf-engine=xelatex -V CJKmainfont="Microsoft YaHei"
 ```
 
-> 本书的 839 页 PDF 版本由一条 Markdown → HTML → Edge 打印的构建管线生成；如你需要该管线，欢迎提 Issue 交流。
+> 本书的 900+ 页 PDF 版本由一条 Markdown → HTML → Edge 打印的构建管线生成；如你需要该管线，欢迎提 Issue 交流。
 
 ## 🤝 参与贡献
 
