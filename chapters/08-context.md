@@ -361,11 +361,11 @@ assert run.runId().equals(ctx.getRunId());
 
 > **提示**：**在中间件和工具中访问 `AgentState`：** 在 call 执行期间，始终使用 `RuntimeContext.resolveAgentState(ctx, agent)` 而非 `agent.getAgentState()`。无参 `agent.getAgentState()` 已弃用，返回匿名用户的默认 session 槽位，不是最后活跃会话。`ctx.getAgentState()` 才是本次调用的状态；resolveAgentState 在该值缺失时仍会回退，不能把回退当成会话路由保证。
 
+最后收拢一下两章的分工：本章解决“会话状态放在哪里、如何保存恢复”，第 13 章讲 Harness 层的上下文管理策略——每轮模型输入如何组织、历史如何压缩。两边合起来，才是“上下文”这个词的完整含义。
+
 ## 相关文档
 
 - 第 13 章（上下文管理）—— 组织模型输入、跟进任务进度，并通过摘要和工具结果卸载控制上下文大小
 - 第 4 章（Agent 与 ReAct 循环）—— `ReActAgent` 完整接口与 Builder 参数
 - 第 14 章（记忆）—— 长期记忆与后台维护
 - 第 10 章（权限系统与人工介入）—— 权限规则的持久化
-
-最后收拢一下两章的分工：本章解决“会话状态放在哪里、如何保存恢复”，第 13 章讲 Harness 层的上下文管理策略——每轮模型输入如何组织、历史如何压缩。两边合起来，才是“上下文”这个词的完整含义。

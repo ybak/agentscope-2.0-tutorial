@@ -81,7 +81,7 @@ flowchart TD
 | MCP 集成与工具白名单 | 声明式 MCP server，工具粒度允许 / 拒绝 | 第 12 章 |
 | Channel 路由 | 会话管理、per-session 并发控制、多 Agent 路由、流式事件 | 第 20 章 |
 
-选择建议：**业务 Agent 开发推荐优先使用 `HarnessAgent`**；需要自行组合运行层时，也可以直接使用 `ReActAgent`。
+选择建议：**业务 Agent 开发推荐优先使用 `HarnessAgent`**；需要自行组合基础能力时，也可以直接使用 `ReActAgent`。
 
 ## 能力叠加：从 ReActAgent 到 Service Managed Agent
 
