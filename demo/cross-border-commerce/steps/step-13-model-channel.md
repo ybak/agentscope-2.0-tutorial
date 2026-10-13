@@ -5,21 +5,30 @@ title: 对接自有模型通道
 
 # Step 13 · 把公司模型网关接到托管 Agent
 
-> 本步导读：你已经有一个公司统一网关、私有部署模型或兼容 Chat Completions 的服务，希望 Agent 的请求走自己的通道。本节拆解连接配置、Dataplane 扩展、模型注册、Agent 选择和真实请求验收。前置：Step 11；默认检查不消耗模型额度。
-
-## 先厘清：我们要改的是哪条链路？
+> 本步导读：你已经有一个公司统一网关、私有部署模型或兼容 Chat Completions 的服务，希望 Agent 的请求走自己的通道。本节拆解连接配置、Dataplane 扩展、模型注册、Agent 选择和真实请求验收。前置：Step 11；默认检查不消耗模型额度。先看下方调用链全景图。
 
 ```mermaid
-flowchart LR
-    U[业务系统] --> G[Service Gateway]
-    G --> C[控制面: 保存 Agent 模型选择]
-    C --> D[Dataplane: 构建与运行 Agent]
-    D --> M[公司模型网关]
-    M --> P[上游模型或私有推理服务]
-    K[模型凭据与连接配置] --> D
+sequenceDiagram
+    participant T as 教学终端（alice）
+    participant C as Service 控制面
+    participant P as Dataplane
+    participant G as 公司模型网关
+    T->>C: GET /api/v1/agents/{id}/definition（--inspect 只读）
+    T->>C: PATCH /api/v1/agents/{id}/definition（--set-model，只改 model 带原 version）
+    C-->>T: 保存成功；回读断言 Workspace/工具/环境未变
+    T->>G: POST {根地址}{endpoint path}（--probe-text/tools，Bearer）
+    G-->>T: 文本 XBD_MODEL_OK / demo_echo 工具调用
+    Note over T,G: 探针不经过 Service，仅证明终端到网关
+    T->>C: 新 Chat 提交 Turn（真实执行，本轮未实测）
+    C->>P: 构建与运行 Agent
+    P->>P: ModelRegistry 解析别名 merchant-gateway
+    P->>G: 模型请求（未实测）
+    G-->>P: 流式响应 → 工具执行 → 最终回复
 ```
 
-*图 13-1：模型请求从 Dataplane 发出，Service Gateway URL 与模型网关 URL 是两个地址。*
+*图 13-1：模型选择保存与上游探针已验证；Dataplane 解析别名并向网关发起真实请求的链路未经本轮实测。*
+
+## ⓪ 先厘清：我们要改的是哪条链路？
 
 | 名称 | 示例 | 谁使用 |
 | --- | --- | --- |
@@ -42,7 +51,7 @@ flowchart LR
 
 因此本节提供一个小型 Dataplane 适配类，而不是虚构“控制台填三个字段即完成接入”的接口。控制面的 ModelConfig 等资源也不能在缺少消费链路证据时，直接当作当前托管 Agent 的热更新模型配置。
 
-## 第一步：确认网关协议与运行位置
+## ① 第一步：确认网关协议与运行位置
 
 本示例针对 **Chat Completions 兼容协议**：请求包含 `model`、`messages`，工具用 `tools/tool_calls`，流式通常采用 SSE。只提供 Responses 或其它协议的网关不能直接套用这份适配类。
 
@@ -56,7 +65,7 @@ flowchart LR
 
 探针统一使用“纯 scheme + host + port 的根地址”加完整 endpoint path。例如 `https://llm.example.com` + `/proxy/v1/chat/completions`。不要在根地址和路径重复写 `/v1`；实际 Java 客户端有版本路径处理逻辑，但教学探针不依赖它。
 
-## 第二步：把模型扩展加入 Dataplane
+## ② 第二步：把模型扩展加入 Dataplane
 
 示例文件在 [examples/model-channel](../examples/model-channel/MerchantModelConfig.java)：
 
@@ -90,7 +99,7 @@ ModelRegistry.register("merchant-gateway", OpenAIChatModel.builder()
 
 如果目标服务要求额外鉴权 Header、自定义签名或非兼容报文，需要继续适配客户端；本示例只演示 Bearer Key，不承诺覆盖所有网关。
 
-## 第三步：在服务端加载连接配置
+## ③ 第三步：在服务端加载连接配置
 
 填写到真正启动 Dataplane 的环境配置或 Secret 中：
 
@@ -108,7 +117,7 @@ XBD_MODEL_API_KEY=填本地密钥
 
 不要把模型 Key 放进 `AGENTS.md`、Workspace 知识文件、system prompt 或 Agent model 字符串。它不是平台登录 token，也不是 Endpoint 对外 API Key。
 
-## 第四步：先做上游探针，再改实验 Agent
+## ④ 第四步：先做上游探针，再改实验 Agent
 
 默认只读核对：
 
@@ -142,7 +151,7 @@ bash steps/step-13-model-channel.sh --set-model merchant-gateway
 
 回退时传入之前记录的模型 ID，使用同一脚本。当前主线 4 个业务 Agent 不会被这条命令修改。Step 03 的 `XBD_MODEL` 只影响新建 Agent，不会更新已有资源；原主线仍含 DashScope 的前置检查，整体迁移需要逐个确认模型定义和检查条件，不能把实验 Agent 的切换当成整个平台完成迁移。
 
-## 第五步：在 Service 里验收，而不是停在 curl 网关
+## ⑤ 第五步：在 Service 里验收，而不是停在 curl 网关
 
 按Step 11 最后一节用实验 Agent **新建 Chat** 并提交读取政策的任务。依次检查：
 
