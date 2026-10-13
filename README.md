@@ -84,6 +84,10 @@
 
 每篇另有篇导读（`chapters/part-1-intro.md` … `part-7-intro.md`），概述本篇内容与阅读方式。
 
+## 🧪 配套动手 Demo
+
+[跨境电商 Agent 多租户平台 Demo](demo/cross-border-commerce/README.md) 与第五篇（第 29–34 章）配套，提供主线 8 步与延伸 2 步，每步包含教程和 Bash 脚本。支持一键运行、断点续跑、隔离断言与可逆停用；实测范围和剩余限制见 Demo 验证记录。
+
 ## 🚀 快速开始学习
 
 **环境要求**：JDK 17+，Maven 3.9+，任一模型提供商的 API Key（推荐从 [第 2 章 快速开始](chapters/02-quickstart.md) 的 DashScope 开始）。

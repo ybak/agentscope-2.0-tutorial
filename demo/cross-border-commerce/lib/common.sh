@@ -23,7 +23,7 @@ require_env() {
 }
 
 state_get() { local key="$1" def="${2:-}" v
-  v=$(grep -E "^${key}=" "$XBD_STATE_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)
+  v=$(grep -E "^${key}=" "$XBD_STATE_FILE" 2>/dev/null | tail -1 | cut -d= -f2- || true)
   printf '%s' "${v:-$def}"; }
 
 state_set() { local key="$1" val="$2"
@@ -46,7 +46,7 @@ scope_q() { # query 作用域通道：v1 协作端点（teams/issues/definitions
 
 _xbd_curl() { # 内部：$1=METHOD $2=PATH $3=BODY $4=TOKEN_KEY -> 首行状态码，其余为响应体
   local token; token="$(state_get "$4")"
-  local args=(-sS -X "$1" "$BASE_URL$2"
+  local args=(-sS --connect-timeout 10 --max-time 120 -X "$1" "$BASE_URL$2"
     -H "Authorization: Bearer $token" -H 'Content-Type: application/json')
   [[ -n "$XBD_SCOPE_TENANT" ]] && args+=(-H "X-AgentScope-Tenant: $XBD_SCOPE_TENANT")
   [[ -n "$XBD_SCOPE_NS" ]]     && args+=(-H "X-AgentScope-Namespace: $XBD_SCOPE_NS")
@@ -58,7 +58,7 @@ api() { local out status
   out=$(_xbd_curl "$1" "$2" "${3:-}" "${4:-XBD_TOKEN_ADMIN}")
   status=$(head -1 <<<"$out")
   if [[ "$status" -ge 400 ]]; then
-    echo "✗ API $status [$1 $2]"; sed '1d' <<<"$out"; exit 1; fi
+    echo "✗ API $status [$1 $2]" >&2; sed '1d' <<<"$out" >&2; exit 1; fi
   sed '1d' <<<"$out"; }
 
 api_raw() { _xbd_curl "$1" "$2" "${3:-}" "${4:-XBD_TOKEN_ADMIN}"; }

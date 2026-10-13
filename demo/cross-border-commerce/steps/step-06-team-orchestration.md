@@ -141,6 +141,10 @@ curl -sS -X POST "$BASE_URL/api/v1/issues/$ISSUE_ID/comments" \
 
 > **注意**：教程第 31/32 章写作时点的 Team 会话以 `target:{type:"team"}` 表达；当前版本实测的协作底座是 **Issue-first**（ADR-0001）：Issue 是任务载体，Team 是名册，AgentTask 是执行单元，评论是路由通道。概念相通，端点与语义以本步实测为准。
 
+## 本轮续接验证边界（2026-10-13）
+
+本次回归 `aa358f0b-5d7a-466d-af7c-130f74b75dc0` 产生 attempt 后最终为 `failed`。上文 completed 与子任务示例属于此前运行记录，不能据此宣称当前环境团队业务闭环成功。本步脚本只把 attempt 出现作为硬断言，并另外报告实际任务状态。随后 Workflow 的 attempt 明确返回 `AllocationQuota.FreeTierOnly`；Team 本身的具体失败原因未在本轮进一步取证，不能直接归为相同错误。
+
 ## 排障实录：Task failed 怎么查
 
 实测过程中真实遭遇过 `task.status=failed`，定位路径值得沉淀：

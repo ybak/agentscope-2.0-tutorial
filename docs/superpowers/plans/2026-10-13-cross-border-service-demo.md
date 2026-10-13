@@ -10,6 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-13-cross-border-service-demo-design.md`
 
+## 2026-10-13 续接状态
+
+- Task 11：人工审批脚本/教程完成，多次实测通过；采用工单显式共享。
+- Task 12：Automation 脚本/教程完成，异步测试触发与幂等验证通过；默认停用。
+- Task 13：运行入口与可逆停用入口完成，参数检查和停用/恢复实测通过。保留历史与配置，未执行全量归档。
+- Task 14：**未完成**。第一遍 Step 07 明确遇到模型 `AllocationQuota.FreeTierOnly`；用户选择保留额度阻塞，未跑第二遍。不能按本计划的预期结果宣称全绿。
+- Task 15：Demo 总览、根 README 挂接与验证记录完成。
+- 详细证据：[verification.md](../../../demo/cross-border-commerce/verification.md)。下方任务框和命令是原计划，实际结果以该记录为准。
+
 ## Global Constraints
 
 - **实测铁律**：文档中每个示例响应必须来自真实运行输出（截断超长 ID、脱敏 token）；实测与预期不符时以实测为准，并在该步 `.md` 用 `> **注意**` 记录差异。

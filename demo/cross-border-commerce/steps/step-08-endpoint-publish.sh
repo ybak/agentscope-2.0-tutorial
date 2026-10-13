@@ -13,7 +13,7 @@ CS_ID=$(state_get XBD_AGENT_CS_SEASHORE)
 
 # 1. 创建 Endpoint（先查后建；body 作用域决定归属）
 echo "--- 创建 Endpoint"
-EPS=$(api GET "/api/v1/endpoints?tenant=${XBD_TENANT}&namespace=seashore-main" XBD_TOKEN_ALICE)
+EPS=$(api GET "/api/v1/endpoints?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 EP_ID=$(jq -r --arg n "xbd-seashore-cs-endpoint" \
   '[.items[]? | select(.name == $n)][0].id // empty' <<<"$EPS")
 if [[ -z "$EP_ID" ]]; then
@@ -29,9 +29,11 @@ else
   echo "  ↺ 复用 endpoint=$EP_ID"
 fi
 
+state_set XBD_ENDPOINT_ID "$EP_ID"
+
 # 2. 发布（body 携带当前 version 乐观锁；已发布则幂等返回）
 echo "--- 发布"
-EP_DETAIL=$(api GET "/api/v1/endpoints/$EP_ID?tenant=${XBD_TENANT}&namespace=seashore-main" XBD_TOKEN_ALICE)
+EP_DETAIL=$(api GET "/api/v1/endpoints/$EP_ID?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 EP_VER=$(jq -r '.version // .endpoint.version' <<<"$EP_DETAIL")
 PUB=$(api POST "/api/v1/endpoints/$EP_ID/publish" "{\"version\":$EP_VER}" XBD_TOKEN_ALICE)
 SLUG=$(jq -er '.endpoint.slug // .slug' <<<"$PUB") || { echo "✗ publish 响应无 slug:"; echo "$PUB"; exit 1; }
@@ -41,7 +43,7 @@ echo "  ✓ slug=$SLUG"
 
 # 3. 签发对外凭据（明文 secret 只在创建响应出现一次）
 echo "--- 签发 API Key"
-CRED_LIST=$(api GET "/api/v1/endpoints/$EP_ID/credentials?tenant=${XBD_TENANT}&namespace=seashore-main" XBD_TOKEN_ALICE)
+CRED_LIST=$(api GET "/api/v1/endpoints/$EP_ID/credentials?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 if jq -e --arg n "xbd-demo-key" '[.items[]? // .credentials[]? | select(.name == $n)] | length > 0' <<<"$CRED_LIST" >/dev/null 2>&1; then
   echo "  ↺ 凭据已存在（明文仅签发时可见——如丢失请 rotate 或新建）"
   KEY=$(state_get XBD_ENDPOINT_KEY)

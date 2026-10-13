@@ -13,7 +13,7 @@ SCOUT_ID=$(state_get XBD_AGENT_SCOUT)
 
 # 1. 定义（先查后建）：市场调研（agent 节点）→ 人工放行（signal 节点）
 echo "--- 定义流水线"
-DEF_LIST=$(api GET "/api/v1/orchestration-definitions?tenant=${XBD_TENANT}&namespace=seashore-main" XBD_TOKEN_ALICE)
+DEF_LIST=$(api GET "/api/v1/orchestration-definitions?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 DEF_ID=$(jq -r --arg n "xbd-seashore-listing-pipeline" \
   '[.definitions[]? | select(.name == $n)][0].id // empty' <<<"$DEF_LIST")
 if [[ -z "$DEF_ID" ]]; then

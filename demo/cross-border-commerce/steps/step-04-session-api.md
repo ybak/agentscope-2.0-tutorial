@@ -143,3 +143,5 @@ bash steps/step-04-session-api.sh
 - ☐ 脚本连跑两遍：chat 复用、回复体现多轮上下文
 
 > **延伸阅读**：事件模型与 SSE 续传语义见教程第 31 章（机制相通，端点以本步实测为准）。下一步 → [Step 05 多租户隔离验证](step-05-isolation-check.md)。
+
+> **续接修正（2026-10-13）**：重复执行时，脚本先记录已有 `agent.message` 与 `session.status_idle` 事件数，只有两者均增加且回复非空才通过，防止历史回复掩盖本轮失败。

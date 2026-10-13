@@ -30,6 +30,11 @@ SESSION_ID=$(jq -r --arg c "$CHAT_ID" '[.items[]? | select(.id == $c)][0].sessio
 [[ -z "$SESSION_ID" ]] && SESSION_ID=$(api GET "/api/v1/chats/$CHAT_ID$(scope_q "${XBD_TENANT}" seashore-main)" "" XBD_TOKEN_ALICE | jq -r '.chat.sessionId')
 state_set XBD_SESSION_V5_1 "$SESSION_ID"
 
+# 记录本轮前的事件数，重跑时不能用旧回复/旧 idle 误判成功。
+BEFORE=$(api GET "/api/v1/sessions/$SESSION_ID/events?chatId=$CHAT_ID" "" XBD_TOKEN_ALICE)
+IDLE_BEFORE=$(jq '[.events[]? | select(.eventType=="session.status_idle")]|length' <<<"$BEFORE")
+REPLY_BEFORE=$(jq '[.events[]? | select(.eventType=="agent.message")]|length' <<<"$BEFORE")
+
 # 2. 提交客户咨询（Turn）
 echo "--- 提交客户咨询"
 TURN=$(api POST "/api/v1/chats/$CHAT_ID/turns$(scope_q "${XBD_TENANT}" seashore-main)" \
@@ -51,10 +56,12 @@ for i in $(seq 1 60); do
   EV=$(api GET "/api/v1/sessions/$SESSION_ID/events?chatId=$CHAT_ID" "" XBD_TOKEN_ALICE)
   FINAL=$(jq -r '[.events[]? | select(.eventType == "session.status_idle")] | length' <<<"$EV")
   REPLY=$(jq -r '[.events[]? | select(.eventType == "agent.message")] | last | .content // empty' <<<"$EV")
-  [[ "${FINAL:-0}" -ge 1 && -n "$REPLY" ]] && break
+  REPLY_COUNT=$(jq '[.events[]? | select(.eventType=="agent.message")]|length' <<<"$EV")
+  [[ "${FINAL:-0}" -gt "$IDLE_BEFORE" && "$REPLY_COUNT" -gt "$REPLY_BEFORE" && -n "$REPLY" ]] && break
   sleep 3
 done
-assert_contains "idle" "$( [[ "${FINAL:-0}" -ge 1 ]] && echo idle || echo busy )" "本轮已结束（session.status_idle）"
+[[ "${FINAL:-0}" -gt "$IDLE_BEFORE" && "$REPLY_COUNT" -gt "$REPLY_BEFORE" && -n "$REPLY" ]] || { echo "✗ 本轮未收到新的回复与 idle 事件"; exit 1; }
+echo "  ✓ 本轮已结束且收到新的 Agent 回复"
 TOKENS=$(jq -r '[.events[]? | select(.eventType == "span.model_request_end") | .frameworkMeta.usage] | last | "输入 \(.inputTokens) / 输出 \(.outputTokens) tokens"' <<<"$EV" 2>/dev/null || echo "usage 不可得")
 echo "  ✓ 模型用量: $TOKENS"
 echo "  ✓ Agent 回复（截断）: ${REPLY:0:80}…"

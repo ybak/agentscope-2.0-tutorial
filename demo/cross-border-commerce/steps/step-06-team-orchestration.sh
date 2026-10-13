@@ -14,7 +14,7 @@ LOGI_ID=$(state_get XBD_AGENT_LOGISTICS)
 
 # 1. 建团队（先查后建；v5 catalog UUID 直接作为成员）
 echo "--- 创建客服团队"
-TEAM_LIST=$(api GET "/api/v1/teams?tenant=${XBD_TENANT}&namespace=seashore-main" XBD_TOKEN_ALICE)
+TEAM_LIST=$(api GET "/api/v1/teams?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 TEAM_ID=$(jq -r --arg n "xbd-seashore-cs-team" \
   '[.items[]? | select(.name == $n)][0].id // empty' <<<"$TEAM_LIST")
 if [[ -z "$TEAM_ID" ]]; then
@@ -33,7 +33,7 @@ state_set XBD_TEAM_1 "$TEAM_ID"
 
 # 2. 追加物流专员为成员（幂等：team 详情的 members 里已有则跳过）
 echo "--- 添加团队成员"
-TEAM_DETAIL=$(api GET "/api/v1/teams/$TEAM_ID?tenant=${XBD_TENANT}&namespace=seashore-main" XBD_TOKEN_ALICE)
+TEAM_DETAIL=$(api GET "/api/v1/teams/$TEAM_ID?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 if grep -q "\"agentId\":\"$LOGI_ID\"" <<<"$TEAM_DETAIL"; then
   echo "  ↺ 物流专员已在队"
 else
@@ -74,8 +74,8 @@ ST=$(jq -r '.status // .task.status // "?"' <<<"$TR")
 ISSUE_ST=$(api GET "/api/v1/issues/$ISSUE_ID" "" XBD_TOKEN_ALICE | jq -r '.issue.status')
 case "$ST" in
   completed) echo "  ✓ Task 完成（${ST}），issue 状态: $ISSUE_ST" ;;
-  *) echo "  ⚠ Task 终态: ${ST}，issue 状态: $ISSUE_ST"
-     echo "    （当前 dev 栈版本下 Lead turn 收尾可能因事件镜像 410 报 managed_turn_incomplete——协作过程真实发生，收尾语义与排障见文档）" ;;
+  *) echo "  ⚠ Task 当前状态: ${ST}，issue 状态: $ISSUE_ST"
+     echo "    本步只确认执行已启动，不代表团队业务完成；失败原因请查 task/attempt 与服务日志。" ;;
 esac
 
 # 5. 评论追加输入（Issue-first 协作：新评论路由为新任务输入）
