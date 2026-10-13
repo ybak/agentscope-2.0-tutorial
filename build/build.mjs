@@ -23,11 +23,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import hljs from 'highlight.js';
-import markdownIt from 'markdown-it';
-
 import { BOOK, PARTS, buildLinkMap, EXCLUDED_SOURCES } from './manifest.mjs';
 import { cleanMarkdown } from './clean.mjs';
+import {
+  escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets, toPosix,
+} from './lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = __dirname;                   // .../build（构建工具链目录）
@@ -45,72 +45,6 @@ const EDGE_PATH = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 
 /** CDP 排版完成等待上限（毫秒）：mermaid 渲染 + Paged.js 千页级分页的保守上限 */
 const READY_TIMEOUT_MS = 540_000;
-
-/** 构建时复制到 assets/vendor/ 的第三方脚本，HTML 以相对路径引用（file:// 可直接加载） */
-const VENDOR_SCRIPTS = [
-  { from: 'node_modules/mermaid/dist/mermaid.min.js', to: 'assets/vendor/mermaid.min.js' },
-  { from: 'node_modules/pagedjs/dist/paged.polyfill.js', to: 'assets/vendor/paged.polyfill.js' },
-];
-
-const md = markdownIt({
-  html: true,
-  linkify: true,
-  highlight(str, lang) {
-    if (lang && hljs.getLanguage(lang)) {
-      try {
-        return hljs.highlight(str, { language: lang }).value;
-      } catch {
-        /* 高亮失败时退回默认转义 */
-      }
-    }
-    return ''; // 交给 markdown-it 默认转义
-  },
-});
-
-/** ```mermaid 围栏 → <div class="mermaid">（由页内 mermaid.min.js 渲染为 SVG，其余围栏走默认规则） */
-const defaultFence = md.renderer.rules.fence;
-md.renderer.rules.fence = (tokens, idx, options, env, self) => {
-  const token = tokens[idx];
-  if (token.info.trim().split(/\s+/)[0] === 'mermaid') {
-    return `<div class="mermaid">\n${token.content}</div>\n`;
-  }
-  return defaultFence(tokens, idx, options, env, self);
-};
-
-/** Windows 路径 → 正斜杠路径（供 file:// URL 与 Edge 参数使用） */
-function toPosix(p) {
-  return p.split(path.sep).join('/');
-}
-
-/** HTML 文本转义（标题等来自源文档 frontmatter，含 <>&" 时须转义） */
-function escapeHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-/**
- * 剥离章节开头的 YAML front matter，返回 { meta, body }。
- * 键值级最小解析（chapter/title/source 等单行键）。
- */
-function splitFrontMatter(raw) {
-  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!m) return { meta: {}, body: raw };
-  const meta = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
-    if (kv) meta[kv[1]] = kv[2].trim();
-  }
-  return { meta, body: raw.slice(m[0].length) };
-}
-
-/** 把 vendor 脚本从 node_modules 复制到 assets/vendor/ */
-function syncVendorAssets() {
-  for (const v of VENDOR_SCRIPTS) {
-    const from = path.join(BUILD_DIR, ...v.from.split('/'));
-    const to = path.join(BUILD_DIR, ...v.to.split('/'));
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.copyFileSync(from, to);
-  }
-}
 
 /** 封面页：书名 + 副标题 + 整合说明 + 日期 */
 function renderCover() {
@@ -163,12 +97,10 @@ ${rows.join('\n')}
  */
 function renderTailScripts(usePaged) {
   // book.html 落在 output/，vendor 脚本在 build/assets/vendor/，故引用带 ../build/ 前缀
-  const mermaidTag = '<script src="../build/assets/vendor/mermaid.min.js"></script>';
-  const errHook = 'window.__BOOK_ERRORS=[];';
-  if (usePaged) {
-    return `${mermaidTag}
+  if (!usePaged) return renderMermaidScripts('../build/assets/vendor/');
+  return `<script src="../build/assets/vendor/mermaid.min.js"></script>
 <script>
-${errHook}
+window.__BOOK_ERRORS=[];
 mermaid.initialize({ startOnLoad: false, theme: "neutral", flowchart: { htmlLabels: false } });
 window.PagedConfig = {
   auto: true,
@@ -185,21 +117,6 @@ window.PagedConfig = {
 };
 </script>
 <script src="../build/assets/vendor/paged.polyfill.js"></script>`;
-  }
-  return `${mermaidTag}
-<script>
-${errHook}
-mermaid.initialize({ startOnLoad: false, theme: "neutral", flowchart: { htmlLabels: false } });
-document.addEventListener('DOMContentLoaded', () => {
-  window.mermaid.run({ querySelector: '.mermaid', suppressErrors: true })
-    .catch((err) => { window.__BOOK_ERRORS.push('mermaid: ' + (err && err.message || err)); })
-    .finally(() => {
-      const failed = document.querySelectorAll('.mermaid:not(:has(svg))').length;
-      if (failed) window.__BOOK_ERRORS.push('mermaid: ' + failed + ' 张图未渲染为 SVG');
-      window.__BOOK_READY = true;
-    });
-});
-</script>`;
 }
 
 /**
