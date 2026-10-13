@@ -7,7 +7,7 @@ require_env
 step_header "Step 03 商家 Agent 矩阵"
 
 : "${DASHSCOPE_API_KEY:?✗ 缺少 DASHSCOPE_API_KEY —— Agent 无法真实运行，请重启 dev 栈并注入}"
-MODEL="${XBD_MODEL:-qwen-plus}"
+MODEL="${XBD_MODEL:-dashscope:deepseek-v4-flash-0731}"
 
 # v5 Agent Catalog 的先查后建（按 agentKey 全局唯一匹配）
 ensure_catalog_agent() { local skey="$1" akey="$2" ns="$3" display="$4" system="$5" token_key="$6"
