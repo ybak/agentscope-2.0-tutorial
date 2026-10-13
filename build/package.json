@@ -8,12 +8,16 @@
     "check": "node build.mjs --check",
     "html": "node build.mjs --html",
     "pdf": "node build.mjs --pdf",
-    "test": "node --test clean.test.mjs"
+    "site": "node build.mjs --site && pagefind --site ../output/site",
+    "test": "node --test clean.test.mjs site.test.mjs"
   },
   "dependencies": {
     "highlight.js": "^11.12.0",
     "markdown-it": "^15.0.2",
     "mermaid": "^12.1.0",
     "pagedjs": "^0.4.3"
+  },
+  "devDependencies": {
+    "pagefind": "^1.5.2"
   }
 }

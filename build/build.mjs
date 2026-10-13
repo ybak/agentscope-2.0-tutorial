@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { BOOK, PARTS, buildLinkMap, EXCLUDED_SOURCES } from './manifest.mjs';
 import { cleanMarkdown } from './clean.mjs';
+import { buildSite } from './site.mjs';
 import {
   escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets, toPosix,
 } from './lib.mjs';
@@ -529,11 +530,16 @@ async function main() {
       console.log(`[build] PDF 已生成（退化方案）: ${PDF_PATH}`);
       break;
     }
+    case '--site': {
+      buildSite();
+      console.log(`[build] 站点已生成: ${path.join(OUTPUT_DIR, 'site')}（搜索索引: cd build && npm run site）`);
+      break;
+    }
     case '--check':
       runCheck();
       break;
     default:
-      console.error('用法: node build/build.mjs --html | --pdf | --pdf-fallback | --check');
+      console.error('用法: node build/build.mjs --html | --pdf | --pdf-fallback | --site | --check');
       process.exitCode = 1;
   }
 }

@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { BOOK, PARTS } from './manifest.mjs';
-import { escapeHtml, md, renderMermaidScripts, splitFrontMatter } from './lib.mjs';
+import { escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets } from './lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = __dirname;
@@ -50,7 +50,9 @@ export function renderShell({ title, content, rootPrefix, sidebar = null, needMe
   const vendor = `${rootPrefix}build/assets/vendor/`;
   const tail = [
     needMermaid ? renderMermaidScripts(vendor) : '',
-    searchUi ? `<script src="${vendor}pagefind-ui.js"></script>
+    // pagefind UI 由 pagefind CLI 建索引时产出在站点 pagefind/ 目录(含全局 PagefindUI)
+    searchUi ? `<link rel="stylesheet" href="${rootPrefix}pagefind/pagefind-ui.css">
+<script src="${rootPrefix}pagefind/pagefind-ui.js"></script>
 <script>
 window.addEventListener('DOMContentLoaded', () => {
   new PagefindUI({ element: '#search', showImages: false });
@@ -180,4 +182,82 @@ export function flattenPages(parts) {
     }
   }
   return pages;
+}
+
+// ---------- 总装 ----------
+
+/**
+ * 章节页渲染:正文(含链接重写) + 侧边栏 + 翻页 + mermaid。
+ * body 由调用方按 flattenPages 顺序对齐(flat[idx] 与 currentHref 同页)。
+ */
+function renderChapterPage(body, currentHref, flat, idx) {
+  return renderShell({
+    title: flat[idx].title,
+    content: rewriteMarkdownLinks(md.render(body)) + renderPager(flat, idx),
+    rootPrefix: '../',
+    sidebar: renderSidebar(PARTS, currentHref),
+    needMermaid: true,
+  });
+}
+
+/** 构建期校验:残留的相对 .md 链接(已降级的 GitHub 链接不算)与缺失图片 → [site][warn](不中断) */
+function auditPage(html, siteDir, label, warns) {
+  for (const m of html.matchAll(/href="(?!https?:)[^"]*\.md[#"]/g)) {
+    warns.push(`[site][warn] ${label}: 残留 .md 链接 ${m[0]}`);
+  }
+  for (const m of html.matchAll(/src="(\.\.\/assets\/[^"]+)"/g)) {
+    if (!fs.existsSync(path.resolve(siteDir, 'chapters', m[1]))) {
+      warns.push(`[site][warn] ${label}: 缺失图片 ${m[1]}`);
+    }
+  }
+}
+
+/**
+ * 构建 output/site/:镜像仓库目录(chapters/ + assets/ + build/assets/vendor/),
+ * 章节 ../assets/images/ 引用零改动可解析。返回站点目录绝对路径。
+ * 搜索索引不在此步产出,由 `npm run site` 的 pagefind 段完成。
+ */
+export function buildSite() {
+  const warns = [];
+  fs.rmSync(SITE_DIR, { recursive: true, force: true });
+  fs.mkdirSync(path.join(SITE_DIR, 'chapters'), { recursive: true });
+
+  // 资源:仓库 assets 原样 + vendor(mermaid 经 syncVendorAssets;pagefind UI 由 CLI 索引产物提供)
+  fs.cpSync(path.join(ROOT_DIR, 'assets'), path.join(SITE_DIR, 'assets'), { recursive: true });
+  syncVendorAssets();
+  fs.mkdirSync(path.join(SITE_DIR, 'build', 'assets', 'vendor'), { recursive: true });
+  fs.copyFileSync(path.join(BUILD_DIR, 'assets', 'vendor', 'mermaid.min.js'),
+    path.join(SITE_DIR, 'build', 'assets', 'vendor', 'mermaid.min.js'));
+
+  // 章节/篇导读页(顺序即 flattenPages;manifest 中缺文件 → warn 跳过)
+  const flat = flattenPages(PARTS);
+  const bodies = new Map();
+  for (const part of PARTS) {
+    const files = [part.intro, ...part.chapters.map((c) => c.file)].filter(Boolean);
+    for (const file of files) {
+      const abs = path.join(CHAPTERS_DIR, file);
+      if (!fs.existsSync(abs)) {
+        warns.push(`[site][warn] 章节文件缺失,跳过: chapters/${file}`);
+        continue;
+      }
+      bodies.set(toPageHref(file), splitFrontMatter(fs.readFileSync(abs, 'utf8')).body);
+    }
+  }
+  let rendered = 0;
+  for (let i = 0; i < flat.length; i++) {
+    const body = bodies.get(flat[i].href);
+    if (body == null) continue; // 缺文件已 warn
+    const html = renderChapterPage(body, flat[i].href, flat, i);
+    auditPage(html, SITE_DIR, flat[i].href, warns);
+    fs.writeFileSync(path.join(SITE_DIR, flat[i].href), html, 'utf8');
+    rendered++;
+  }
+
+  // 根页面
+  fs.writeFileSync(path.join(SITE_DIR, 'index.html'), renderIndexPage(flat), 'utf8');
+  fs.writeFileSync(path.join(SITE_DIR, 'search.html'), renderSearchPage(), 'utf8');
+
+  for (const w of warns) console.log(w);
+  console.log(`[site] 已渲染 ${rendered}/${flat.length} 页 → ${SITE_DIR}`);
+  return SITE_DIR;
 }
