@@ -76,7 +76,8 @@ export const PARTS = [
     { file: "40-session-chat.md", chapter: 40, title: "最佳实践：可恢复会话聊天", sources: ["blogs/best-practices/session-chat.md"] },
     { file: "41-execution-control.md", chapter: 41, title: "会话执行控制与结构化决策", sources: ["blogs/session-execution-control.md","blogs/jev-structured-decision-for-agents.md"] },
     { file: "42-production.md", chapter: 42, title: "走向生产", sources: ["docs/others/going-to-production.md"] },
-    { file: "43-cases.md", chapter: 43, title: "行业案例", sources: ["blogs/usecases/logistics.md","blogs/usecases/finxscope.md","blogs/usecases/aidc-logistics.md","blogs/agentscope-v2-coding-agent.md"] },
+    // 本仓库原创案例，来源为 demo/cross-border-commerce；不映射上游行业博客。
+    { file: "43-cases.md", chapter: 43, title: "跨境电商 Agent 多租户平台实战", sources: [] },
     { file: "44-faq.md", chapter: 44, title: "常见问题 FAQ", sources: ["docs/others/faq.md"] },
   ]},
   { id: "appendix", title: "附录", intro: null, chapters: [
@@ -87,6 +88,11 @@ export const PARTS = [
 
 /** Global Constraints 排除清单（相对 docs/v2/zh/，含 .md 后缀） */
 export const EXCLUDED_SOURCES = [
+  // 第 43 章改为本仓库 Demo 综合实战，原行业博客不再收录。
+  "blogs/usecases/logistics.md",
+  "blogs/usecases/finxscope.md",
+  "blogs/usecases/aidc-logistics.md",
+  "blogs/agentscope-v2-coding-agent.md",
   "blogs/agentscope-v1-builder.md",
   "blogs/agentscope-v1-harness.md",
   "docs/change-log.md",

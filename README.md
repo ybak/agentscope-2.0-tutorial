@@ -17,7 +17,7 @@
 
 - **由浅入深的教程结构** —— 不是文档的搬运：序言给出三类读者（Java 应用开发者 / 平台建设者 / 质量与评估）的学习路线，每章有导读与前后衔接
 - **97 张 mermaid 图** —— 章首导览图 + 时序图、流程图、部署图，全部可在 GitHub / VS Code / Typora 中直接渲染
-- **案例驱动** —— 6 个 Service 实战案例（每个都配时序图）+ 4 个行业级案例（物流 / 金融 / AIDC / Coding Agent）
+- **案例驱动** —— 6 个 Service 实战案例 + 跨境电商多租户平台综合实战（配套 13 步教程与脚本）
 - **生产视角** —— 多副本部署、分布式存储选型、沙箱隔离、权限与人工介入（HITL）、上生产清单
 - **进阶专题** —— JEV 语义判断（高频小决策的类型化处理）与 Agent 轨迹评估
 
@@ -76,7 +76,7 @@
 | 第 40 章 最佳实践：可恢复会话聊天        | [chapters/40-session-chat.md](chapters/40-session-chat.md)                   |
 | 第 41 章 会话执行控制与结构化决策        | [chapters/41-execution-control.md](chapters/41-execution-control.md)         |
 | 第 42 章 走向生产                        | [chapters/42-production.md](chapters/42-production.md)                       |
-| 第 43 章 行业案例                        | [chapters/43-cases.md](chapters/43-cases.md)                                 |
+| 第 43 章 跨境电商 Agent 多租户平台实战                        | [chapters/43-cases.md](chapters/43-cases.md)                                 |
 | 第 44 章 常见问题 FAQ                    | [chapters/44-faq.md](chapters/44-faq.md)                                     |
 | **附录**                           |                                                                             |
 | 附录 A：Release Notes（v2）              | [chapters/appendix-a-release-notes.md](chapters/appendix-a-release-notes.md) |
@@ -86,7 +86,7 @@
 
 ## 🧪 配套动手 Demo
 
-[跨境电商 Agent 多租户平台 Demo](demo/cross-border-commerce/README.md) 与第五篇（第 29–34 章）配套，提供01–13 共 13 步，覆盖平台搭建、审批/自动化、Workspace、沙箱及自有模型通道，每步包含教程和 Bash 脚本。支持一键运行、断点续跑、隔离断言与可逆停用；实测范围和剩余限制见 Demo 验证记录。
+[跨境电商 Agent 多租户平台 Demo](demo/cross-border-commerce/README.md) 与第五篇（第 29–34 章）及[第 43 章综合实战](chapters/43-cases.md) 配套，提供 01–13 共 13 步，覆盖平台搭建、审批/自动化、Workspace、沙箱及自有模型通道，每步包含教程和 Bash 脚本。支持一键运行、断点续跑、隔离断言与可逆停用；实测范围和剩余限制见 Demo 验证记录。
 
 ## 🚀 快速开始学习
 
