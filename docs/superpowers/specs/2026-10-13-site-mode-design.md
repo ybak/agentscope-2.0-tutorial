@@ -30,7 +30,7 @@ build/assets/site.css 新增:仅站点布局样式(顶栏/侧边栏/响应式)
 output/site/          产物(gitignore 已覆盖 output/):
   ├── index.html              首页:书名/简介 + 七篇卡片目录 + 搜索入口
   ├── search.html             搜索结果页(pagefind UI)
-  ├── chapters/<file>.html    44 章 + 序言 + 6 篇导读 + 2 附录 ≈ 53 页
+  ├── chapters/<file>.html    44 章 + 序言 + 7 篇导读 + 2 附录 = 54 页
   ├── assets/…                仓库 assets/ 原样拷入
   ├── build/assets/vendor/mermaid.min.js
   └── pagefind/               pagefind 索引与运行时
@@ -52,6 +52,7 @@ output/site/          产物(gitignore 已覆盖 output/):
 
 - **扁平序列**(上一篇/下一篇依据):按 PARTS 顺序展开 = 序言 → 各篇(篇导读 → 各章)→ 附录 A → 附录 B;首页不进序列,`search.html` 不进序列。
 - **章间链接重写**:渲染后的 HTML 中 `href="…md"` 形式的相对链接(同目录章节引用)重写为同名 `.html`;仅处理以 `.md` 结尾的相对 href,不碰锚点(`xx.md#sec` → `xx.html#sec`)、不碰外链与 `../assets`。
+- **demo 链接降级**:指向仓库 `demo/` 目录的 `../demo/….md` 链接(站点内无对应页面)重写为 GitHub 源文件地址 `https://github.com/ybak/agentscope-2.0-tutorial/blob/main/demo/…`,线上读者跳转 GitHub 阅读。
 - **构建期校验**(告警不失败,与 `--check` 的体检风格一致):
   - 重写后仍残留的 `.md` href;
   - 引用的 `../assets/images/…` 文件不存在;
@@ -66,7 +67,7 @@ output/site/          产物(gitignore 已覆盖 output/):
 ### 构建入口与命令
 
 - `node build.mjs --site`:产出 `output/site/`(页面与资源,不含 pagefind 索引);
-- `build/package.json` 增加 script:`"site": "node build.mjs --site && pagefind --site output/site"`(`pagefind` 进 devDependencies,避免 CI 依赖 npx 网络拉取;路径相对 `build/` 执行,`output/site` 即 `../output/site`,由 npm 在 build/ 目录运行保证);
+- `build/package.json` 增加 script:`"site": "node build.mjs --site && pagefind --site ../output/site"`(`pagefind` 进 devDependencies,避免 CI 依赖 npx 网络拉取;npm script 在 `build/` 目录下执行,故站点路径写作 `../output/site`);
 - vendor 同步扩展:`VENDOR_SCRIPTS` 增加 mermaid 项保持不变,site 构建额外拷贝 `@pagefind/default-ui` 产物至 `output/site/build/assets/vendor/`。
 
 ## CI/发布

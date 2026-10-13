@@ -94,3 +94,27 @@ test("renderIndexPage:每篇一张卡片,章链接齐全", () => {
   assert.ok(html.includes("home-card"));
   assert.ok(html.includes('href="chapters/01-a.html"'));
 });
+
+test("auditPage:相对 .md 残留被抓,GitHub 降级链接不报", async (t) => {
+  const { auditPage } = await import("./site.mjs");
+  const warns = [];
+  const html = '<a href="30-x.md#s">a</a><a href="https://github.com/ybak/agentscope-2.0-tutorial/blob/main/demo/x.md">b</a>';
+  auditPage(html, "/tmp/nonexistent-site", "t.html", warns);
+  assert.equal(warns.length, 1);
+  assert.ok(warns[0].includes('30-x.md#')); // matchAll 的 m[0] 在 # 处截断
+});
+
+test("auditPage:缺失图片告警,存在图片不报", async (t) => {
+  const { auditPage } = await import("./site.mjs");
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "site-audit-"));
+  fs.mkdirSync(path.join(tmp, "assets", "images"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "assets", "images", "ok.png"), "x");
+  const warns = [];
+  auditPage('<img src="../assets/images/ok.png"><img src="../assets/images/missing.png">', tmp, "t.html", warns);
+  assert.equal(warns.length, 1);
+  assert.ok(warns[0].includes("missing.png"));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});

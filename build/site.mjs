@@ -201,7 +201,7 @@ function renderChapterPage(body, currentHref, flat, idx) {
 }
 
 /** 构建期校验:残留的相对 .md 链接(已降级的 GitHub 链接不算)与缺失图片 → [site][warn](不中断) */
-function auditPage(html, siteDir, label, warns) {
+export function auditPage(html, siteDir, label, warns) {
   for (const m of html.matchAll(/href="(?!https?:)[^"]*\.md[#"]/g)) {
     warns.push(`[site][warn] ${label}: 残留 .md 链接 ${m[0]}`);
   }
