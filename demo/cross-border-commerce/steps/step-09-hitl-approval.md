@@ -1,11 +1,11 @@
 ---
-step: "A"
+step: "09"
 title: HITL 人工审批
 ---
 
-# 延伸 A · HITL 人工审批
+# Step 09 · HITL 人工审批
 
-> 本步导读：商家对退款发起审批，平台运营在可访问的工单内复核，再把结论写回。运行 `bash steps/ext-a-hitl-approval.sh`，前置为 Step 06。
+> 本步导读：商家对退款发起审批，平台运营在可访问的工单内复核，再把结论写回。运行 `bash steps/step-09-hitl-approval.sh`，前置为 Step 06。
 
 ```mermaid
 sequenceDiagram
@@ -21,7 +21,7 @@ sequenceDiagram
     A->>I: 评论同步批准结论
 ```
 
-*图 A-1：工单共享、审批与乐观锁。*
+*图 09-1：工单共享、审批与乐观锁。*
 
 ## 为什么 admin 也会遇到 404？
 
@@ -84,3 +84,5 @@ api POST "/api/v1/approvals/$APPROVAL_ID/decide" \
 - ☑ alice 共享指定工单，保留已有共享成员。
 - ☑ admin 决批成功，旧版本重复请求返回 409。
 - ☑ 评论回写成功，两次独立运行均通过。
+
+下一步 → [Step 10 Automation 定时任务](step-10-automation.md)。

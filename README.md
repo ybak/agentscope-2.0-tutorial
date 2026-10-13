@@ -86,7 +86,7 @@
 
 ## 🧪 配套动手 Demo
 
-[跨境电商 Agent 多租户平台 Demo](demo/cross-border-commerce/README.md) 与第五篇（第 29–34 章）配套，提供主线 8 步与延伸 2 步，每步包含教程和 Bash 脚本。支持一键运行、断点续跑、隔离断言与可逆停用；实测范围和剩余限制见 Demo 验证记录。
+[跨境电商 Agent 多租户平台 Demo](demo/cross-border-commerce/README.md) 与第五篇（第 29–34 章）配套，提供01–13 共 13 步，覆盖平台搭建、审批/自动化、Workspace、沙箱及自有模型通道，每步包含教程和 Bash 脚本。支持一键运行、断点续跑、隔离断言与可逆停用；实测范围和剩余限制见 Demo 验证记录。
 
 ## 🚀 快速开始学习
 

@@ -141,3 +141,5 @@ bash steps/step-05-isolation-check.sh
 - ☐ （进阶）故意把脚本中的作用域改错，确认断言会变红
 
 > **延伸阅读**：四层权限模型（账号 → namespace 角色 → 资源权限 → 可见性）见教程第 29 章。下一步 → [Step 06 Team 编排](step-06-team-orchestration.md)。
+
+> **基础设施实验补充**：Step 11 会在海岸 namespace 新增独立实验 Agent。因此脚本现在校验主线角色齐全，并核对列表中所有资源的 namespace，不再要求海岸资源总数恒为 3。负向查询清空 header 作用域，避免冲突请求掩盖越权结果。

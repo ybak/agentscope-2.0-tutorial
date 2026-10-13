@@ -1,0 +1,6 @@
+<!-- 添加到 service-dataplane/pom.xml 的 dependencies，使用与该源码一致的版本。 -->
+<dependency>
+    <groupId>io.agentscope</groupId>
+    <artifactId>agentscope-extensions-model-openai</artifactId>
+    <version>${project.version}</version>
+</dependency>

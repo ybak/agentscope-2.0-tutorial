@@ -135,4 +135,4 @@ bash steps/step-08-endpoint-publish.sh
 - ☐ 外部 API Key 调用 /invoke/v1 拿到真实客服回复
 - ☐ 连跑两遍全幂等（第二遍零新增资源）
 
-> **延伸阅读**：作业式调用（jobs 模式）与 Endpoint readiness/rollback 见教程第 33 章。主线到此完成——延伸主题见 [HITL 人工审批](ext-a-hitl-approval.md) 与 [Automation 定时任务](ext-b-automation.md)。
+> **延伸阅读**：作业式调用（jobs 模式）与 Endpoint readiness/rollback 见教程第 33 章。下一步继续学习 [HITL 人工审批](step-09-hitl-approval.md) 与 [Automation 定时任务](step-10-automation.md)。

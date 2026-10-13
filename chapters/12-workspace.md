@@ -1022,3 +1022,7 @@ HarnessAgent.builder()
 - 第 15 章（技能）—— 四层合成、自学习闭环、`<available_skills>` 块
 - 第 16 章（子 Agent 协作）—— `subagents/` 声明文件、同步/后台、流式转发
 - 第 17 章（计划模式）—— `plans/` 计划文件、只读阶段、HITL 退出
+
+## 配套动手实验
+
+跨境电商 Demo 的 [Step 11：Workspace 文件与版本绑定](../demo/cross-border-commerce/steps/step-11-workspace.md) 提供当前本地 Service 源码对应的教程与脚本。配置层与运行层分开验收，实际验证范围见该节末尾。

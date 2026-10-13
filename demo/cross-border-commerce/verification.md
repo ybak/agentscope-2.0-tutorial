@@ -19,8 +19,8 @@
 | 06 Team | 部分通过 | attempt 已产生；Task 最终 failed，不能视作业务闭环完成 |
 | 07 Workflow | 阻塞 | research attempt 返回 403 `AllocationQuota.FreeTierOnly`，Run failed |
 | 08 Endpoint | 通过重发与回读 | 停用后重新 publish；固定幂等键回读此前 completed conversation，未生成新的模型回复 |
-| A 人工审批 | 多次通过 | 共享指定工单 → approved → 旧版本重复决批 409 → 评论成功 |
-| B Automation | 多次通过 | 5 次排程预览；queued → completed；固定键复用同一运行/工单 |
+| 09 人工审批 | 多次通过 | 共享指定工单 → approved → 旧版本重复决批 409 → 评论成功 |
+| 10 Automation | 多次通过 | 5 次排程预览；queued → completed；固定键复用同一运行/工单 |
 | 可逆清理 | 通过 | Endpoint disabled、Automation enabled=false，均回读确认；之后已恢复 Endpoint published |
 | 离线入口 | 通过 | 主线/全部列表、dry-run、单步选择与 5 种错误参数处理 |
 | 静态检查 | 通过 | 所有 Bash 脚本 `bash -n`、`git diff --check`、10 篇教程 frontmatter 与本地链接检查 |
@@ -65,10 +65,33 @@ failureCode: turn_failed
 
 ```bash
 cd demo/cross-border-commerce
-./run-all.sh --from 7 --with-ext
+./run-all.sh --from 7
 # 验证原计划的两遍全量：
-./run-all.sh --with-ext
-./run-all.sh --with-ext
+./run-all.sh
+./run-all.sh
 ```
 
 若改用其他模型，还需更新已有 Agent 的模型定义；只设置 `XBD_MODEL` 不会覆写已创建的 Agent。对外调用的固定幂等键会复用历史结果，如需验证新回复，应显式使用新的业务幂等键。
+
+## 课程补充：Workspace、沙箱与自有模型通道
+
+同日新增Step 11 / 12 / 13。以下是这三节的独立验收，不改变上面的主线额度阻塞结论。
+
+| 检查项 | 结果 | 边界 |
+| --- | --- | --- |
+| 11 Workspace | 多次通过 | 两份文件写入并回读；重复发布复用 revision 1；实验 Agent 的绑定版本与 digest 一致 |
+| 12 Environment | 通过登记与复用 | 回读默认 local，创建并复用 E2B sandbox 环境；没有启动云沙箱或验证 E2B Key |
+| 13 模型定义 | 通过读取与保存 | 用原模型 ID 保存实验 Agent，回读 definition version 2；Workspace、工具与环境字段保持一致；未切换通道 |
+| 11–13 执行入口 | 通过 | `./run-all.sh --from 11`；12/13 默认不发模型请求 |
+| 原隔离步骤 | 9 项通过 | 增加实验 Agent 后仍验证原业务角色齐全、namespace 归属及跨商家拒绝访问 |
+| 静态检查 | 通过 | 全部 Bash 语法、13 篇步骤 frontmatter、本地 Markdown 链接与 `git diff --check` |
+| Java 适配示例 | 编译通过 | 使用本地 core/OpenAI 构建产物与 Spring 依赖运行 javac；不等于自定义 Dataplane 已部署 |
+| 离线入口与模型探针 | 通过 | `python3 tests/test_entrypoints.py`：全部 13 步单步选择、8 种错误参数及6种本地 HTTP 桩响应；桩测试不代表真实模型网关 |
+
+新增资源：Workspace `ws_1f00115de267`，实验 Agent `64582f1d-6afc-4dcc-a670-c0b5eb326835`，沙箱环境登记 `env_9eabd64e9e27`。Workspace revision 1 的 digest 为 `f91d28ea116cd9f4fc3d3d4a69e7ca6a3d882def54da68e73d6b716bf4aa674f`。
+
+仍待具备凭据和额度后验收：工作区运行期文件投影与工具读取、E2B 实例启动及 SESSION 文件隔离、自有模型通道文本/工具/流式调用、自定义 Dataplane 部署与新 Chat 端到端执行。本轮未修改相邻 Service 源码或重启服务。
+
+### 连续编号调整验证
+
+课程与脚本统一为 `step-01` 至 `step-13`，目录、图示、章节链接和执行入口同步。离线检查覆盖全部单步（含 01–09 写法）、默认 13 步、断点续跑、列表及错误参数；模型探针继续用本地桩验证。本次编号调整未触发新的模型、审批或自动化运行。Automation 保留历史幂等键，避免改名导致重复工单。

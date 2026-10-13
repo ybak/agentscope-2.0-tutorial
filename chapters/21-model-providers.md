@@ -837,3 +837,7 @@ agentscope:
 | 排查请求被对端拒绝或字段被改写 | 该家的"兼容性说明"（formatter 对 `strict`、`tool_choice`、采样参数与结构化输出的处理） |
 
 接入排查先看三个检查点：扩展模块在不在 classpath、环境变量设没设、id 前缀对不对。formatter、credential 与 registry 的机制解释不在本章，统一见第 6 章（模型接入）。
+
+## 配套动手实验
+
+跨境电商 Demo 的 [Step 13：自有模型网关接入](../demo/cross-border-commerce/steps/step-13-model-channel.md) 提供当前本地 Service 源码对应的教程与脚本。配置层与运行层分开验收，实际验证范围见该节末尾。

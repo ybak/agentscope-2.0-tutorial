@@ -1153,3 +1153,9 @@ Codex、Qoder 和 QwenPaw 适配器提供控制面工具确认接入。Claude Co
 | 子 Agent | `GET /api/workspaces/{id}/subagents`；`PUT/DELETE .../subagents/{name}` | PUT 传 `description`、`inlineBody`，可选 `model`、`maxIters`、`tools`、`workspaceMode`、`workspacePath`、`sourceAgentId` |
 | 发布、查询版本 | `POST /api/workspaces/{id}/publish`、`GET .../revisions` | 发布无需 body，返回 revision；版本列表为 `{items:[...]}` |
 | 查看消费者 | `GET /api/workspaces/{id}/agents` | `{items:[{id,name,version}]}` |
+
+## 配套动手实验
+
+跨境电商 Demo 的 [Step 11：Service Workspace 发布与绑定](../demo/cross-border-commerce/steps/step-11-workspace.md) 提供当前本地 Service 源码对应的教程与脚本。配置层与运行层分开验收，实际验证范围见该节末尾。
+
+自有模型通道的扩展依赖、注册示例和网关探针见 [Step 13](../demo/cross-border-commerce/steps/step-13-model-channel.md)。

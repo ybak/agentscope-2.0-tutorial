@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# ext-a: HITL 人工审批
+# step-09: HITL 人工审批
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source lib/common.sh
 require_env
-step_header "延伸 A HITL 人工审批"
+step_header "Step 09 HITL 人工审批"
 
 # 工单访问权限独立于 namespace 角色；只共享本工单，保留已有成员。
 login_as alice alice XBD_TOKEN_ALICE

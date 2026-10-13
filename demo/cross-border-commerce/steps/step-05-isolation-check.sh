@@ -19,6 +19,8 @@ scope_as "${XBD_TENANT}" "seashore-main"
 RAW=$(api_raw GET "/api/v1/agents/$AUR_AGENT" "" XBD_TOKEN_ALICE)
 assert_status "$(head -1 <<<"$RAW")" "404" "alice 读极光 Agent 被拒（resource not found in authorized scope）"
 
+scope_as "" ""  # 查询作用域单独传递，避免 header/query 冲突掩盖负向结果
+
 # 2. 无角色 namespace：alice 直接以 query 通道列 aurora 的资源
 echo "--- 无角色 namespace"
 RAW2=$(api_raw GET "/api/v1/agents?tenant=${XBD_TENANT}&namespace=aurora-main" "" XBD_TOKEN_ALICE)
@@ -35,13 +37,14 @@ assert_status "$(head -1 <<<"$RAW4")" "404" "bob 读海岸会话事件流被拒"
 echo "--- 列表过滤"
 SEA_LIST=$(api GET "/api/v1/agents?tenant=${XBD_TENANT}&namespace=seashore-main" "" XBD_TOKEN_ALICE)
 AUR_LIST=$(api GET "/api/v1/agents?tenant=${XBD_TENANT}&namespace=aurora-main" "" XBD_TOKEN_BOB)
-assert_eq "$(jq '[.items[]? | select(.agentKey | startswith("xbd-"))] | length' <<<"$SEA_LIST")" "3" "alice 列表只含海岸的 3 个 Agent"
-assert_eq "$(jq '[.items[]? | select(.agentKey | startswith("xbd-"))] | length' <<<"$AUR_LIST")" "1" "bob 列表只含极光的 1 个 Agent"
+assert_eq "$(jq -r '([.items[]? | select(.agentKey=="xbd-seashore-product-scout" or .agentKey=="xbd-seashore-cs-agent" or .agentKey=="xbd-seashore-logistics-agent")]|length)==3 and all(.items[]?; .namespace=="seashore-main")' <<<"$SEA_LIST")" true "海岸主线 3 个 Agent 齐全，全部返回资源归属海岸（允许独立实验 Agent）"
+assert_eq "$(jq -r '([.items[]? | select(.agentKey=="xbd-aurora-cs-agent")]|length)==1 and all(.items[]?; .namespace=="aurora-main")' <<<"$AUR_LIST")" true "极光主线客服齐全，全部返回资源归属极光"
 if grep -q "xbd-aurora" <<<"$SEA_LIST"; then echo "✗ 隔离异常"; exit 1; fi
 echo "  ✓ 海岸列表不含极光 Agent"
 
 # 5. 正向对照：自家作用域一切正常
 echo "--- 正向对照"
+scope_as "${XBD_TENANT}" "seashore-main"
 api GET "/api/v1/agents/$SEA_AGENT" "" XBD_TOKEN_ALICE | jq -e '.agent.id' >/dev/null
 echo "  ✓ alice 自家 Agent 读取正常"
 scope_as "${XBD_TENANT}" "aurora-main"

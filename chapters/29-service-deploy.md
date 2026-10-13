@@ -751,3 +751,7 @@ curl -sS "$BASE_URL/api/v1/runtime-host-enrollment-tokens" \
 | 请求任务取消或重试 | `POST /api/v1/agent-tasks/{taskId}/cancel`、`/retry` | 按 Issue API（见第 33 章）提交版本等参数；随后读取最终状态 |
 | 查看 Workflow 运行过程 | `GET /api/v1/orchestration-runs/{runId}/graph`、`/events` | 节点图和运行事件，反映 Host 的执行结果 |
 | 恢复应用画面 | `GET /api/v1/agent-sessions/{sessionId}/turns/{turnId}/snapshot`，再连接 `/events/stream` | 按 snapshot 游标接续 SSE；使用对应业务调用凭据 |
+
+## 配套动手实验
+
+跨境电商 Demo 的 [Step 12：Service 执行环境与沙箱](../demo/cross-border-commerce/steps/step-12-sandbox.md) 提供当前本地 Service 源码对应的教程与脚本。配置层与运行层分开验收，实际验证范围见该节末尾。

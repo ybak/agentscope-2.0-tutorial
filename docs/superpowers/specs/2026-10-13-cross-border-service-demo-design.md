@@ -1,5 +1,7 @@
 # 设计文档：跨境电商 Agent 多租户平台 Service 控制面 Demo 教学目录
 
+> 编号已同步为 Step 01–13。本文保留早期设计与实施过程；当前可执行命令、API 和验收范围以 [Demo README](../../../demo/cross-border-commerce/README.md) 与 [验证记录](../../../demo/cross-border-commerce/verification.md) 为准。
+
 - 日期：2026-10-13
 - 状态：待用户审阅
 - 代码基线：`/Users/ybak/work/code/agentscope/agentscope-java/agentscope-service`（当前 main）
@@ -14,7 +16,7 @@
 | 决策点 | 结论 |
 | --- | --- |
 | Demo 形态 | 每步 Markdown 教程 + 同名可执行 .sh 脚本 + run-all.sh 一键编排 |
-| 教学范围 | 主线 8 步 + 延伸 2 步 |
+| 教学范围 | 01–13 连续编号，共 13 步 |
 | 质量保障 | 全程实测：本地启动 agentscope-service，每条命令真实执行验证后才写入文档 |
 | 组织方案 | 方案 A：状态文件驱动的增量搭建，`demo/` 顶层目录可扩展 |
 
@@ -75,7 +77,7 @@
 
 设计原则：两家商家配置**同名能力、不同租户配置**的 Agent（如客服 Agent 的 system prompt、语气、工具集不同），体现"同一平台、按租户定制"。
 
-## 4. 教学阶梯（主线 8 步 + 延伸 2 步）
+## 4. 教学阶梯（01–13 连续编号，共 13 步）
 
 每步 = 一篇 `.md` + 一个 `.sh`。`.md` 含：frontmatter（step/title）、导读、mermaid 图（导览或时序）、可复制 curl 正文（含真实响应示例）、小结、验收清单。步骤间依赖单向向下，依赖图在 demo README 中给出。
 
@@ -92,19 +94,23 @@
 | 07 | `step-07-workflow-pipeline` | Workflow 编排：选品上架流水线 | `POST /api/v1/orchestration-definitions`、`/validate`、`/publish`、`/runs`、`GET /api/v1/orchestration-runs/{id}(/graph|/events)` | 「市场调研 → 条件判断 → 人工审批 → 上架建议」流程发布并运行一次。验收：Run 图可见节点轨迹，产物可回溯 |
 | 08 | `step-08-endpoint-publish` | Endpoint 发布与对外调用 | `POST /api/v1/endpoints`、`.../publish`、`.../credentials`；`POST /invoke/v1/endpoints/{slug}/conversations`、`POST /invoke/v1/conversations/{cid}/turns` | 把海岸优品客服 Agent 发布为受治理的对外 API；用签发的 API Key 以"商家外部系统"身份调用。验收：外部调用拿到真实回复，与 Step 04 形成调用面对比 |
 
-### 延伸（`--with-ext` 时运行）
+### 09–13：审批、自动化与基础设施
 
 | # | 文件名 | 主题 | API 面 | 情节 |
 | --- | --- | --- | --- | --- |
-| A | `ext-a-hitl-approval` | HITL 工具审批 | `POST /api/v1/approvals`、`POST /api/v1/approvals/{id}/decide`、runtime-approvals 三段（request→decision→ack） | 客服 Agent 执行"退款"敏感工具前挂起，admin 人工批准后继续 |
-| B | `ext-b-automation` | Automation 定时任务 | `POST /api/v1/automations`（cron trigger + runbook）、`/schedule-preview`、`/trigger?test=true`、`GET .../runs|deliveries` | 每日 9 点竞品价格监控；演示手动 trigger 与运行记录查询 |
+| 09 | `step-09-hitl-approval` | HITL 工具审批 | `POST /api/v1/approvals`、`POST /api/v1/approvals/{id}/decide`、runtime-approvals 三段（request→decision→ack） | 客服 Agent 执行"退款"敏感工具前挂起，admin 人工批准后继续 |
+| 10 | `step-10-automation` | Automation 定时任务 | `POST /api/v1/automations`（cron trigger + runbook）、`/schedule-preview`、`/trigger?test=true`、`GET .../runs|deliveries` | 每日 9 点竞品价格监控；演示手动 trigger 与运行记录查询 |
+
+| 11 | `step-11-workspace` | Workspace | 文件、发布与 Agent 绑定 | 配置验收；模型读取另验 |
+| 12 | `step-12-sandbox` | 沙箱 | Environment 与 E2B | 登记、绑定与隔离验收方法 |
+| 13 | `step-13-model-channel` | 自有模型通道 | Dataplane 扩展与网关探针 | 适配、注册与分层验收 |
 
 ## 5. 目录结构
 
 ```
 demo/cross-border-commerce/
 ├── README.md              # 总览：故事线、mermaid 架构图、前置条件、步骤依赖图、快速开始、FAQ
-├── run-all.sh             # 一键编排：--from N / --only N / --list / --with-ext / --dry-run
+├── run-all.sh             # 一键编排：--from N / --only N / --list / --dry-run
 ├── teardown.sh            # 逆序清理 demo 资源（archive 优先，尽力清理）
 ├── .env.example           # BASE_URL / 三账号 / DASHSCOPE_API_KEY 说明（真实值不入库）
 ├── lib/
@@ -118,8 +124,11 @@ demo/cross-border-commerce/
 │   ├── step-06-team-orchestration.md / .sh
 │   ├── step-07-workflow-pipeline.md / .sh
 │   ├── step-08-endpoint-publish.md / .sh
-│   ├── ext-a-hitl-approval.md / .sh
-│   └── ext-b-automation.md / .sh
+│   ├── step-09-hitl-approval.md / .sh
+│   ├── step-10-automation.md / .sh
+│   ├── step-11-workspace.md / .sh
+│   ├── step-12-sandbox.md / .sh
+│   └── step-13-model-channel.md / .sh
 └── .state.env             # 运行时生成，加入 .gitignore
 ```
 
@@ -152,7 +161,7 @@ require_env
 
 ### 6.3 run-all.sh
 
-- 顺序执行主线 01→08；`--with-ext` 追加延伸 A、B
+- 默认顺序执行 01→13；`--only N` 单步执行，`--from N` 从指定步骤续跑
 - `--from N` 断点续跑、`--only N` 单步、`--list` 列步骤、`--dry-run` 只打印将执行的动作
 - 前置检查失败（栈不可达/缺 jq）立即报错退出并给出修复提示
 - 每步失败即停：打印失败步骤、state 现状，提示修复后 `--from N` 续跑

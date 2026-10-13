@@ -1,8 +1,10 @@
 # 跨境电商 Service 控制面 Demo 实施计划
 
+> 编号已同步为 Step 01–13。本文保留早期设计与实施过程；当前可执行命令、API 和验收范围以 [Demo README](../../../demo/cross-border-commerce/README.md) 与 [验证记录](../../../demo/cross-border-commerce/verification.md) 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在教程仓库根目录新建 `demo/cross-border-commerce/`，用 REST API 编排循序渐进演示构建跨境电商 Agent 多租户平台（主线 8 步 + 延伸 2 步），全程实测。
+**Goal:** 在教程仓库根目录新建 `demo/cross-border-commerce/`，用 REST API 编排循序渐进演示构建跨境电商 Agent 多租户平台（01–13 连续编号，共 13 步），全程实测。
 
 **Architecture:** 每步 Markdown 教程 + 同名 bash 脚本成对；`lib/common.sh` 提供 api 封装/先查后建/断言原语；`.state.env` 在步骤间传递资源 ID；`run-all.sh` 一键编排支持断点续跑。所有文档示例响应回填真实运行输出。
 
@@ -1020,11 +1022,11 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 11: 延伸 A —— HITL 人工审批
+### Task 11: Step 09 —— HITL 人工审批
 
 **Files:**
-- Create: `demo/cross-border-commerce/steps/ext-a-hitl-approval.sh`
-- Create: `demo/cross-border-commerce/steps/ext-a-hitl-approval.md`
+- Create: `demo/cross-border-commerce/steps/step-09-hitl-approval.sh`
+- Create: `demo/cross-border-commerce/steps/step-09-hitl-approval.md`
 
 **Interfaces:**
 - Consumes: state `XBD_ISSUE_1`、`XBD_TOKEN_ADMIN`/`XBD_TOKEN_ALICE`
@@ -1034,12 +1036,12 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ```bash
 #!/usr/bin/env bash
-# ext-a: HITL 人工审批
+# step-09: HITL 人工审批
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source lib/common.sh
 require_env
-step_header "延伸 A HITL 人工审批"
+step_header "Step 09 HITL 人工审批"
 
 # 1. alice 发起审批请求（退款需运营审批）
 login_as alice alice XBD_TOKEN_ALICE
@@ -1077,7 +1079,7 @@ echo "本步产出: XBD_APPROVAL_1=$APPROVAL_ID"
 - [ ] **Step 2: 实测执行**
 
 ```bash
-bash steps/ext-a-hitl-approval.sh && bash steps/ext-a-hitl-approval.sh
+bash steps/step-09-hitl-approval.sh && bash steps/step-09-hitl-approval.sh
 ```
 
 实测确认点：approvals 创建/decide 的字段（smoke 证实 `approverRef:"admin"`、`{status, expectedVersion, decision}`、`.approval.status`）；重复决批状态码（409?）；version 字段位置。第二遍会再建一个新 approval（审批请求天然增量，文档说明语义）。工具级 runtime-approvals（Agent 执行中挂起）依赖 Agent 侧工具确认配置，本步不覆盖，文档给探索指引（`/api/v1/agent-tasks/{id}/runtime-approvals` 三段协议：request→decision→ack）。
@@ -1089,19 +1091,19 @@ bash steps/ext-a-hitl-approval.sh && bash steps/ext-a-hitl-approval.sh
 - [ ] **Step 4: 提交**
 
 ```bash
-git add steps/ext-a-hitl-approval.*
-git commit -m "demo: 延伸A HITL 人工审批（实测通过）
+git add steps/step-09-hitl-approval.*
+git commit -m "demo: Step 09 HITL 人工审批（实测通过）
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 12: 延伸 B —— Automation 定时任务
+### Task 12: Step 10 —— Automation 定时任务
 
 **Files:**
-- Create: `demo/cross-border-commerce/steps/ext-b-automation.sh`
-- Create: `demo/cross-border-commerce/steps/ext-b-automation.md`
+- Create: `demo/cross-border-commerce/steps/step-10-automation.sh`
+- Create: `demo/cross-border-commerce/steps/step-10-automation.md`
 
 **Interfaces:**
 - Consumes: `XBD_TOKEN_ALICE`
@@ -1111,12 +1113,12 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ```bash
 #!/usr/bin/env bash
-# ext-b: Automation —— 每日竞品价格监控
+# step-10: Automation —— 每日竞品价格监控
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source lib/common.sh
 require_env
-step_header "延伸 B Automation 定时任务"
+step_header "Step 10 Automation 定时任务"
 
 login_as alice alice XBD_TOKEN_ALICE
 scope_as "" ""
@@ -1161,7 +1163,7 @@ echo "本步产出: XBD_AUTOMATION_1=$AU_ID"
 - [ ] **Step 2: 实测执行**
 
 ```bash
-bash steps/ext-b-automation.sh && bash steps/ext-b-automation.sh && echo "幂等 OK"
+bash steps/step-10-automation.sh && bash steps/step-10-automation.sh && echo "幂等 OK"
 ```
 
 实测确认点：`triggerType:"cron"` 的配置字段名（`schedule`/`cron` 表达式；smoke 只证实 webhook 形态）——若 cron 形态报 4xx，读 aistiod 日志修正，仍不通则主体改用 smoke 证实的 webhook 形态、cron 语义用 schedule-preview 输出讲解并记录差异；trigger 的幂等键传递方式（header vs body，smoke 用 header）；`/runs` 与 `/deliveries` 响应结构。
@@ -1173,8 +1175,8 @@ bash steps/ext-b-automation.sh && bash steps/ext-b-automation.sh && echo "幂等
 - [ ] **Step 4: 提交**
 
 ```bash
-git add steps/ext-b-automation.*
-git commit -m "demo: 延伸B Automation 每日价格监控（实测通过）
+git add steps/step-10-automation.*
+git commit -m "demo: Step 10 Automation 每日价格监控（实测通过）
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -1195,54 +1197,51 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ```bash
 #!/usr/bin/env bash
-# run-all.sh — 跨境电商多租户平台一键搭建
-# 用法: ./run-all.sh [--from N] [--only N] [--with-ext] [--list] [--dry-run]
+# 一键运行；--list / --dry-run 不连接服务，不读取密钥。
 set -euo pipefail
 cd "$(dirname "$0")"
 source lib/common.sh
-
-MAIN=(step-01-platform-init step-02-tenant-onboarding step-03-agent-matrix \
-      step-04-session-api step-05-isolation-check step-06-team-orchestration \
-      step-07-workflow-pipeline step-08-endpoint-publish)
-EXT=(ext-a-hitl-approval ext-b-automation)
-
-FROM=1 ONLY=0 WITH_EXT=0 DRY=0 LIST=0
-while [[ $# -gt 0 ]]; do case "$1" in
-  --from) FROM="$2"; shift 2;; --only) ONLY="$2"; shift 2;;
-  --with-ext) WITH_EXT=1; shift;; --list) LIST=1; shift;;
-  --dry-run) DRY=1; shift;; *) echo "未知参数 $1"; exit 1;; esac; done
-
-ALL=("${MAIN[@]}"); [[ $WITH_EXT -eq 1 ]] && ALL+=("${EXT[@]}")
-if [[ $LIST -eq 1 ]]; then for i in "${!ALL[@]}"; do echo "$((i+1)). ${ALL[$i]}"; done; exit 0; fi
-
-require_env
-SELECTED=()
-for i in "${!ALL[@]}"; do
-  n=$((i+1))
-  if [[ $ONLY -gt 0 ]]; then [[ $n -eq $ONLY ]] && SELECTED+=("${ALL[$i]}");
-  elif [[ $n -ge $FROM ]]; then SELECTED+=("${ALL[$i]}"); fi
+ALL=(step-01-platform-init step-02-tenant-onboarding step-03-agent-matrix step-04-session-api step-05-isolation-check step-06-team-orchestration step-07-workflow-pipeline step-08-endpoint-publish step-09-hitl-approval step-10-automation step-11-workspace step-12-sandbox step-13-model-channel)
+FROM=1 ONLY=0 DRY=0 LIST=0 SELECTOR=""
+usage() { echo '用法: ./run-all.sh [--from 1..13 | --only 1..13] [--list] [--dry-run]'; }
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from|--only)
+      [[ $# -ge 2 ]] || { usage; exit 2; }
+      [[ -z "$SELECTOR" ]] || { echo '--from 与 --only 只能指定其中一个，且不能重复'; exit 2; }
+      SELECTOR="$1"
+      [[ "$2" =~ ^(0?[1-9]|1[0-3])$ ]] || { usage; exit 2; }
+      SELECT=$((10#$2))
+      if [[ "$1" == --from ]]; then FROM="$SELECT"; else ONLY="$SELECT"; fi
+      shift 2;;
+    --dry-run) DRY=1; shift;;
+    --list) LIST=1; shift;;
+    --help|-h) usage; exit 0;;
+    *) usage; exit 2;;
+  esac
 done
-[[ ${#SELECTED[@]} -eq 0 ]] && { echo "没有选中任何步骤"; exit 1; }
-
-echo "════ 跨境电商多租户平台搭建 ════"
-echo "BASE_URL=$BASE_URL  步骤数=${#SELECTED[@]}  $( [[ $DRY -eq 1 ]] && echo '[dry-run]' )"
-for s in "${SELECTED[@]}"; do
-  if [[ $DRY -eq 1 ]]; then echo "▶ (dry-run) $s"; continue; fi
-  echo ""; echo "▶▶▶ $s"
+if [[ "$LIST" == 1 ]]; then
+  for i in "${!ALL[@]}"; do echo "$((i+1)). ${ALL[$i]}"; done
+  exit 0
+fi
+[[ "$DRY" == 1 ]] || require_env
+for i in "${!ALL[@]}"; do
+  n=$((i+1)); s="${ALL[$i]}"
+  if [[ "$ONLY" != 0 ]]; then [[ "$n" == "$ONLY" ]] || continue
+  else [[ "$n" -ge "$FROM" ]] || continue; fi
+  echo "▶ $n. $s"
+  [[ "$DRY" == 0 ]] || continue
   if ! bash "steps/$s.sh"; then
-    echo ""; echo "✗ $s 失败。.state.env 已保留，修复后可用 --from N 续跑（见 --list）"; exit 1
+    echo "✗ 第 $n 步失败，状态已保留。修复后: ./run-all.sh --from $n"
+    exit 1
   fi
 done
-[[ $DRY -eq 1 ]] && exit 0
-
-# 平台总览
-echo ""; echo "════ 平台总览 ════"
-echo "商家: $(state_get XBD_NS_SEASHORE) / $(state_get XBD_NS_AURORA)"
-echo "Agent: 选品=$(state_get XBD_AGENT_SCOUT) 客服(海岸)=$(state_get XBD_AGENT_CS_SEASHORE) 物流=$(state_get XBD_AGENT_LOGISTICS) 客服(极光)=$(state_get XBD_AGENT_CS_AURORA)"
-echo "Team=$(state_get XBD_TEAM_1)  Issue=$(state_get XBD_ISSUE_1)"
-echo "Workflow=$(state_get XBD_DEF_1)  Run=$(state_get XBD_RUN_1)"
-echo "Endpoint=$(state_get XBD_ENDPOINT_SLUG)"
-echo "完成。重复执行本脚本是安全的（先查后建，幂等复用）。"
+[[ "$DRY" == 0 ]] || exit 0
+echo '════ 平台总览（不输出凭据）════'
+for key in XBD_NS_SEASHORE XBD_NS_AURORA XBD_AGENT_SCOUT XBD_AGENT_CS_SEASHORE XBD_AGENT_LOGISTICS XBD_AGENT_CS_AURORA XBD_TEAM_1 XBD_RUN_1 XBD_ENDPOINT_SLUG XBD_APPROVAL_1 XBD_AUTOMATION_1 XBD_WORKSPACE_LAB XBD_AGENT_WORKSPACE_LAB XBD_ENV_SANDBOX_LAB; do
+  echo "$key=$(state_get "$key")"
+done
+echo '完成。配置资源复用；聊天轮次、工单、流程运行、审批按业务增量创建。'
 ```
 
 - [ ] **Step 2: 写 teardown.sh**
@@ -1281,7 +1280,7 @@ echo "如需完全重置平台: cd agentscope-service && scripts/dev-down.sh && 
 ./run-all.sh --list && ./run-all.sh --dry-run && ./run-all.sh --only 1
 ```
 
-预期：列表 10 行、dry-run 逐条打印不执行、`--only 1` 幂等通过（此时 1-8 步应已完成，跑任意单步都应绿）。
+预期：列表 13 行、dry-run 逐条打印不执行、`--only 1` 幂等通过（此时 1-8 步应已完成，跑任意单步都应绿）。
 
 - [ ] **Step 4: 提交**
 
@@ -1303,18 +1302,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - [ ] **Step 1: 清场后第一遍全量**
 
 ```bash
-./teardown.sh && ./run-all.sh --with-ext
+./teardown.sh && ./run-all.sh
 ```
 
-预期：8 主线 + 2 延伸全绿，末尾打印平台总览。
+预期：13 步全部通过（目标，实际结果见验证记录），末尾打印平台总览。
 
 - [ ] **Step 2: 第二遍幂等回归**
 
 ```bash
-./run-all.sh --with-ext
+./run-all.sh
 ```
 
-预期：所有 ensure 类资源输出 `↺ 复用`；step-04 session 与 step-06 Issue、ext-a approval 为业务增量（文档已注明语义），其余无重复创建。若出现意外重复资源，回对应任务修 `ensure` 匹配逻辑。
+预期：所有 ensure 类资源输出 `↺ 复用`；step-04 session 与 step-06 Issue、step-09 approval 为业务增量（文档已注明语义），其余无重复创建。若出现意外重复资源，回对应任务修 `ensure` 匹配逻辑。
 
 - [ ] **Step 3: 记录回归结果**
 
@@ -1330,7 +1329,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: 写 demo README**
 
-结构（对齐全书风格）：徽章行（步骤 10 / 图表 12+ / 零依赖 bash+curl+jq）→ 一句话定位（"书讲原理，demo 动手：用 REST API 循序渐进搭建跨境电商 Agent 多租户平台"）→ mermaid 总览图（平台→两商家→各自 Agent 矩阵→Team/Workflow/Endpoint，节点配色区分租户）→ 场景与角色表（三方角色/账号映射，spec §3）→ 步骤目录表（10 行：文件/主题/API 面）→ 步骤依赖图（mermaid：01→02→03→{04→05, 06, 07, 08}；ext 独立）→ 前置条件（Docker/JDK/Maven/Go 按官方 README、DASHSCOPE_API_KEY、curl+jq）→ 快速开始（三段代码块：启动栈、cp .env.example .env、./run-all.sh）→ 常用操作（--from/--only/--with-ext/teardown）→ 与教程的关系（第五篇对照表：步骤↔章节；31 章 API 差异声明）→ 验证记录（Task 14 的两遍回归摘要）→ FAQ（栈没起来？key 没设？403/404 差异？重复执行？）。
+结构（对齐全书风格）：徽章行（步骤 13 / 图表 12+ / 零依赖 bash+curl+jq）→ 一句话定位（"书讲原理，demo 动手：用 REST API 循序渐进搭建跨境电商 Agent 多租户平台"）→ mermaid 总览图（平台→两商家→各自 Agent 矩阵→Team/Workflow/Endpoint，节点配色区分租户）→ 场景与角色表（三方角色/账号映射，spec §3）→ 步骤目录表（13 行：文件/主题/API 面）→ 步骤依赖图（mermaid：01→02→03→{04→05, 06, 07, 08}；09–13 按前置依赖执行）→ 前置条件（Docker/JDK/Maven/Go 按官方 README、DASHSCOPE_API_KEY、curl+jq）→ 快速开始（三段代码块：启动栈、cp .env.example .env、./run-all.sh）→ 常用操作（--from/--only/teardown）→ 与教程的关系（第五篇对照表：步骤↔章节；31 章 API 差异声明）→ 验证记录（Task 14 的两遍回归摘要）→ FAQ（栈没起来？key 没设？403/404 差异？重复执行？）。
 
 - [ ] **Step 2: 根 README 挂接**
 
@@ -1340,7 +1339,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ## 🧪 配套动手 Demo
 
 不想只看书？[demo/cross-border-commerce](demo/cross-border-commerce/README.md)
-提供了一个可运行的跨境电商 Agent 多租户平台教学目录：主线 8 步 + 延伸 2 步，
+提供了一个可运行的跨境电商 Agent 多租户平台教学目录：01–13 连续编号，共 13 步，
 每步一篇教程配一个可执行脚本，`./run-all.sh` 一键跑通。与第五篇
 （第 29-34 章）配套，所有命令基于 agentscope-service 本地栈实测验证。
 ```

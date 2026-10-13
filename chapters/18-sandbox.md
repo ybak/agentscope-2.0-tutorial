@@ -346,3 +346,7 @@ Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里
 
 - 第 12 章（工作区与文件系统）—— 三种声明式模式对比、快照策略与工作区投影
 - 第 11 章（Harness 架构深入）—— 沙箱 acquire / release 在 call() 时序中的位置
+
+## 配套动手实验
+
+跨境电商 Demo 的 [Step 12：Environment 与 E2B 沙箱](../demo/cross-border-commerce/steps/step-12-sandbox.md) 提供当前本地 Service 源码对应的教程与脚本。配置层与运行层分开验收，实际验证范围见该节末尾。

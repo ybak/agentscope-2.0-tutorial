@@ -1,0 +1,10 @@
+# 合并到 Dataplane 已加载的配置，或复制后启用 merchant Spring profile。
+# 不会因文件存在于教程仓库而被 Service 自动加载。
+merchant:
+  model:
+    enabled: ${XBD_MODEL_ENABLED:false}
+    # 示例拆分：base-url=https://llm.example.com，endpoint-path=/v1/chat/completions
+    base-url: ${XBD_MODEL_BASE_URL:}
+    endpoint-path: ${XBD_MODEL_ENDPOINT_PATH:/v1/chat/completions}
+    api-key: ${XBD_MODEL_API_KEY:}
+    name: ${XBD_MODEL_NAME:}

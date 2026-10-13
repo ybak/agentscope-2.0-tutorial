@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# ext-b: Automation 每日竞品价格监控（仅建工单，不抓取真实价格）
+# step-10: Automation 每日竞品价格监控（仅建工单，不抓取真实价格）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source lib/common.sh
 require_env
-step_header "延伸 B Automation 定时任务"
+step_header "Step 10 Automation 定时任务"
 login_as alice alice XBD_TOKEN_ALICE
 LIST=$(api GET "/api/v1/automations$(scope_q "$XBD_TENANT" seashore-main)" "" XBD_TOKEN_ALICE)
 AU_ID=$(jq -r '[.items[]? | select(.name=="xbd-seashore-price-watch")][0].id // empty' <<<"$LIST")
@@ -24,6 +24,7 @@ PREVIEW=$(api POST /api/v1/automations/schedule-preview \
 assert_eq "$(jq '.nextRuns|length' <<<"$PREVIEW")" 5 "未来五次排程已生成"
 echo "$PREVIEW" | jq .
 # test=true 允许验证停用的规则；仍会实际生成测试工单，并非 dry-run。
+# 保留已有测试运行的幂等键，文件改名不应触发重复工单。
 TR=$(curl -fsS --connect-timeout 10 --max-time 60 -X POST \
   "$BASE_URL/api/v1/automations/$AU_ID/trigger?test=true" \
   -H "Authorization: Bearer $(state_get XBD_TOKEN_ALICE)" \

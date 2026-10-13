@@ -1,11 +1,11 @@
 ---
-step: "B"
+step: "10"
 title: Automation 定时任务
 ---
 
-# 延伸 B · Automation 定时任务
+# Step 10 · Automation 定时任务
 
-> 本步导读：配置每天上海时间 9 点的竞品复核工单，预览排程，再用测试触发验证运行记录。运行 `bash steps/ext-b-automation.sh`，前置为 Step 02。
+> 本步导读：配置每天上海时间 9 点的竞品复核工单，预览排程，再用测试触发验证运行记录。运行 `bash steps/step-10-automation.sh`，前置为 Step 02。
 
 ```mermaid
 flowchart LR
@@ -16,7 +16,7 @@ flowchart LR
     I --> C[completed 与运行记录]
 ```
 
-*图 B-1：排程与手动测试共用规则，执行结果异步查询。*
+*图 10-1：排程与手动测试共用规则，执行结果异步查询。*
 
 ## 如何定义每天 9 点？
 
@@ -98,3 +98,7 @@ curl -fsS -X POST "$BASE_URL/api/v1/automations/$AU_ID/trigger?test=true" \
 - ☑ 预览五次上海 09:00 排程。
 - ☑ 测试运行 completed，存在工单 ID 与可查询运行记录。
 - ☑ 重复触发复用同一运行。
+
+编号调整不改变已有测试运行的幂等键：示例中的 `xbd-ext-b-trigger-001` 保留历史值，避免重跑创建重复工单。
+
+下一步 → [Step 11 Workspace 文件与版本](step-11-workspace.md)。

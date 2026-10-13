@@ -1,6 +1,6 @@
 # 跨境电商 Agent 多租户平台 Demo
 
-用 REST API 演示两家商家的入驻、Agent 配置、会话、隔离验证、团队协作、流程、对外 API、审批与定时工单。**主线 8 步 + 延伸 2 步，每步教程与 Bash 脚本成对**。客户端依赖 Bash、curl、jq；服务端仍需完整 AgentScope Service dev 栈。
+用 REST API 演示两家商家的入驻、Agent 配置、会话、隔离验证、团队协作、流程、对外 API、审批与定时工单。**按 01–13 连续编号，共 13 步，每步教程与 Bash 脚本成对**。客户端依赖 Bash、curl、jq；服务端仍需完整 AgentScope Service dev 栈。
 
 版本基线：2026-10-13 本地 agentscope-service 源码栈。教程正文基于 2.1.0-BETA1 文档；API 存在演进，本目录以实测为准，主要使用 `/api/v1/agents` Catalog、`/api/v1/chats` 与 `/invoke/v1`。
 
@@ -46,8 +46,11 @@ flowchart TD
 | 06 | [Team 编排](steps/step-06-team-orchestration.md) | Issue → AgentTask → attempt；终态另行报告 |
 | 07 | [Workflow 流水线](steps/step-07-workflow-pipeline.md) | agent → signal → succeeded |
 | 08 | [Endpoint 发布](steps/step-08-endpoint-publish.md) | API Key 外部调用与真实回复 |
-| 09 / A | [人工审批](steps/ext-a-hitl-approval.md) | 工单共享、决批、409、评论回写 |
-| 10 / B | [Automation](steps/ext-b-automation.md) | cron 预览、测试工单、异步终态与幂等 |
+| 09 | [人工审批](steps/step-09-hitl-approval.md) | 工单共享、决批、409、评论回写 |
+| 10 | [Automation](steps/step-10-automation.md) | cron 预览、测试工单、异步终态与幂等 |
+| 11 | [Workspace](steps/step-11-workspace.md) | 资料文件、发布 revision、Agent 版本绑定与升级方法 |
+| 12 | [Environment 与沙箱](steps/step-12-sandbox.md) | local/E2B/remote/Worker 区别、环境登记与真实执行验收 |
+| 13 | [自有模型通道](steps/step-13-model-channel.md) | Dataplane 适配类、网关参数、模型别名、可选探针 |
 
 ```mermaid
 flowchart LR
@@ -58,11 +61,34 @@ flowchart LR
     S3 --> S6[06 Team]
     S3 --> S7[07 Workflow]
     S3 --> S8[08 Endpoint]
-    S6 --> EA[A 审批]
-    S2 --> EB[B Automation]
+    S6 --> S9[09 审批]
+    S2 --> S10[10 Automation]
+    S3 --> S11[11 Workspace]
+    S11 --> S12[12 Environment 与沙箱]
+    S11 --> S13[13 自有模型通道]
 ```
 
 *图 2：单步执行前须先完成对应前置步骤。*
+
+## Workspace、沙箱与自有模型，应该先学哪一节？
+
+| 你的问题 | 从这里开始 |
+| --- | --- |
+| 公司的售后规则放哪里，更新后会不会直接影响所有 Agent？ | 11：草稿 → 发布 → 固定版本；附资料文件与回滚方法 |
+| 文件和命令运行在我的电脑、服务容器还是云沙箱？ | 12：查询当前 Environment，区分 SDK 后端与 Service E2B 配置 |
+| 已有公司模型网关，怎么替换示例中的 DashScope？ | 13：扩展依赖、Java 注册类、YAML、配置回读与上游探针 |
+
+先完成 01–03，再执行 11 → 12/13。Step 11 创建独立 `xbd-workspace-lab` Agent，不替换主线的 4 个角色；Step 12/13 默认只检查配置，不启动云沙箱、不发起新的模型调用。三个步骤可以绕过尚有额度阻塞的 04–08 单独学习。
+
+```bash
+./run-all.sh --only 11
+./run-all.sh --only 12
+./run-all.sh --only 13
+# 或顺序运行三个配置实验：
+./run-all.sh --from 11
+```
+
+配套资产位于 `examples/workspace/` 和 `examples/model-channel/`。保存配置、Java 编译与真实运行是不同验收级别，详见各节与验证记录。
 
 ## 快速开始
 
@@ -74,21 +100,21 @@ flowchart LR
 cd demo/cross-border-commerce
 cp .env.example .env
 # 编辑 .env：BASE_URL 指向服务 Gateway；设置 DASHSCOPE_API_KEY。
-./run-all.sh --with-ext
+./run-all.sh
 ```
 
 当前本机实测使用独立 Gateway 端口 `28080`，`.env.example` 默认 `18080`，请按自己的栈配置。不要在已占用的端口重复拉起服务。
 
 ```bash
-./run-all.sh --with-ext --list        # 列出全部 10 步，不连接服务
-./run-all.sh --dry-run                # 打印主线动作，不读取密钥、不写服务
-./run-all.sh --from 6 --with-ext       # 从 Team 接着跑
-./run-all.sh --only 9 --with-ext       # 只跑人工审批（先完成 Step 06）
+./run-all.sh --list        # 列出全部 13 步，不连接服务
+./run-all.sh --dry-run                # 打印全部 13 步动作，不读取密钥、不写服务
+./run-all.sh --from 6       # 从 Team 接着跑
+./run-all.sh --only 9       # 只跑人工审批（先完成 Step 06）
 ./teardown.sh                        # 默认预览
 ./teardown.sh --apply                # 停用 demo Endpoint 和 Automation
 ```
 
-`--from` / `--only` 接受 1..10，9/10 需配合 `--with-ext`。失败即停止，保留 `.state.env` 并打印续跑命令。预览可以离线执行。
+`--from` / `--only` 接受 1..13（也可写 01..09），默认按顺序执行全部 13 步，无需额外开关。失败即停止，保留 `.state.env` 并打印续跑命令。预览可以离线执行。
 
 ## 重跑和清理的边界
 
@@ -101,6 +127,8 @@ cp .env.example .env
 | 审批与评论 | 每次新建，属于业务增量 |
 | Endpoint invocation | 固定幂等键复用已有会话结果 |
 | Automation 测试运行 | 固定幂等键复用同一运行与工单 |
+| Workspace 实验 | 按名称复用 Workspace/实验 Agent，相同内容重复发布复用版本；实验会恢复样例文件 |
+| 沙箱与模型通道 | 默认只读；显式 --create / --set-model / --probe-* 才执行相应操作 |
 
 `.state.env` 含 JWT 与 Endpoint secret，已被 Git 忽略；不要输出或提交它。Endpoint secret 只在签发时返回，删除本地状态可能需要重新签发凭据。
 
@@ -111,9 +139,10 @@ cp .env.example .env
 完整回归结果见 [验证记录](verification.md)。主线脚本成功退出也不代表所有业务链路都已闭环：
 
 - Step 06 验收门槛是任务产生执行 attempt；若任务最终失败，脚本会输出警告。它不能证明物流成员完成并由 Lead 汇总成功。
-- 延伸 A 验证审批中心与评论，不执行真实退款，也没有验证敏感工具暂停/恢复。
-- 延伸 B 验证排程计算与测试触发，不抓取真实价格；规则默认停用，没有等待次日 cron 到点触发。
+- Step 09 验证审批中心与评论，不执行真实退款，也没有验证敏感工具暂停/恢复。
+- Step 10 验证排程计算与测试触发，不抓取真实价格；规则默认停用，没有等待次日 cron 到点触发。
 - Agent 没有接入真实订单、物流或市场数据，本例模型回复不能作为真实业务事实。
+- Step 11 已验证文件、发布与绑定，尚未验证模型实际读取；Step 12 只验证 E2B 配置登记，未启动沙箱；Step 13 已核对并编译适配示例，未连接用户自有网关。
 - API 与隔离实测覆盖 REST；不包含 Console 浏览器端验证。
 
 ## 与教程的关系
@@ -123,8 +152,11 @@ cp .env.example .env
 | 第 29–30 章 Service 架构与平台 | 01–03 |
 | 第 31 章调用面 | 04、08 |
 | 第 32 章编排 | 06、07 |
-| 第 33 章审批与自动化 | A、B |
+| 第 33 章审批与自动化 | 09、10 |
 | 第 34 章跨层约束 | 05、作用域、幂等与乐观锁 |
+| 第 12 / 30 章 Workspace | 11 |
+| 第 18 / 29 章沙箱与执行环境 | 12 |
+| 第 6 / 21 / 30 章模型接入 | 13 |
 
 当前版本不使用教程旧示例的 `/api/v1/agent-sessions` + Application Key。平台会话使用 JWT；对外 Endpoint 使用独立 API Key。商家资源列表需要显式 namespace 查询参数，详情访问还受到资源/工单权限校验。
 
