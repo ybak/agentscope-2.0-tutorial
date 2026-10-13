@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { flattenPages, rewriteMarkdownLinks } from "./site.mjs";
+import { flattenPages, renderIndexPage, renderPager, renderSearchPage, renderShell, renderSidebar, rewriteMarkdownLinks } from "./site.mjs";
 import { PARTS } from "./manifest.mjs";
 
 test("同目录章链接重写为 .html", () => {
@@ -40,4 +40,57 @@ test("flattenPages 全书序列:54 项、首尾与篇导读位置正确", () => 
       assert.notEqual(pages[i].part, pages[i - 1].part);
     }
   }
+});
+
+const twoParts = [
+  { id: "p0", title: "序言", intro: "preface.md", chapters: [
+    { file: "preface.md", chapter: null, title: "序言", sources: [] },
+  ]},
+  { id: "p1", title: "第一篇", intro: "part-1-intro.md", chapters: [
+    { file: "part-1-intro.md", chapter: null, title: "第一篇导读", sources: [] },
+    { file: "01-a.md", chapter: 1, title: "章一", sources: [] },
+  ]},
+];
+
+test("renderSidebar:当前章高亮、当前篇展开、附录(无 intro)为纯文本标题", () => {
+  const parts = [...twoParts, { id: "appendix", title: "附录", intro: null, chapters: [
+    { file: "appendix-a.md", chapter: null, title: "附录 A", sources: [] },
+  ]}];
+  const nav = renderSidebar(parts, "chapters/01-a.html");
+  assert.ok(nav.includes('<a href="../chapters/01-a.html" class="active">'));
+  assert.ok(nav.includes("<details open>")); // 当前篇展开
+  assert.ok(nav.includes("附录"));            // 无 intro 的篇仍列出
+  assert.ok(nav.includes('<summary>附录</summary>')); // 无 intro 的篇:纯文本 summary
+  assert.ok(!nav.match(/<summary><a[^>]*>附录</));     // 且不被链接包裹
+});
+
+test("renderPager:首项无上一篇、次项双向", () => {
+  const flat = flattenPages(twoParts);
+  assert.ok(!renderPager(flat, 0).includes("← 上一篇"));
+  const mid = renderPager(flat, 1);
+  assert.ok(mid.includes("← 上一篇") && mid.includes("下一篇 →"));
+  assert.ok(mid.includes('href="../chapters/preface.html"'));
+});
+
+test("renderShell:章节页带侧边栏与 mermaid 脚本,根页面不带 ../ 前缀", () => {
+  const chapter = renderShell({ title: "章一", content: "<p>x</p>", rootPrefix: "../",
+    sidebar: "<nav></nav>", needMermaid: true });
+  assert.ok(chapter.includes('src="../build/assets/vendor/mermaid.min.js"'));
+  assert.ok(chapter.includes('action="../search.html"'));
+  const home = renderShell({ title: "首页", content: "<p>x</p>", rootPrefix: "" });
+  assert.ok(home.includes('action="search.html"'));
+  assert.ok(!home.includes("mermaid.min.js"));
+});
+
+test("renderSearchPage:排除自身索引并引 pagefind UI", () => {
+  const page = renderSearchPage();
+  assert.ok(page.includes("data-pagefind-ignore"));
+  assert.ok(page.includes("pagefind-ui"));
+  assert.ok(page.includes("new PagefindUI"));
+});
+
+test("renderIndexPage:每篇一张卡片,章链接齐全", () => {
+  const html = renderIndexPage(flattenPages(twoParts));
+  assert.ok(html.includes("home-card"));
+  assert.ok(html.includes('href="chapters/01-a.html"'));
 });
