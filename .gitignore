@@ -7,6 +7,7 @@ desktop.ini
 *.swp
 .idea/
 .vscode/
+.playwright-mcp/
 
 # Build toolchain
 build/node_modules/

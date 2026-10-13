@@ -1,0 +1,53 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: build/package-lock.json
+
+      - name: 构建 book.html
+        working-directory: build
+        run: |
+          npm ci
+          node build.mjs --html
+
+      # 站点目录镜像仓库结构：book.html 位于 output/ 下，
+      # 其 "../assets/…" 与 "../build/assets/vendor/…" 引用保持原样即可解析
+      - name: 组装站点目录
+        run: |
+          mkdir -p site/output site/build/assets
+          cp -r assets site/assets
+          cp -r build/assets/vendor site/build/assets/vendor
+          cp output/book.html site/output/book.html
+          cp .github/pages-index.html site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

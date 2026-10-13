@@ -11,6 +11,8 @@
 
 > 一本开源的 AgentScope Java 中文教程：**7 篇 44 章、900+ 页成书体量的完整 Markdown 源稿**，由浅入深覆盖从第一个 Agent 到生产级 Agent 平台的全部主题。
 
+> 📖 **[在线阅读全书](https://ybak.github.io/agentscope-2.0-tutorial/)** —— GitHub Pages 发布，push 到 main 自动更新；HTML/PDF 本地构建见 [build/README.md](build/README.md)。
+
 本书是对 [AgentScope Java](https://github.com/agentscope-ai/agentscope-java) 官方中文文档（v2）的**系统性重排与整合**：按学习曲线重新组织为教程结构，每章配有场景化导读与章首导览图，全书 97 张 mermaid 架构图 / 时序图 / 部署图（GitHub 原生渲染），并对 10 家模型提供商等重复性文档做了合并精编。**仅供学习与交流使用**，具体声明见 [NOTICE.md](NOTICE.md)。
 
 ## ✨ 这本书有什么不同
