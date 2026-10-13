@@ -5,9 +5,31 @@ title: Workspace 文件、发布与版本绑定
 
 # Step 11 · 给客服准备一份可版本化的工作区
 
-> 本步导读：商家的售后政策、操作规范和技能不能只存在于一次聊天中。本节为海岸优品建立独立 Workspace，把资料写成文件，发布为不可变版本，再绑定到实验 Agent。前置：完成 01–03；本节配置实验不调用模型，模型额度耗尽时也可做。
+> 本步导读：商家的售后政策、操作规范和技能不能只存在于一次聊天中。本节为海岸优品建立独立 Workspace，把资料写成文件，发布为不可变版本，再绑定到实验 Agent。前置：完成 01–03；本节配置实验不调用模型，模型额度耗尽时也可做。先看下方调用链全景图。
 
-## 先分清：namespace、Workspace、Environment 管什么？
+```mermaid
+sequenceDiagram
+    participant A as alice
+    participant W as Workspace 服务
+    participant C as Agent 控制面
+    A->>W: GET /api/workspaces（查同名 xbd-seashore-workspace-lab）
+    A->>W: POST /api/workspaces（read 工具，always_allow）
+    A->>W: GET /api/workspaces/{id}/file?path=…（逐文件内容比对）
+    A->>W: PUT /api/workspaces/{id}/file（内容不同才写入）
+    A->>W: POST /api/workspaces/{id}/publish
+    W-->>A: version + digest
+    A->>W: POST /publish（重复，相同内容）
+    W-->>A: 复用同一 version/digest
+    A->>C: GET /api/v1/agents（查 agentKey=xbd-workspace-lab）
+    A->>C: POST /api/v1/agents（绑定 workspaceId + workspaceBinding.version/digest）
+    A->>C: GET /api/v1/agents/{id}/definition
+    C-->>A: 回读三断言（workspaceId/binding.version/digest）
+    Note over A,C: 配置验收 ≠ 运行期读取；运行验收见第五步
+```
+
+*图 11-1：从文件写入、发布固定版本到 Agent 绑定回读的调用链；升级、回滚与运行验收见正文第四、五步。*
+
+## ⓪ 先分清：namespace、Workspace、Environment 管什么？
 
 | 概念 | 回答的问题 | 本例 |
 | --- | --- | --- |
@@ -20,19 +42,7 @@ Workspace 不是另一种商家账号，也不等于 Docker 容器。即便两�
 
 SDK 第 12 章里的 `.workspace(Path)` 描述 Harness 工作区；Service 则提供可管理、可发布的 Workspace 资源。不要把客户端 Mac 上的目录直接当作 Dataplane 可访问的路径。
 
-```mermaid
-flowchart LR
-    F[AGENTS.md 与售后资料] --> D[Workspace 草稿]
-    D --> P[发布 revision 与 digest]
-    P --> B[Agent 固定 workspaceBinding.version]
-    B --> C[创建新 Chat]
-    C --> R[在选定 Environment 中执行]
-    R --> V[核对工具读取记录与输出]
-```
-
-*图 11-1：配置发布与运行验收是两个阶段。*
-
-## 第一步：把业务规范写成文件
+## ① 第一步：把业务规范写成文件
 
 样例已提供在 [examples/workspace](../examples/workspace/AGENTS.md)：
 
@@ -47,7 +57,7 @@ workspace/
 
 后续可通过 Workspace 的 Skills 和 subagents API 加入 `skills/<name>/SKILL.md` 与子 Agent 声明。资料放进工作区不等于所有文件全文进入上下文；应通过指令引导读取，并查看实际工具记录。
 
-## 第二步：创建、写文件并发布
+## ② 第二步：创建、写文件并发布
 
 直接运行完整实验：
 
@@ -84,7 +94,7 @@ jq '{version,draftVersion,digest,files:(.files|keys)}' <<<"$REV"
 
 发布快照包含定义文件，源码会排除 `memory/`、`sessions/`、`artifacts/` 等运行目录；发布 Workspace 不等于备份所有执行数据。
 
-## 第三步：固定版本，避免草稿变更悄悄影响 Agent
+## ③ 第三步：固定版本，避免草稿变更悄悄影响 Agent
 
 实验 Agent 的定义使用：
 
@@ -114,7 +124,7 @@ jq '{version,draftVersion,digest,files:(.files|keys)}' <<<"$REV"
 
 这是响应的选取字段，完整绑定还包含摘要和附加指令。脚本连续两遍运行都复用了 Workspace、发布版本与实验 Agent。
 
-## 第四步：政策更新时，如何显式升级与回滚？
+## ④ 第四步：政策更新时，如何显式升级与回滚？
 
 先修改实验资料并发布，再读取 Agent 当前完整 definition，保留模型、工具、环境和其他绑定，仅更新 Workspace 版本：
 
@@ -132,7 +142,7 @@ PATCH 必须带当前 Agent definition 的 `name` 和 `version`；脚本中的 G
 
 回滚采用相同步骤，把绑定版本设为 `GET /api/workspaces/{id}/revisions` 中的旧发布版本。回滚配置后用新 Chat 验证；不要假设历史会话会自动换版本。重复运行本实验会恢复样例文件内容，因此练习自己的政策时建议复制成另一份 Workspace。
 
-## 第五步：怎样证明模型真的用了这份资料？
+## ⑤ 第五步：怎样证明模型真的用了这份资料？
 
 模型可用后，使用实验 Agent 创建新的 Chat，并发送任务：
 
