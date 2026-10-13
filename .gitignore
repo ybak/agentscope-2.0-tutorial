@@ -16,3 +16,7 @@ build/assets/vendor/
 # Build artifacts（book.html / PDF / .outline.json 均在 output/ 内）
 output/
 .page_*.png
+
+# 跨境电商 demo 本地状态
+demo/cross-border-commerce/.env
+demo/cross-border-commerce/.state.env
