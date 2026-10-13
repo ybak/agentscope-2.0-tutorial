@@ -5,9 +5,27 @@ title: Environment 与沙箱执行
 
 # Step 12 · 文件和命令究竟在哪里执行？
 
-> 本步导读：主线创建 Agent 时自动关联了 `default-local`。这不代表已经启用了沙箱。本节从实际 Environment 反查执行位置，再讲如何登记 E2B 沙箱、绑定独立实验 Agent，以及验收隔离。前置：Step 11。
+> 本步导读：主线创建 Agent 时自动关联了 `default-local`。这不代表已经启用了沙箱。本节从实际 Environment 反查执行位置，再讲如何登记 E2B 沙箱、绑定独立实验 Agent，以及验收隔离。前置：Step 11。先看下方调用链全景图。
 
-## 四种 Environment 怎么选？
+```mermaid
+sequenceDiagram
+    participant A as alice
+    participant C as 控制面环境注册表
+    participant D as Dataplane 与 E2B
+    A->>C: GET /api/v1/agents/{id}/definition（取 defaultEnvironmentId）
+    A->>C: GET /api/environments/{envId}
+    C-->>A: default-local（type=local）
+    A->>C: GET /api/environments（--create 时查同名 xbd-seashore-e2b-lab）
+    A->>C: POST /api/environments（type=sandbox，templateId=base）
+    C-->>A: id + apiKey（Environment Worker key，非 E2B Key）
+    A->>C: GET /api/environments/{sid}
+    C-->>A: type=sandbox 回读
+    Note over D: 控制面登记 ≠ 启动云沙箱；真实执行需 Dataplane E2B 凭据（本轮未验证）
+```
+
+*图 12-1：Environment 反查与 E2B 登记的调用链；凭据配置、Agent 绑定与执行隔离验收见正文第三至五步。*
+
+## ⓪ 四种 Environment 怎么选？
 
 | Service 类型 | 文件 / 命令执行方式 | 前提与用途 |
 | --- | --- | --- |
@@ -18,20 +36,7 @@ title: Environment 与沙箱执行
 
 SDK 第 18 章还提供 Docker、Kubernetes 等后端，但**SDK 支持某种沙箱，不表示 Service 的 `type` 字段也接受该值**。当前 Service 的 `sandbox` 是 E2B；`type: docker` 会被拒绝。把 `image`、`cpus`、`network` 等 Docker 字段塞进 E2B config，也不会产生预期的 Docker 配置。
 
-```mermaid
-flowchart LR
-    W[Workspace 定义与材料] --> A[实验 Agent]
-    E[Environment 执行后端] --> A
-    A --> C[新 Chat 与 Session]
-    C --> L[local: Dataplane 文件系统]
-    C --> S[sandbox: E2B]
-    C --> H[self_hosted: Worker]
-    C --> R[remote: KV 文件系统]
-```
-
-*图 12-1：Environment 在配置时选择一个执行后端，图中分支是可选方案。*
-
-## 第一步：核对当前默认环境
+## ① 第一步：核对当前默认环境
 
 ```bash
 cd demo/cross-border-commerce
@@ -46,7 +51,7 @@ bash steps/step-12-sandbox.sh
 
 文件写入发生在 Dataplane 的执行环境中，不会落到你运行 curl 的 Mac 当前目录。即使 Dataplane 本身运行在 Docker 内，也不等于每个商家的每次执行都有独立容器。
 
-## 第二步：登记一个 E2B Environment
+## ② 第二步：登记一个 E2B Environment
 
 ```bash
 bash steps/step-12-sandbox.sh --create
@@ -78,7 +83,7 @@ bash steps/step-12-sandbox.sh --create
 
 当前源码将不识别的 isolationScope 回退到 SESSION，所以写错后请求成功也不代表选择生效。课程建议显式使用 `SESSION`，再通过两个独立会话的文件读写检查隔离。
 
-## 第三步：给 Dataplane 配 E2B 凭据
+## ③ 第三步：给 Dataplane 配 E2B 凭据
 
 当前优先级是：Environment 的 `config.apiKey` → Dataplane `builder.e2b.api-key` / `BUILDER_E2B_API_KEY` → `E2B_API_KEY`。本教程采用服务端配置，不把云服务密钥写入 Git 或样例 JSON。
 
@@ -92,7 +97,7 @@ Environment 创建响应中的 `.apiKey` 是平台签发给 Environment Worker �
 
 修改启动配置后，需要按自己的部署方式重建或重启 Dataplane；不要在有进行中任务时直接重置整套 dev 栈。E2B 凭据和模型额度都要有效，才具备真实执行的前提。
 
-## 第四步：只给实验 Agent 绑定环境
+## ④ 第四步：只给实验 Agent 绑定环境
 
 在 `demo/cross-border-commerce` 下的同一个 Bash 终端执行：
 
@@ -115,7 +120,7 @@ api PATCH "/api/v1/agents/$ID/definition" "$PATCH" XBD_TOKEN_ALICE
 
 > **当前 API 差异**：`POST /api/v1/chats` 的请求结构没有 `environmentId` 字段。本 Demo 通过 Agent 默认环境配置后创建新 Chat，不能把旧教程 `/api/v1/agent-sessions` 的环境参数直接搬过来。
 
-## 第五步：真实执行怎么验收？
+## ⑤ 第五步：真实执行怎么验收？
 
 Step 11 的实验 Agent 只启用 read 工具。要做下面的写入实验，先在 **实验 Workspace** 上通过 `PUT /api/workspaces/{id}/tools` 按 Step 11 的版本发布/采纳流程增加 write 工具；Shell 实验另加 bash 工具。可参考 [第 30 章](../../../chapters/30-managed-agents.md) 的 agent_toolset 配置，避免在主线 Agent 上开放不需要的工具。
 
