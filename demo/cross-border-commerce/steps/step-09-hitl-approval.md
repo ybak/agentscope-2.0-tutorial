@@ -5,25 +5,28 @@ title: HITL 人工审批
 
 # Step 09 · HITL 人工审批
 
-> 本步导读：商家对退款发起审批，平台运营在可访问的工单内复核，再把结论写回。运行 `bash steps/step-09-hitl-approval.sh`，前置为 Step 06。
+> 本步导读：商家对退款发起审批，平台运营在可访问的工单内复核，再把结论写回。运行 `bash steps/step-09-hitl-approval.sh`，前置为 Step 06。先看下方调用链全景图，再按 ①→④ 逐步拆解。
 
 ```mermaid
 sequenceDiagram
     participant A as 商家 alice
-    participant I as 工单与审批中心
+    participant I as 工单 Issue
+    participant P as 审批中心
     participant O as 平台运营 admin
-    A->>I: 共享指定工单给 admin
-    A->>I: 创建退款审批
-    O->>I: decide approved + expectedVersion
-    I-->>O: approved
-    O->>I: 使用旧 version 重复决批
-    I-->>O: 409
-    A->>I: 评论同步批准结论
+    A->>I: GET /api/v1/issues/{id}（读 version 与 access）
+    A->>I: PUT /api/v1/issues/{id}/access（mode=shared，admin=contributor）
+    A->>P: POST /api/v1/approvals（targetType=issue，approver=admin）
+    P-->>A: 初始 version=1
+    O->>P: POST /api/v1/approvals/{id}/decide（approved + expectedVersion）
+    P-->>O: approved
+    O->>P: 重复决批（旧 version）
+    P-->>O: 409
+    A->>I: POST /api/v1/issues/{id}/comments（写回批准结论）
 ```
 
-*图 09-1：工单共享、审批与乐观锁。*
+*图 09-1：工单共享、决批与结果回写的完整调用链；脚本开头的两次 `login_as` 不上图。*
 
-## 为什么 admin 也会遇到 404？
+## ① 共享工单：为什么 admin 也会遇到 404？
 
 namespace 成员资格与工单访问策略是两道不同的检查。平台管理员不是私有工单的默认参与者。此前排查尝试把审批搬到 `default` namespace，仍然无法解决其关联工单的权限问题。
 
@@ -44,9 +47,13 @@ api PUT "/api/v1/issues/$ISSUE_ID/access" "$SHARE" XBD_TOKEN_ALICE
 
 > **注意**：共享成员必须先属于同一 namespace。脚本不会覆写 namespace 成员表。当前本地 `seashore-main` 已包含 alice 和 admin；若自行建立环境时缺少运营成员，应保留所有既有成员后再授权。
 
-## 如何发起与批准？
+## ② 创建审批
 
-alice 向 `POST /api/v1/approvals` 提交 `tenant`、`namespace: seashore-main`、`targetType: issue`、`targetRef`、`issueId`、`approverRef: admin` 和退款原因。admin 登录后，用创建响应中的 `.approval.version` 决批：
+alice 向 `POST /api/v1/approvals` 提交 `tenant`、`namespace: seashore-main`、`targetType: issue`、`targetRef`、`issueId`、`approverRef: admin` 和退款原因。响应携带初始 `version=1` 与 `approver=admin`，脚本将其记入状态供后续决批使用。
+
+## ③ 决批与乐观锁：如何发起与批准？
+
+admin 登录后，用创建响应中的 `.approval.version` 决批：
 
 ```bash
 login_as "${ADMIN_USER:-admin}" "${ADMIN_PASS:-admin}" XBD_TOKEN_ADMIN
@@ -67,7 +74,7 @@ api POST "/api/v1/approvals/$APPROVAL_ID/decide" \
 ✓ 审批结论已同步至商家工单
 ```
 
-## 审批通过就退款了吗？
+## ④ 结论写回：审批通过就退款了吗？
 
 没有。当前脚本通过 `POST /api/v1/issues/{id}/comments` 写回批准结论，不连接支付或退款系统。这里验证的是审批中心；没有验证运行中的敏感工具挂起、批准后恢复。工具执行级 HITL 还需配置确认工具与 runtime-approvals 的 request → decision → ack 协议。
 
