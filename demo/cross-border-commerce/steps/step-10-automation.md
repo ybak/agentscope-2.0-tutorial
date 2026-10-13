@@ -5,20 +5,29 @@ title: Automation 定时任务
 
 # Step 10 · Automation 定时任务
 
-> 本步导读：配置每天上海时间 9 点的竞品复核工单，预览排程，再用测试触发验证运行记录。运行 `bash steps/step-10-automation.sh`，前置为 Step 02。
+> 本步导读：配置每天上海时间 9 点的竞品复核工单，预览排程，再用测试触发验证运行记录。运行 `bash steps/step-10-automation.sh`，前置为 Step 02。先看下方调用链全景图。
 
 ```mermaid
-flowchart LR
-    S[上海时间每天 09:00] --> A[Automation 规则]
-    T[手动 test 触发] --> A
-    A --> Q[queued]
-    Q --> I[生成待人工复核工单]
-    I --> C[completed 与运行记录]
+sequenceDiagram
+    participant A as alice
+    participant C as Automation 控制面
+    participant E as Automation 引擎
+    A->>C: GET /api/v1/automations（查同名 xbd-seashore-price-watch）
+    A->>C: POST /api/v1/automations（enabled=false，cron 0 9 * * * Asia/Shanghai）
+    C-->>A: automation id（默认停用）
+    A->>C: POST /api/v1/automations/schedule-preview
+    C-->>A: nextRuns 五次（UTC 01:00 = 上海 09:00）
+    A->>E: POST /api/v1/automations/{id}/trigger?test=true（Idempotency-Key）
+    E-->>A: 202 queued（test 可测停用规则，仍真实建工单）
+    E->>E: create_issue 生成测试工单
+    A->>C: GET /api/v1/automations/{id}/runs/{runId}（轮询至终态）
+    C-->>A: completed + issueId
+    A->>C: GET /api/v1/automations/{id}/runs（.items 列表核对）
 ```
 
-*图 10-1：排程与手动测试共用规则，执行结果异步查询。*
+*图 10-1：规则先查后建、排程预览、测试触发与异步完成的调用链；202 只表示受理，终态需轮询运行记录。*
 
-## 如何定义每天 9 点？
+## ① 先查后建：规则为什么默认停用？
 
 脚本以 alice 身份先查同名 `xbd-seashore-price-watch`，不存在才创建：
 
@@ -40,7 +49,7 @@ flowchart LR
 
 默认停用，避免演示结束后继续产生工单。`create_issue` 只建立待处理工作，不含电商站点抓取、真实价格数据或 Agent 自动比价。
 
-## 如何验证时区？
+## ② 预览时区：如何验证上海 9 点？
 
 预览接口在集合上，不是 `/automations/{id}/schedule-preview`：
 
@@ -60,7 +69,7 @@ api POST /api/v1/automations/schedule-preview \
 
 UTC 01:00 即上海 09:00。
 
-## 手动触发什么时候算完成？
+## ③ 测试触发：为什么 202 不是完成？
 
 ```bash
 AU_ID=$(state_get XBD_AUTOMATION_1)
@@ -80,7 +89,7 @@ curl -fsS -X POST "$BASE_URL/api/v1/automations/$AU_ID/trigger?test=true" \
 
 相同 `Idempotency-Key` 与相同输入重跑时返回同一运行。运行列表为 `.items`，不是 `.runs`。
 
-## 怎样正式启用排程？
+## ④ 运行记录与正式启用
 
 完成测试后，可读取规则当前 `.automation.version`，向 `PATCH /api/v1/automations/{id}` 提交 `{"expectedVersion":当前版本,"enabled":true}`。这会开始持续排程；示例脚本不自动启用。`teardown.sh --apply` 会停用该规则。
 
