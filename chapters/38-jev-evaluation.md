@@ -6,26 +6,11 @@ source: jev/guides/judge-api.md, jev/guides/trace-evaluation-api.md, jev/guides/
 
 # 第 38 章 评估与运营
 
-> 本章导读：第 37 章把 JEV 判断接进了运行链路，接下来要回答一个更根本的问题——这些判断本身值得吗：该拦的退款有没有拦住？改过提示词之后，回答质量是变好还是变坏？上线之前，怎么证明阈值选对了？本章按"想解决什么评估问题"组织答案：检查一份草稿是否满足一组条件，用 `JevJudge` 定义带版本的条件并聚合 PASS/FAIL/INCONCLUSIVE；检查 Agent 一次调用选没选对工具、回答有没有依据，用 `JevTraceEvaluator` 评估八项轨迹指标；让在线审核与离线回放共用同一套标准，靠带版本的定义与 `JevTraceMetric`；改动之后对固定样本做批量回归，用 `JevEvaluator` 加 runner；判断 JEV 与文本模型谁更值得接管，用基线与同题对照回答。38.7 节转向评估的运营面：给判断分配预算、消费决策记录。每节先给出一条最小可运行路径，再展开细节；全量字段、Service 配置与包索引收在章末"参考速查"。评估的纪律与判断一致：金标不进模型请求、弃权和错误留在分母里、离线预设结果不能充当模型准确率。
-
-```mermaid
-flowchart LR
-    A["你的需求<br/>判断接进链路之后<br/>证明它值得"] --> B["评估与运营<br/>按想解决什么评估问题组织"]
-    B --> C["单点质量<br/>JevJudge 条件评审<br/>轨迹八项指标"]
-    B --> D["回归与对照<br/>批量样本回归<br/>基线与同题对照"]
-    B --> E["同一套标准<br/>带版本的定义复用与自定义指标"]
-    B --> F["运营面<br/>判断预算 · 决策记录消费"]
-    C --> G["收益<br/>守住评估纪律<br/>金标只用于判分<br/>弃权与错误留在分母"]
-    D --> G
-    E --> G
-    F --> G
-```
-
-*本章导览图*
+> 本章导读：第 37 章把 JEV 判断接进了运行链路，末尾那组退款防护对比测试留下了一个没有回答的问题——JEV 快而保守、Qwen 准而不稳，到底该用哪个、阈值定在哪？这正是本章的主题：证明判断值得信任。该拦的退款有没有拦住？改过提示词之后，回答质量是变好还是变坏？上线之前，怎么证明阈值选对了？本章按"想解决什么评估问题"组织答案：检查一份草稿是否满足一组条件，用 `JevJudge` 定义带版本的条件并聚合 PASS/FAIL/INCONCLUSIVE；检查 Agent 一次调用选没选对工具、回答有没有依据，用 `JevTraceEvaluator` 评估八项轨迹指标；让在线审核与离线回放共用同一套标准，靠带版本的定义与 `JevTraceMetric`；改动之后对固定样本做批量回归，用 `JevEvaluator` 加 runner；判断 JEV 与文本模型谁更值得接管，用基线与同题对照回答。38.7 节转向评估的运营面：给判断分配预算、消费决策记录。每节先给出一条最小可运行路径，再展开细节；全量字段、Service 配置与包索引收在章末"参考速查"。评估的纪律与判断一致：金标不进模型请求、弃权和错误留在分母里、离线预设结果不能充当模型准确率。
 
 ## 评估什么，用什么评估
 
-第 37 章之后，JEV 的判断已经在链路上运行：工具选择在推荐候选，退款防护在检查受保护调用，回答审核在给草稿打分。但"跑起来了"不等于"值得用"——38.6 节有一个例子：一个判断器即使拒绝了全部危险调用，也可能把所有正常退款一起拦住。所以评估的对象不是模型本身，而是"加入判断之后，Harness 是否改善"：判断质量、Harness 实际行为和端到端效果要分别测量。
+第 37 章之后，JEV 的判断已经在链路上运行：工具选择在推荐候选，退款防护在检查受保护调用，回答审核在给草稿打分。但"跑起来了"不等于"值得用"——你在 37.1 节末尾已经见过一个真实的例子：JEV 后端拒绝了全部危险调用，却把 68 笔正常退款也全部拦住；Qwen 准确率 92%，却有 1 笔错误放行和 9 次格式失败。**哪组数字可以接受，取决于业务能承受多少错误放行与多少误拦——而找出这组数字，就是评估的工作。**所以评估的对象不是模型本身，而是"加入判断之后，Harness 是否改善"：判断质量、Harness 实际行为和端到端效果要分别测量。
 
 在评估端到端效果之前，先要能对单个判断、单次调用和一批样本做出可复现的评估。本章按评估对象给出对应的组件：
 
@@ -444,7 +429,7 @@ P50/P95 使用最近秩，度量的是评审耗时，不是 Agent 完整任务�
 
 "先查订单，未发货再退款"中，一个判断器即使拒绝了全部危险调用，也可能把所有正常退款一起拦住。应同时观察错误放行、正常调用受阻和额外等待时间，才能判断接管是否有价值。
 
-退款防护对比用例（见 `agentscope-examples/jev/benchmarks/tool-guard` 的 README）提供 160 条合成数据、数据划分、标注理由、离线行为测试与 JEV/Qwen 实测记录，代码和结果集中在 `agentscope-examples/jev/benchmarks/tool-guard`。它的命令行参数与下表通用基准不同，请按其 README 运行；第 37 章"在工具执行前检查受保护操作"的"退款场景对比测试"小节保留简明结果。
+退款防护对比用例（见 `agentscope-examples/jev/benchmarks/tool-guard` 的 README）提供 160 条合成数据、数据划分、标注理由、离线行为测试与 JEV/Qwen 实测记录，代码和结果集中在 `agentscope-examples/jev/benchmarks/tool-guard`。它的命令行参数与下表通用基准不同，请按其 README 运行；37.1 节保留的对比表格就是这批数据 120 会话子集的简明结果。
 
 ### 选择评估对象
 
@@ -552,7 +537,7 @@ var options = new JevExecution.Options(
 
 先固定金标、模式和定义版本，记录分场景错误与弃权，再按 38.6 节选择阈值。切换某一用途到 ENFORCE 时，确认其数据源、权限和失败处理已经接入。线上仍保留独立的工具执行结果和业务质量指标。
 
-Service 的配置与事件查询见第 37 章"在 AgentScope Service 中配置 JEV"一节。
+Service 的配置与事件查询见 37.4 节。
 
 ### 验证回退是否符合用途
 
@@ -605,10 +590,10 @@ Service 的配置与事件查询见第 37 章"在 AgentScope Service 中配置 J
 | 根包 | JevClient、SystemOneRequest、JevJudge、JevExecution、JevGuardrail | 客户端（见第 36 章）、评审定义（见本章） |
 | example | JevToolSelectionMiddleware、JevAutoModeMiddleware、JevModelRouterMiddleware | 运行模式（见第 36 章） |
 | evaluation | JevTrace、JevTraceMetric、JevTraceEvaluator、JevTraceEvaluationMiddleware、JevTraceRunner、JevEvaluator、JevEvaluationRunner、JevTextBackend | 轨迹评估（见本章） |
-| context | JevContextCompactor、JevContextArchive、FileJevContextArchive、StoreJevContextArchive | 上下文压缩（见第 37 章） |
-| supervision | JevTaskSupervisor、JevSupervisionMiddleware、SupervisionEvidence | 持续监督（见第 37 章） |
-| routing | JevPhaseRouting、JevRouteCatalog | 阶段路由（见第 37 章） |
-| evidence | JevPassage、JevEvidenceProcessor、JevEvidenceTool | 检索证据（见第 37 章） |
+| context | JevContextCompactor、JevContextArchive、FileJevContextArchive、StoreJevContextArchive | 上下文压缩（见 37.5 节索引） |
+| supervision | JevTaskSupervisor、JevSupervisionMiddleware、SupervisionEvidence | 持续监督（见 37.5 节索引） |
+| routing | JevPhaseRouting、JevRouteCatalog | 阶段路由（见 37.5 节索引） |
+| evidence | JevPassage、JevEvidenceProcessor、JevEvidenceTool | 检索证据（见 37.2 节） |
 | review | JevReviewInput、JevCodeReviewer、JevCodeReviewTool、ReviewRegions | 代码评审（见第 37 章） |
 | browser | JevBrowserSession、JevBrowserNavigator、JevBrowserReadTool、JevPlaywrightSession | 只读浏览器（见第 37 章） |
 | integration | JevResponseMiddleware、JevKnowledge、JevKnowledgeTool | 回答审核（见第 37 章）、Knowledge 适配（见第 37 章） |
