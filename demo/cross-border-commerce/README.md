@@ -40,7 +40,7 @@ flowchart TD
 | --- | --- | --- |
 | 01 | [平台初始化](steps/step-01-platform-init.md) | 版本、登录、身份 |
 | 02 | [商家入驻](steps/step-02-tenant-onboarding.md) | namespace 与成员隔离 |
-| 03 | [Agent 矩阵](steps/step-03-agent-matrix.md) | 4 个 Catalog Agent，自动关联环境 |
+| 03 | [Agent 矩阵](steps/step-03-agent-matrix.md) | 4 个租户 Catalog Agent + 1 个平台公共 Agent（global 区），自动关联环境 |
 | 04 | [Session 调用](steps/step-04-session-api.md) | Chat、Turn、SSE、新回复 |
 | 05 | [隔离检查](steps/step-05-isolation-check.md) | 9 项断言，包括跨商家负向检查 |
 | 06 | [Team 编排](steps/step-06-team-orchestration.md) | Issue → AgentTask → attempt；终态另行报告 |
@@ -120,7 +120,7 @@ cp .env.example .env
 
 | 对象 | 重跑行为 |
 | --- | --- |
-| namespace、4 个 Agent、Team、Workflow 定义、Endpoint、Automation | 按名称复用 |
+| namespace、4 个租户 Agent、平台公共 Agent、Team、Workflow 定义、Endpoint、Automation | 按名称复用 |
 | Chat | 复用 Chat，每次发送新一轮咨询；校验新增回复与 idle 事件 |
 | Team Issue / AgentTask | 每次新建工单与任务 |
 | Workflow | 每次发布 revision、创建工单与 Run；Run 键序号递增 |

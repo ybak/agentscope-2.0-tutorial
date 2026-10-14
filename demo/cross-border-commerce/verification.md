@@ -95,3 +95,18 @@ cd demo/cross-border-commerce
 ### 连续编号调整验证
 
 课程与脚本统一为 `step-01` 至 `step-13`，目录、图示、章节链接和执行入口同步。离线检查覆盖全部单步（含 01–09 写法）、默认 13 步、断点续跑、列表及错误参数；模型探针继续用本地桩验证。本次编号调整未触发新的模型、审批或自动化运行。Automation 保留历史幂等键，避免改名导致重复工单。
+
+## 平台公共 Agent 场景（2026-10-14 追加）
+
+Step 03 新增"平台公共 Agent"段：admin 在唯一的 global namespace（`default`）创建 `xbd-platform-shared-agent`，验证两家商户零配置可见可用。机制依据相邻源码：`Namespace.Roles()` 对 `kind=global` 自动授予所有登录用户 member/developer/operator（`internal/controlplane/model/access.go`），global namespace 由服务启动时自动创建（`internal/httpapi/namespace_access.go` 的 `ensureGlobalDefaultNamespace`）。本轮探索期另用临时脚本对 alice 发起过一次真实 Turn 咨询并收到模型回复（`qwen-plus`）。
+
+| 检查项 | 结果 | 证据与边界 |
+| --- | --- | --- |
+| 03 平台公共段（连跑三遍） | 通过 | 首遍创建后两遍全部 `↺ 复用`；新增断言全部通过；公共区会话按 title 复用 |
+| 商户可见性 | 通过 | alice/bob 的 `/api/v1/me/namespaces` 均自动含 `default (kind=global, roles=[member,developer,operator])`；`?namespace=default` 列表均含公共 Agent；自家列表均不含 |
+| 作用域边界 | 通过 | 商户带 seashore-main/aurora-main 作用域头读公共 Agent 均 404，带 default 作用域 200 |
+| 会话私有 | 通过 | bob 列公共区 chats 为空，看不到 alice 的会话（工作对象按创建者过滤） |
+| 相邻步骤兼容 | 通过 | Step 05 只依赖 `XBD_AGENT_CS_*`/`XBD_CHAT_1` 等原键，新增 `XBD_AGENT_PLATFORM`/`XBD_CHAT_PLATFORM` 不影响其 9 项断言 |
+| 静态检查 | 通过 | `bash -n` 全部脚本通过 |
+
+新增资源：公共 Agent `6e04b24a-08cc-4fb9-8baf-1e11d429e304`（环境 `env_efe977693d7d`）、公共区会话 `83a96058-cd10-42eb-8672-1337764c456f`。已知语义边界（已写入 Step 03 文档）：global 区对商户开放 developer 角色，是共享工作台而非只读目录；平台无"公共定义复制进自家 namespace"的 API；本轮仅验证商户建会话与 discover/use，bob 主动发起 Turn 未单独实测。
