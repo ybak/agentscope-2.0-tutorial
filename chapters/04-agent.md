@@ -6,7 +6,7 @@ source: docs/building-blocks/agent.md
 
 # 第 4 章 Agent 与 ReAct 循环
 
-> 本章导读：当你把第一篇的示例换成真实业务，马上要做三个决定——直接用底层的 `ReActAgent`，还是用封装好的 `HarnessAgent`？一次请求用哪种方式发起？实例每次新建还是共享？本章就围绕这些决定展开：讲解 `Agent` 统一接口、两者的分工、实例生命周期与共享 Builder 实践、`call` / `streamEvents` / `observe`（只记录消息、不触发推理）三种调用方式、`RuntimeContext` 的用途、人机交互的暂停与恢复、状态持久化与结构化输出。读完本章，你能为业务场景选对调用入口，并独立配置、运行和管理一个智能体。
+> 本章导读：从本章起，全书围绕同一个应用展开：**星帆出海的客服 Agent「小帆」**——它要回答售前咨询、查询订单、处理退款，逐步长成第 43 章多租户平台上的核心角色。本章先把小帆的最小版本跑起来，再回答把它换成真实业务时马上遇到的三个决定——直接用底层的 `ReActAgent`，还是用封装好的 `HarnessAgent`？一次请求用哪种方式发起？实例每次新建还是共享？本章就围绕这些决定展开：讲解 `Agent` 统一接口、两者的分工、实例生命周期与共享 Builder 实践、`call` / `streamEvents` / `observe`（只记录消息、不触发推理）三种调用方式、`RuntimeContext` 的用途、人机交互的暂停与恢复、状态持久化与结构化输出。读完本章，你能为业务场景选对调用入口，并独立配置、运行和管理一个智能体。
 
 ```mermaid
 flowchart LR
@@ -102,6 +102,7 @@ flowchart TD
 
 ## 实例生命周期
 
+> **为什么是"共享 Builder、每请求新建实例"？** Agent 实例持有运行中的会话上下文与执行状态，跨请求共享一个实例就要回答"两个用户的请求同时进来怎么办"；而 Builder 是不可变的配置模板，共享它没有并发问题。用"便宜的实例 + 昂贵的模板"换取免锁的并发模型，这是本章所有示例的公共前提。
 选好了 Agent 与调用方式，下一个工程问题是：实例每次新建还是共享、何时关闭。
 
 **推荐共享配置 Builder，每次请求 `builder.build()` 创建新的 Agent，执行结束后关闭。** Builder 在应用启动时配置完成，请求期间只负责构建；用户、会话、请求参数通过新建的 `RuntimeContext` 传入，不修改共享 Builder。
@@ -113,6 +114,36 @@ flowchart TD
 **也可以共享同一个 Agent 实例。** Agent 采用无状态执行引擎设计，会话状态按身份管理；共享实例由应用在退出时关闭。同一实例内，相同用户与会话的直接调用由执行门（把同一会话的调用排成串行的机制）串行化，不同会话可并行。实例仍有缓存、执行门和后台资源，因此这里的“无状态”不表示没有生命周期。后续示例统一采用每请求创建的推荐方式。
 
 后台 `AgentSession`、Channel 或托管运行时的生命周期由其管理器持有，不能套用“提交请求返回就关闭”的方式。中断一次直接调用也必须定位到正在执行的实例；临时构建另一个实例不能中断旧实例中的请求。
+
+## 先跑通：小帆的第一个版本
+
+不谈概念，先把本书的主角跑起来。十几行代码——一个人格提示、一个模型、一次调用：
+
+```java
+import io.agentscope.core.ReActAgent;
+import io.agentscope.core.agent.RuntimeContext;
+import io.agentscope.core.message.Msg;
+import io.agentscope.core.message.UserMessage;
+import java.util.List;
+
+ReActAgent.Builder xingfan = ReActAgent.builder()
+        .name("xingfan-support")
+        .sysPrompt("你是星帆出海的客服小帆，语气友好，只基于事实回答；"
+                + "不确定的事说不确定，并引导用户联系人工。")
+        .model("dashscope:qwen-plus")
+        .toolkit(new Toolkit());   // 工具在第 7 章加入：小帆暂时只能凭提示词回答
+
+RuntimeContext ctx = RuntimeContext.builder()
+        .userId("alice").sessionId("session-001").build();
+
+try (ReActAgent agent = xingfan.build()) {
+    Msg reply = agent.call(
+            List.of(new UserMessage("你们的退货政策是什么？")), ctx).block();
+    System.out.println(reply.getTextContent());
+}
+```
+
+运行后你会看到一段符合客服口吻的回答。这十几行里已经包含了本章要讲的全部要素：`Builder` 是共享的配置模板（`xingfan`），每次请求 `build()` 出一个实例、用完关闭；`call` 是"要最终回复"的调用入口；`RuntimeContext` 告诉框架这次调用属于谁、哪个会话——它决定状态读写到哪个槽位。`toolkit` 目前是空的：小帆还查不了真实订单，第 7 章给它装上工具。接下来各节把每个部分展开。
 
 ## 配置智能体
 
@@ -126,8 +157,8 @@ import io.agentscope.core.tool.Toolkit;
 
 ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
-                .name("my_agent")
-                .sysPrompt("你是一个有帮助的助手。")
+                .name("xingfan-support")
+                .sysPrompt("你是星帆出海的客服小帆，语气友好，只基于事实回答。")
                 // 由 ModelRegistry 解析；自动读取 DASHSCOPE_API_KEY
                 // 切换其他厂商时改成 "openai:gpt-5.5" / "anthropic:claude-sonnet-4-5"
                 // / "deepseek:deepseek-v4-flash" / "gemini:gemini-2.0-flash" / "ollama:llama3" 即可。
@@ -145,8 +176,8 @@ import io.agentscope.core.tool.Toolkit;
 
 ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
-                .name("my_agent")
-                .sysPrompt("你是一个有帮助的助手。")
+                .name("xingfan-support")
+                .sysPrompt("你是星帆出海的客服小帆，语气友好，只基于事实回答。")
                 .model(
                         DashScopeChatModel.builder()
                                 .apiKey("YOUR_API_KEY")
@@ -180,8 +211,8 @@ toolkit.registerMcpClient(amap).block();
 
 ReActAgent.Builder agentBuilder =
         ReActAgent.builder()
-                .name("my_agent")
-                .sysPrompt("你是一个有帮助的助手。")
+                .name("xingfan-support")
+                .sysPrompt("你是星帆出海的客服小帆，语气友好，只基于事实回答。")
                 .model("dashscope:qwen-max")
                 .toolkit(toolkit);
 ```
@@ -212,7 +243,7 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 import java.util.List;
 
-UserMessage msg = new UserMessage("当前目录有哪些文件？");
+UserMessage msg = new UserMessage("你们的退货政策是什么？");
 RuntimeContext ctx = RuntimeContext.builder().userId("alice").sessionId("session-001").build();
 try (ReActAgent agent = agentBuilder.build()) {
     Msg result = agent.call(List.of(msg), ctx).block();
@@ -230,7 +261,7 @@ import io.agentscope.core.event.TextBlockDeltaEvent;
 import io.agentscope.core.event.ToolCallStartEvent;
 
 try (ReActAgent agent = agentBuilder.build()) {
-    agent.streamEvents(new UserMessage("总结一下 README 的内容。"), ctx)
+    agent.streamEvents(new UserMessage("把这条回复再润色得友好一些。"), ctx)
             .doOnNext(event -> {
                 if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
                     // 模型返回的流式文本片段 —— 追加到界面或标准输出
@@ -519,8 +550,8 @@ import io.agentscope.core.state.JsonFileAgentStateStore;
 import java.nio.file.Paths;
 
 ReActAgent agent = ReActAgent.builder()
-        .name("my_agent")
-        .sysPrompt("你是一个有帮助的助手。")
+        .name("xingfan-support")
+        .sysPrompt("你是星帆出海的客服小帆，语气友好，只基于事实回答。")
         .model(model)
         .toolkit(new Toolkit())
         .stateStore(new JsonFileAgentStateStore(
@@ -571,14 +602,16 @@ import io.agentscope.core.message.Msg;
 import io.agentscope.core.message.UserMessage;
 
 // 定义输出结构
-public record WeatherResponse(String location, String temperature, String condition) {}
+public record RefundIntent(boolean eligible, String orderSummary, String reason) {}
 
-Msg result = agent.call(List.of(new UserMessage("旧金山天气如何？")), WeatherResponse.class).block();
+Msg result = agent.call(
+        List.of(new UserMessage("订单 OD-2049 上周到的，鞋盒坏了，能退吗？")),
+        RefundIntent.class).block();
 
-// 从结果中取出强类型数据
-WeatherResponse weather = result.getStructuredData(WeatherResponse.class);
-System.out.println(weather.location());      // "San Francisco"
-System.out.println(weather.temperature());   // "18°C"
+// 从结果中取出强类型数据——直接喂给售后工单系统
+RefundIntent intent = result.getStructuredData(RefundIntent.class);
+System.out.println(intent.eligible());       // true
+System.out.println(intent.orderSummary());   // "OD-2049 · 鞋盒破损"
 ```
 
 结构化输出与工具可以同时使用——智能体会先调用工具完成任务，最后以指定 schema 输出最终结果。
@@ -610,7 +643,7 @@ System.out.println(weather.temperature());   // "18°C"
 
 ```java
 // 方式一：强类型提取
-WeatherResponse data = result.getStructuredData(WeatherResponse.class);
+RefundIntent data = result.getStructuredData(RefundIntent.class);
 
 // 方式二：作为 Map 读取
 @SuppressWarnings("unchecked")
