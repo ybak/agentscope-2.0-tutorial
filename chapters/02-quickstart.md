@@ -6,22 +6,8 @@ source: docs/quickstart.md
 
 # 第 2 章 快速开始
 
-> 本章导读：当你想在 Java 工程里真正跑起第一个 AgentScope 应用——而不只是记住概念——本章带你从零完成：安装依赖、创建一个能记住对话的智能体，并分别用同步和流式两种方式与它对话。读完本章，你将获得一个能跨实例恢复会话的最小示例，并且知道什么时候需要引入 `AgentSession`。
+> 本章导读：当你想在 Java 工程里真正跑起第一个 AgentScope 应用——而不只是记住概念——本章带你从零完成：安装依赖、创建一个能记住对话的智能体，并分别用同步和流式两种方式与它对话。这个应用就是贯穿全书的星帆出海客服 Agent「小帆」的雏形——第 4 章起它会逐步长出工具、权限和平台形态。读完本章，你将获得一个能跨实例恢复会话的最小示例，并且知道什么时候需要引入 `AgentSession`。
 
-```mermaid
-flowchart LR
-    A["你的需求<br/>在 Java 工程里跑起第一个应用<br/>而不只是记住概念"] --> B["快速开始<br/>Harness 能力的最小闭环"]
-    B --> C["安装<br/>Maven 依赖与模型扩展"]
-    B --> D["第一个智能体<br/>同步对话 · 跨实例恢复会话"]
-    B --> E["流式查看<br/>推理与工具调用"]
-    B --> F["什么时候使用 AgentSession"]
-    C --> G["收益<br/>拿到能恢复会话的最小示例<br/>知道何时引入 AgentSession"]
-    D --> G
-    E --> G
-    F --> G
-```
-
-*本章导览图*
 
 ## 你什么时候需要它
 
@@ -85,9 +71,9 @@ import java.nio.file.Path;
 public class FirstAgent {
     // 应用启动时配置一次，之后只调用 build()。
     private static final HarnessAgent.Builder AGENT_BUILDER = HarnessAgent.builder()
-            .name("note-taker")
-            .agentId("note-taker")
-            .sysPrompt("你是一个帮助用户做笔记的助手。")
+            .name("xingfan-support")
+            .agentId("xingfan-support")
+            .sysPrompt("你是星帆出海的客服小帆，语气友好，只基于事实回答。")
             .model("dashscope:qwen-plus")
             .workspace(Path.of(".agentscope/workspace"));
 
@@ -95,14 +81,14 @@ public class FirstAgent {
         try (HarnessAgent agent = AGENT_BUILDER.build()) {
             RuntimeContext ctx = RuntimeContext.builder()
                     .userId("alice").sessionId("demo-session").build();
-            agent.call(new UserMessage("我叫天宇，今天准备一个技术分享。"), ctx).block();
+            agent.call(new UserMessage("我叫天宇，订单 OD-2049 三天了还没到，想问问情况。"), ctx).block();
         }
 
         // 下一次请求使用新实例；相同会话身份从持久日志恢复上下文。
         try (HarnessAgent agent = AGENT_BUILDER.build()) {
             RuntimeContext ctx = RuntimeContext.builder()
                     .userId("alice").sessionId("demo-session").build();
-            Msg reply = agent.call(new UserMessage("我叫什么？今天要干什么？"), ctx).block();
+            Msg reply = agent.call(new UserMessage("我叫什么？我的订单出了什么问题？"), ctx).block();
             System.out.println(reply.getTextContent());
         }
     }
@@ -127,7 +113,7 @@ import io.agentscope.core.event.ToolCallStartEvent;
 try (HarnessAgent agent = AGENT_BUILDER.build()) {
     RuntimeContext ctx = RuntimeContext.builder()
             .userId("alice").sessionId("demo-session").build();
-    agent.streamEvents(new UserMessage("帮我把分享的准备工作列成三条。"), ctx)
+    agent.streamEvents(new UserMessage("帮我把催问订单前需要确认的信息列成三条。"), ctx)
             .doOnNext(event -> {
                 if (event.getType() == AgentEventType.TEXT_BLOCK_DELTA) {
                     System.out.print(((TextBlockDeltaEvent) event).getDelta());

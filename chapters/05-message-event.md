@@ -6,7 +6,7 @@ source: docs/building-blocks/message-and-event.md
 
 # 第 5 章 消息与事件
 
-> 本章导读：当你的界面要逐字显示回答、提示“正在调用哪个工具”，或者要在 Agent 暂停等待确认时把选择权交给用户——总之，当你需要过程的实时反馈而不只是一个最终结果时，依赖的就是本章的事件流。本章讲解智能体内的两种基础数据结构——代表完整对话轮次的 `Msg` 与代表增量进度的 `AgentEvent`，覆盖内容块类型、事件的生命周期（start → delta → end）、全部事件类型的字段参考，以及从事件流重建消息的方法。读完本章，你可以正确解析与聚合 Agent 的输出，构建流式界面。
+> 本章导读：当小帆的回答要逐字显示到客服界面、提示“正在调用哪个工具”，或者要在 Agent 暂停等待确认时把选择权交给用户——总之，当你需要过程的实时反馈而不只是一个最终结果时，依赖的就是本章的事件流。本章讲解智能体内的两种基础数据结构——代表完整对话轮次的 `Msg` 与代表增量进度的 `AgentEvent`，覆盖内容块类型、事件的生命周期（start → delta → end）、全部事件类型的字段参考，以及从事件流重建消息的方法。读完本章，你可以正确解析与聚合 Agent 的输出，构建流式界面。
 
 ```mermaid
 flowchart LR
@@ -329,7 +329,7 @@ import io.agentscope.core.event.ToolCallStartEvent;
 import io.agentscope.core.event.ToolResultEndEvent;
 import io.agentscope.core.message.UserMessage;
 
-agent.streamEvents(new UserMessage("user", "帮我修复这个 bug"))
+agent.streamEvents(new UserMessage("user", "帮我查一下订单 OD-2049 的物流状态"))
         .doOnNext(event -> {
             if (event instanceof AgentStartEvent start) {
                 System.out.println("[start replyId=" + start.getReplyId() + "]");

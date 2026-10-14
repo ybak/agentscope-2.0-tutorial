@@ -81,7 +81,7 @@ import java.util.List;
 ReActAgent agent =
         ReActAgent.builder()
                 .name("assistant")
-                .sysPrompt("You are a helpful assistant.")
+                .sysPrompt("你是星帆出海的客服小帆。")
                 .model(model)
                 .toolkit(toolkit)
                 .middlewares(List.of(new OtelTracingMiddleware()))
@@ -169,7 +169,7 @@ Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
 ReActAgent agent =
         ReActAgent.builder()
                 .name("assistant")
-                .sysPrompt("You are a helpful assistant.")
+                .sysPrompt("你是星帆出海的客服小帆。")
                 .model(model)
                 .toolkit(toolkit)
                 .middleware(new OtelTracingMiddleware())
@@ -210,7 +210,7 @@ Runtime.getRuntime().addShutdownHook(new Thread(tracerProvider::close));
 ReActAgent agent =
         ReActAgent.builder()
                 .name("assistant")
-                .sysPrompt("You are a helpful assistant.")
+                .sysPrompt("你是星帆出海的客服小帆。")
                 .model(model)
                 .toolkit(toolkit)
                 .middleware(new OtelTracingMiddleware(appSdk))

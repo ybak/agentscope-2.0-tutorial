@@ -140,7 +140,7 @@ PermissionContextState permCtx =
 
 ReActAgent agent =
         ReActAgent.builder()
-                .name("my_agent")
+                .name("xingfan-support")
                 .sysPrompt("...")
                 .model(model)
                 .permissionContext(permCtx)
