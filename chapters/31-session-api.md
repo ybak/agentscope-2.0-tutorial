@@ -25,42 +25,11 @@ flowchart LR
 
 *本章导览图*
 
-## 通过 Session API 接入应用
+## 身份与凭据：应用后端怎么调用
 
 在 Console 里点一次提交，就能看到 Agent 回答——但业务应用不能依赖人工打开页面。应用需要一个程序化的入口：把工作交给 Agent，在后台等它执行，随时回来查看进度，并在需要时替用户递入决定。这就是 Session API 的职责。
 
-应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
-
-从创建 Session 到读取交付物的一轮任务生命周期如图 31-1 所示。
-
-```mermaid
-sequenceDiagram
-    participant APP as "业务应用"
-    participant SVC as "Service"
-    participant AG as "Managed Agent"
-    participant U as "用户"
-    APP->>SVC: 创建 Session 指定 target
-    SVC-->>APP: 返回 Session ID
-    Note over APP,SVC: 创建成功并不代表已经提交任务
-    APP->>SVC: 提交 Turn
-    SVC-->>APP: 202 Accepted 任务已接收
-    SVC->>AG: 后台执行并保存工作记录
-    APP->>SVC: 读取 snapshot 恢复页面
-    SVC-->>APP: 返回 items 与 as_of 游标
-    APP->>SVC: 从 as_of 订阅 events stream
-    SVC-->>APP: 持续推送增量事件
-    AG-->>SVC: 产生 required_actions 待办
-    SVC-->>APP: 快照与事件中报告待办
-    U-->>APP: 检查后作出决定
-    APP->>SVC: 向 Turn 的 actions 提交 request_id 答复
-    SVC->>AG: 答复处理后继续执行
-    SVC-->>APP: Turn 到达 completed 终态
-    APP->>SVC: 检查交付并读取文件产物
-```
-
-*图 31-1：一轮任务的调用生命周期*
-
-本节沿图中的每一步动手：准备身份变量、签发应用凭据、创建 Session、提交 Turn、观察执行、参与交互、检查交付。首次接入可以沿用第 30 章创建的 Managed Agent。以后需要调用 Team 或 Workflow 时，仍然使用同一套 Session API，只需在创建 Session 时选择相应目标，并按它的能力处理输入和交互。
+接入前先解决"应用以什么身份调用"——它与某个人的浏览器登录绑在一起，还是独立的调用凭据？这一节回答这个问题，并准备贯穿全章的变量；下一节再走完"创建 Session → 提交 Turn → 观察执行 → 参与交互 → 检查交付"的主线路程。
 
 ### 认证与空间
 
@@ -163,7 +132,40 @@ curl -sS --fail-with-body -X DELETE "$BASE_URL/api/v1/applications/$APPLICATION_
   -H "X-AgentScope-Namespace: $NAMESPACE"
 ```
 
-### 创建 Session，直接选择执行目标
+两类身份的差别就到这里；凭据签发完成后，本章所有示例都可以跑了。
+
+## 创建 Session 到交付：一轮任务的完整路线
+
+应用先创建一个 Session，确定这段工作使用的 Agent 和配置，再向这个 Session 提交任务。每次提交都会创建一个 Turn，用来跟踪这一轮执行的进度和结果。Service 会在后台执行并保存工作记录，因此应用不需要保持提交请求一直连接，也可以在用户返回页面时继续查看同一项任务。
+
+从创建 Session 到读取交付物的一轮任务生命周期如图 31-1 所示。
+
+```mermaid
+sequenceDiagram
+    participant APP as "业务应用"
+    participant SVC as "Service"
+    participant AG as "Managed Agent"
+    participant U as "用户"
+    APP->>SVC: 创建 Session 指定 target
+    SVC-->>APP: 返回 Session ID
+    Note over APP,SVC: 创建成功并不代表已经提交任务
+    APP->>SVC: 提交 Turn
+    SVC-->>APP: 202 Accepted 任务已接收
+    SVC->>AG: 后台执行并保存工作记录
+    APP->>SVC: 读取 snapshot 恢复页面
+    SVC-->>APP: 返回 items 与 as_of 游标
+    APP->>SVC: 从 as_of 订阅 events stream
+    SVC-->>APP: 持续推送增量事件
+    AG-->>SVC: 产生 required_actions 待办
+    SVC-->>APP: 快照与事件中报告待办
+    U-->>APP: 检查后作出决定
+    APP->>SVC: 向 Turn 的 actions 提交 request_id 答复
+    SVC->>AG: 答复处理后继续执行
+    SVC-->>APP: Turn 到达 completed 终态
+    APP->>SVC: 检查交付并读取文件产物
+```
+
+*图 31-1：一轮任务的调用生命周期*
 
 下面的请求为资料助手创建 Session。Session 保存本次工作选择的配置和后续执行记录；创建成功并不代表已经提交了一项任务。建议对创建请求也提供稳定的幂等键，并保存返回的 `id`，避免网络重试时建立重复会话。
 

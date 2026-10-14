@@ -363,7 +363,24 @@ curl --fail-with-body -sS -X PATCH "$BASE_URL/api/v1/agents/$AGENT_ID/definition
 
 > **延伸阅读**：定义 API 全表与 Agent 定义参数全表见本章末"参考速查"；工具与 MCP 声明、权限配置、会话输入与预算、SSE 事件续传见第 31 章。
 
-## 连接 Hosted Agent
+## 三种运行形态：Managed、Hosted、External
+
+到此为止你创建的都是 Managed Agent——由平台 Dataplane 运行。但有些工作它不合适：真正操作代码仓库、在终端跑构建测试，需要现成的 Coding Agent；反过来，你们团队可能已经有一个运行中的 Agent 应用，推倒重来同样不必要。Service 为此提供三种运行形态，创建 Agent 时通过 `binding.kind` 选择：
+
+| | Managed | Hosted | External |
+|---|---|---|---|
+| 谁运行 | 平台 Dataplane | 平台派发到 Runtime Host 主机上的 Coding Agent | 你自己——进程、框架、部署都保留 |
+| 典型用途 | 客服、知识问答、业务流程等通用任务 | 代码审查、构建修复、仓库操作 | 接入已有的自建 Agent 应用，保留现有运维 |
+| 怎么接入 | `binding.kind: "managed"`（本章前两节） | 主机装 `as` CLI 连接平台，Agent 指向 Runtime Profile/Pool | 应用调 SDK 注册，保持心跳并接任务 |
+| 能力来源 | definition + Workspace + Environment，能力最全 | provider 能力声明决定（指令/Skills/工具映射有差异） | 应用上报的 capabilities 决定 |
+
+三条经验法则：**默认 Managed**——能力最全、运维最省；**要动手改代码就 Hosted**——让现成的 Coding Agent 干它擅长的事，但接受能力受 provider 限制；**已有在跑的应用就 External**——不为接入平台而重写部署。三种形态都通过同一套 Session API 调用（第 31 章），业务应用换形态不用改接入代码。
+
+注意两组容易混的概念：Hosted 的 Runtime Host **不是** Managed Agent 的 self_hosted 工具 Worker（后者是工具执行的外包，见第 12 章），也不等于部署整个 Service；External 与"某框架同名集成"也不是一回事——例如 Claude Agent SDK 集成与 Runtime Host 启动 Claude Code CLI 是两条路径。
+
+接下来两节分别走通 Hosted 与 External 的接入；只需要 Managed 的读者可以直接跳到"Workspace、Skills 与子 Agent"。
+
+## 接入 Hosted Agent：把 Coding Agent 接上平台
 
 Managed Agent 由平台的 Dataplane 运行，但有一类工作它不擅长：真正操作代码仓库、在终端里跑构建和测试。这类任务需要 Coding Agent。**Hosted Agent 就是把电脑或服务器上的 Coding Agent 接入平台的运行类型**：Runtime Host（运行在安装了 Coding Agent 的主机上的守护进程）负责启动 provider、准备工作目录和回报执行结果，应用通过 Session API 调用这个 Agent，也可以把它作为 Team 或 Workflow 的执行成员。
 
@@ -401,7 +418,7 @@ curl -sS "$SERVICE_URL/api/v1/runtime-hosts?tenant=default&namespace=default" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-支持的 provider 及 Workspace、工具和恢复能力差异，见本章"Hosted Agent 配置"一节的"选择运行类型"。
+支持的 provider 及 Workspace、工具和恢复能力差异，见下文"选择运行类型"。
 
 ### 创建 Hosted Agent
 
@@ -444,7 +461,7 @@ curl -sS "$SERVICE_URL/api/v1/agents/$AGENT_ID/bindings" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-需要调整指令时使用 `PATCH /api/v1/agents/{agentId}/definition`；provider 执行选项位于 `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`。更新前读取当前配置及版本，字段说明见下一节"Hosted Agent 配置"。
+需要调整指令时使用 `PATCH /api/v1/agents/{agentId}/definition`；provider 执行选项位于 `GET/PATCH /api/v1/agents/{agentId}/hosted-settings`，字段说明见下文"更新 Agent 定义与运行设置"。
 
 ### 分派工作并读取结果
 
@@ -462,9 +479,9 @@ Workspace 的指令、Skills 与工具按 provider 能力映射；工具依赖�
 
 > **延伸阅读**：部署准备与 Runtime Host 职责边界见第 29 章；Hosted 加入多 Agent 组合见第 32 章；Console 入口与操作流程见第 33 章"创建并配置 Agent"；将 Coding Agent 发布为业务能力的示例见第 34 章"从故障告警生成可审查的修复"。
 
-## Hosted Agent 配置
+### 深入运行配置：Host、Profile 与 Agent 的分工
 
-上一节用最简形式的 `as connect` 让主机上了线，但连接本身还有一批可调参数；Agent 创建之后，运行参数也可能要改。调整配置时，需要先确定设置应当作用于哪一层：Host 的连接参数决定主机接入哪个 Service、暴露哪些 provider，以及允许多少并发执行；Runtime Profile 保存某个 provider 的运行参数；Agent 则在此基础上设置自己的职责和模型覆盖。按这个范围保存配置，可以让共享主机的多个 Agent 复用运行环境，同时保留各自的行为设置。主机安装和日常维护见第 29 章"Runtime Host 安装与运维"。
+最简形式的 `as connect` 让主机上了线，但连接本身还有一批可调参数；Agent 创建之后，运行参数也可能要改。调整配置时，需要先确定设置应当作用于哪一层：Host 的连接参数决定主机接入哪个 Service、暴露哪些 provider，以及允许多少并发执行；Runtime Profile 保存某个 provider 的运行参数；Agent 则在此基础上设置自己的职责和模型覆盖。按这个范围保存配置，可以让共享主机的多个 Agent 复用运行环境，同时保留各自的行为设置。主机安装和日常维护见第 29 章"Runtime Host 安装与运维"。
 
 ### 连接参数
 
@@ -585,7 +602,7 @@ curl -sS "$SERVICE_URL/api/v1/agents/runtime-options?tenant=default&namespace=de
 
 > **延伸阅读**：Hosted Agent 管理 API 全表、Provider 参数表与"可移植定义如何生效"差异表见本章末"参考速查"；主机接入与日常运维见第 29 章。
 
-## 注册 External Agent
+## 接入 External Agent：登记、验证与 SDK
 
 Hosted 把 Coding Agent 接了进来，但如果你们团队已经有一个运行中的 Agent 应用——由你部署和运维——推倒重来并不必要。可以把它注册为 **External Agent**：应用继续由你部署和运维，Service 为它分配统一的 `agentId`，用这个身份加入 Team、接受任务，或通过 Session API（见第 31 章）供业务调用。
 
@@ -627,9 +644,9 @@ curl -sS "$SERVICE_URL/api/v1/agent-registrations" \
 
 正式接入通常由 SDK 完成注册、心跳和运行协议交互，不需要应用每次启动都手写上面的 curl。
 
-Java 应用使用 `agentscope-extensions-controlplane`，通过 `ControlPlane.instrument(agent, config)` 获得 `SessionBridge`。配置 Service HTTP 地址、范围、稳定的实例 key，以及可访问的应用合约地址。完整依赖和接入片段见下一节"Java：添加 HTTP 注册与合约"。HTTP 注册与合约负责目录、查询和适配器支持的命令；接收平台派发的 AgentTask 还需要配置 `AgentTaskStarter`，并连接当前 Java SDK 支持的 ASDP 运行通道。退出应用时关闭 bridge。
+Java 应用使用 `agentscope-extensions-controlplane`，通过 `ControlPlane.instrument(agent, config)` 获得 `SessionBridge`。配置 Service HTTP 地址、范围、稳定的实例 key，以及可访问的应用合约地址。完整依赖和接入片段见下文"Java：添加 HTTP 注册与合约"。HTTP 注册与合约负责目录、查询和适配器支持的命令；接收平台派发的 AgentTask 还需要配置 `AgentTaskStarter`，并连接当前 Java SDK 支持的 ASDP 运行通道。退出应用时关闭 bridge。
 
-Python 的 `agentscope_service.instrument()` 支持 HTTP 运行传输（`transport="http"`，使用 `control_plane_http`），也支持显式选择 gRPC。任务入口由框架适配器的 `handle_agent_task` 实现。选择适配器时先查看本章末"参考速查"的"Python 内置适配器"表，确认所需的命令、事件和任务能力确实可用。
+Python 的 `agentscope_service.instrument()` 支持 HTTP 运行传输（`transport="http"`，使用 `control_plane_http`），也支持显式选择 gRPC。任务入口由框架适配器的 `handle_agent_task` 实现。选择适配器时先查看章末"参考速查"的"Python 内置适配器"表，确认所需的命令、事件和任务能力确实可用。
 
 注册请求中的 `capabilities` 是能力声明，不会替你实现执行逻辑。例如，`agent-task` 表示接收平台任务；Java 适配器配置任务 starter 后才声明它，Python 适配器则根据实际任务方法与运行传输配置判断。`session-abort` 表示能够中止当前执行，也必须有对应实现。
 
@@ -660,11 +677,11 @@ Agent 记录说明逻辑身份已存在；实例记录反映实际副本及其�
 
 > **延伸阅读**：加入协作团队见第 32 章"创建与运行 Team"；Session API 调用见第 31 章"通过 Session API 接入应用"；注册接口全表见本章末"参考速查"。
 
-## External SDK 与运行协议
+### 深入运行协议与 SDK：让实例接住任务
 
-上一节的注册只登记了身份，实例还接不住平台派发的任务。本节按 SDK、参数和执行协议集中说明接入配置。External Agent 保留你的应用进程、框架和部署方式，同时接入统一目录、会话诊断与工作协作；它不是由 Service 启动的 Managed Agent，也不要求把应用改造成 Runtime Host provider。
+登记只解决了身份，实例还接不住平台派发的任务。这一小节按 SDK、参数和执行协议集中说明接入配置。External Agent 保留你的应用进程、框架和部署方式，同时接入统一目录、会话诊断与工作协作；它不是由 Service 启动的 Managed Agent，也不要求把应用改造成 Runtime Host provider。
 
-先按本章"注册 External Agent"跑通接入。本节内容供实现或排查接入适配器的开发者使用；业务应用若只调用已经接好的 Agent，可跳到下一节 Workspace。
+先完成上文的登记与验证。本小节内容供实现或排查接入适配器的开发者使用；业务应用若只调用已经接好的 Agent，可跳过它，直接阅读"Workspace、Skills 与子 Agent"。
 
 ### 先选择接入路径
 
@@ -944,7 +961,7 @@ Workspace 响应中的 `version` 是草稿版本；当前草稿 PATCH、文件�
 
 ## 本章小结
 
-这一章把第 29 章浏览器里的点击换成了可复用的 API 调用，并沿配置纵深把一个 Agent 调教到三种运行类型都能接入的程度：
+这一章把第 29 章浏览器里的点击换成了可复用的 API 调用，沿配置纵深调教了 Managed Agent，并补齐了运行形态的选择依据：
 
 1. **跑通主线**：Environment、Agent、Session、Turn 四个请求跑通第一个托管 Agent，快照与 SSE 事件核对工具执行，`Idempotency-Key` 保证重试安全；
 2. **定义与资源**：模型、指令、工具和默认资源都保存在定义中，更新走"读取—合并—提交"，默认绑定与显式选择各管一层，一次只调一个层次；
