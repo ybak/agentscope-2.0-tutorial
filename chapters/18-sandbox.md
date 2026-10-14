@@ -349,4 +349,4 @@ Sandbox 内对文件的修改不会反向同步回宿主——你想取沙箱里
 
 ## 配套动手实验
 
-跨境电商 Demo 的 [Step 12：Environment 与 E2B 沙箱](../demo/cross-border-commerce/steps/step-12-sandbox.md) 提供当前本地 Service 源码对应的教程与脚本。配置层与运行层分开验收，实际验证范围见该节末尾。
+跨境电商 Demo 的 [Step 12：Environment 与阿里云沙箱](../demo/cross-border-commerce/steps/step-12-sandbox.md) 提供当前本地 Service 源码对应的教程与脚本：通过控制面把 `type=sandbox` 环境直配为阿里云沙箱（E2B 兼容 API，`config.apiKey` 下发，Dataplane 零配置），并以两个真实会话验收文件执行与 SESSION 隔离。配置层与运行层分开验收，实测范围见该节末尾。

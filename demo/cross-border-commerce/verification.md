@@ -80,7 +80,7 @@ cd demo/cross-border-commerce
 | 检查项 | 结果 | 边界 |
 | --- | --- | --- |
 | 11 Workspace | 多次通过 | 两份文件写入并回读；重复发布复用 revision 1；实验 Agent 的绑定版本与 digest 一致 |
-| 12 Environment | 通过登记与复用 | 回读默认 local，创建并复用 E2B sandbox 环境；没有启动云沙箱或验证 E2B Key |
+| 12 Environment | 真实执行通过 | 回读默认 local；控制面把 sandbox 环境直配为阿里云沙箱（E2B 兼容端点 + `config.apiKey`，Dataplane 零配置）；实验 Agent 绑定后新会话在云沙箱内 write/read 随机标记成功回读；第二个新会话读同路径确认 SESSION 隔离；超时回收与快照恢复留作手动观察 |
 | 13 模型定义 | 通过读取与保存 | 用原模型 ID 保存实验 Agent，回读 definition version 2；Workspace、工具与环境字段保持一致；未切换通道 |
 | 11–13 执行入口 | 通过 | `./run-all.sh --from 11`；12/13 默认不发模型请求 |
 | 原隔离步骤 | 9 项通过 | 增加实验 Agent 后仍验证原业务角色齐全、namespace 归属及跨商家拒绝访问 |
@@ -88,9 +88,9 @@ cd demo/cross-border-commerce
 | Java 适配示例 | 编译通过 | 使用本地 core/OpenAI 构建产物与 Spring 依赖运行 javac；不等于自定义 Dataplane 已部署 |
 | 离线入口与模型探针 | 通过 | `python3 tests/test_entrypoints.py`：全部 13 步单步选择、8 种错误参数及6种本地 HTTP 桩响应；桩测试不代表真实模型网关 |
 
-新增资源：Workspace `ws_1f00115de267`，实验 Agent `64582f1d-6afc-4dcc-a670-c0b5eb326835`，沙箱环境登记 `env_9eabd64e9e27`。Workspace revision 1 的 digest 为 `f91d28ea116cd9f4fc3d3d4a69e7ca6a3d882def54da68e73d6b716bf4aa674f`。
+新增资源：Workspace `ws_1f00115de267`，实验 Agent `64582f1d-6afc-4dcc-a670-c0b5eb326835`，沙箱环境登记 `env_9eabd64e9e27`（后经控制面 PATCH 为阿里云沙箱配置并真实执行）。Workspace revision 1 的 digest 为 `f91d28ea116cd9f4fc3d3d4a69e7ca6a3d882def54da68e73d6b716bf4aa674f`。
 
-仍待具备凭据和额度后验收：工作区运行期文件投影与工具读取、E2B 实例启动及 SESSION 文件隔离、自有模型通道文本/工具/流式调用、自定义 Dataplane 部署与新 Chat 端到端执行。本轮未修改相邻 Service 源码或重启服务。
+仍待具备凭据和额度后验收：工作区运行期文件投影与工具读取、沙箱超时回收与快照恢复、自有模型通道文本/工具/流式调用、自定义 Dataplane 部署与新 Chat 端到端执行。E2B 实例启动与 SESSION 文件隔离已于 2026-10-14 用阿里云沙箱实测通过（见上表 Step 12）。本轮未修改相邻 Service 源码；沙箱验证期间为绕开免费额度耗尽，将实验 Agent 模型从 `deepseek-v4-flash-0731` 临时切换为 `qwen-flash`。
 
 ### 连续编号调整验证
 
