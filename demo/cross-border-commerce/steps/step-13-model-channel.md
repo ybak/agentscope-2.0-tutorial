@@ -5,7 +5,7 @@ title: 对接自有模型通道
 
 # Step 13 · 把公司模型网关接到托管 Agent
 
-> 本步导读：你已经有一个公司统一网关、私有部署模型或兼容 Chat Completions 的服务，希望 Agent 的请求走自己的通道。本节拆解连接配置、Dataplane 扩展、模型注册、Agent 选择和真实请求验收。前置：Step 11；默认检查不消耗模型额度。先看下方调用链全景图。
+> 本步导读：你已经有一个公司统一网关、私有部署模型或兼容 Chat Completions 的服务，希望 Agent 的请求走自己的通道。本节拆解连接配置、Dataplane 扩展、模型注册、Agent 静态选择、会话级模型切换和真实请求验收。前置：Step 11；默认检查不消耗模型额度。先看下方调用链全景图。
 
 ```mermaid
 sequenceDiagram
@@ -24,9 +24,16 @@ sequenceDiagram
     P->>P: ModelRegistry 解析别名 merchant-gateway
     P->>G: 模型请求（未实测）
     G-->>P: 流式响应 → 工具执行 → 最终回复
+    Note over T,P: 以下为会话级模型切换（--session-model，已实测）
+    T->>C: PATCH /api/internal/sessions/{rid}/overrides（agentOverrides.model）
+    C-->>T: sessions 表落库 agent_overrides_json
+    T->>C: 同一 Chat 提交下一 Turn
+    C->>P: 每 Turn 实时回读 session（含新 overrides）
+    P->>P: 缓存按 overrides 哈希隔离 → 重建 Agent → 解析新 model
+    P-->>T: 新模型回复；无效模型 ID 则 Turn 报 Model not exist
 ```
 
-*图 13-1：模型选择保存与上游探针已验证；Dataplane 解析别名并向网关发起真实请求的链路未经本轮实测。*
+*图 13-1：模型选择保存与上游探针已验证；Dataplane 解析别名并向网关发起真实请求的链路未经本轮实测。会话级切换（⑥ 节）已实测：正验切 `qwen-turbo` 回复成功，负验切不存在模型即报 `Model not exist`，证明覆盖真实生效。*
 
 ## ⓪ 先厘清：我们要改的是哪条链路？
 
@@ -163,6 +170,52 @@ bash steps/step-13-model-channel.sh --set-model merchant-gateway
 
 历史 Endpoint conversation 会因固定幂等键而被复用。若要验证新模型的外部调用，必须显式发布目标 Agent/定义并使用新的业务幂等键，不能把旧回复当作新通道已生效。
 
+## ⑥ 延伸：对话时选择模型（会话级覆盖）
+
+前面的模型选择都是 **Agent 静态的**：`definition.model` 改完要等新 Chat。如果业务要求"同一个 Agent，用户对话时选用不同模型"（例如快问快答用轻量模型、复杂分析走自有网关），平台已有会话级覆盖机制——但它有一个关键的入口限制，本节按实测讲清。
+
+### 先厘清：可选模型由哪层决定
+
+| 层 | 定义位置 | 谁决定可选值 |
+| --- | --- | --- |
+| 注册层 | Dataplane 的 `ModelRegistry` | DashScope 扩展原生支持 `dashscope:模型名`；自定义别名（如 `merchant-gateway`）必须先按 ② 节注册。**没注册的值选了也会在 Turn 时失败** |
+| Agent 静态层 | `definition.model` | 控制面创建托管 Agent 时写入（Step 03 `XBD_MODEL`、④ 节 `--set-model`），改后需新 Chat 生效 |
+| 会话动态层 | `sessions.agent_overrides_json` | 对话中切换，**下一 Turn 即生效**，无需新 Chat |
+
+### 会话级覆盖的机制（源码核对）
+
+控制面 `PATCH /api/sessions/:id` 接受 `agentOverrides`，白名单键为 `system` / `model` / `maxIters` / `name` / `description`，合并后落库。数据面**每个 Turn 都实时回读 session**（`controlPlaneClient.resolveSession`），Agent 构建缓存按 overrides 哈希隔离——覆盖一变就重建 Agent 实例，`model` 覆盖走与 definition 相同的 `b.model(...)` 解析路径。因此它是"会话内热切换"，不是 per-Turn 参数：`POST /api/v1/chats/{id}/turns` 的请求体没有模型字段，想要"每次对话选模型"，实践上是**每个 Chat 创建后先写覆盖再对话**。
+
+### 入口限制：公开 JWT 路径当前走不通
+
+Chat 创建的 runtime session 归属命名空间（`owner_id=namespace:<tenant>:<ns>`），而 `PATCH /api/sessions/:id` 要求 `currentUserID == owner_id`。alice / admin 的 JWT 身份都不匹配，实测返回 404。当前可用的通道是数据面/网关内部接口（internal token 鉴权，本机 dev 栈为公开缺省值）：
+
+```bash
+# .env 配置 XBD_CONTROL_BASE_URL=http://localhost:28081（aistiod 直连端口）
+bash steps/step-13-model-channel.sh --session-model dashscope:qwen-turbo   # 切换并验证
+bash steps/step-13-model-channel.sh --session-model -                      # 清除，回到 definition.model
+```
+
+脚本自动定位实验 Agent 最新 Chat → internal 通道写 `agentOverrides.model` → 提交一条验证 Turn。本轮实测：
+
+```
+--- 2. 会话级模型覆盖（下一 Turn 即生效，无需新 Chat）
+  + 已写入会话覆盖 model=dashscope:qwen-turbo
+--- 3. 验证 Turn（真实消耗模型额度）
+  ✓ 新模型 Turn 回复（截断）: 收到
+```
+
+负向验证同样通过：写入不存在的 `dashscope:nonexistent-model-xyz` 后，Turn 立即报 `400 Model not exist`——证明覆盖真实被数据面采用，而非继续用 Agent 原模型；`--session-model -` 清除后回读确认生效模型回到 `definition.model`。
+
+| 边界 | 说明 |
+| --- | --- |
+| 仅限本机 dev 栈 | internal 通道绕过会话 owner 校验，生产环境 internal token 是秘密，不能暴露给终端用户 |
+| 生产化路径 | 需要平台提供面向会话参与者的公开端点（放开 owner 校验或引入参与者授权） |
+| 不是 per-Turn | 覆盖是会话级；`turns` 请求体无模型字段 |
+| 额度 | 验证 Turn 真实消耗所选模型的额度 |
+
+如果不想动 internal 通道，**等价的公开 API 方案是按模型建 Agent 变体**：同一 Workspace 与环境、仅 `model` 不同的一组托管 Agent，用户选择 Agent 即选择模型（Step 03 的多 Agent 矩阵就是现成模式）。
+
 ## 常见错误怎么分层排查？
 
 | 错误 | 优先检查 |
@@ -174,19 +227,24 @@ bash steps/step-13-model-channel.sh --set-model merchant-gateway
 | 普通文本正常，工具调用失败 | 模型/网关是否支持 tools 与 tool_choice、arguments 是否可解析 |
 | 探针成功，Service 失败 | Dataplane 网络、镜像依赖、环境变量是否真的注入、Session 是否仍固定旧定义 |
 | Agent 改完后旧 Chat 没变化 | 用新 Chat 复核版本快照；已有 Session 不应假定自动切换 |
+| `--session-model` 后 Turn 报 `Model not exist` / provider 未注册 | 覆盖已生效但该值未注册（这正是负向验证的原理）；换已注册 ID 或 `--session-model -` 回滚 |
+| `PATCH /api/sessions/:id` 返回 404 | Chat 会话归属命名空间，JWT 用户不是 owner；本机 dev 用 `--session-model`（internal 通道），生产需等平台公开端点 |
+| `--session-model` 提示缺少 `XBD_CONTROL_BASE_URL` | 在 .env 配置本机 aistiod 直连地址（非网关端口），见 `.env.example` |
 
 ## 本步小结
 
 1. 自有通道接入包括扩展、连接参数、注册与 Agent 选择四层。
 2. 上游模型名、平台别名、Service URL 与网关 URL 要分开。
 3. 配置回读、上游探针、Service 真执行应依次验收。
+4. 模型可选三层：注册层决定可选值，Agent 静态层改后需新 Chat，会话级覆盖下一 Turn 即生效（当前经 internal 通道）。
 
 **验收清单**
 
 - ☑ 读取当前模型配置、适配示例 Java 编译核对。
+- ☑ 会话级模型切换实测：切 `qwen-turbo` 下一 Turn 生效，无效模型即报 `Model not exist`，清除后回到 `definition.model`。
 - ☐ 自有网关文本、工具调用与流式请求（本轮未提供该通道凭据）。
 - ☐ 自定义 Dataplane 部署、别名注册、新 Chat 与工具链实测。
 
 **继续阅读**：[第 6 章](../../../chapters/06-model.md)、[第 21 章](../../../chapters/21-model-providers.md)、[第 30 章](../../../chapters/30-managed-agents.md)。
 
-源码核对：Service 的 `service-dataplane/pom.xml`、`DataApp.java`、`DataPlaneConfig.java`、`HarnessAgentBuildService.java`；SDK 的 `ModelRegistry.java`、`OpenAIModelProvider.java`、`OpenAIChatModel.java`、`OpenAIClient.java`。这些是本地源码核对，不等同外部模型服务实测。
+源码核对：Service 的 `service-dataplane/pom.xml`、`DataApp.java`、`DataPlaneConfig.java`、`HarnessAgentBuildService.java`（overrides 覆盖 model）、`aistio/internal/product/handlers_sessions.go`（agentOverrides 白名单与 owner 校验）、`service-dataplane/.../managed/SessionTurnRunner.java`（每 Turn 实时回读 session）；SDK 的 `ModelRegistry.java`、`OpenAIModelProvider.java`、`OpenAIChatModel.java`、`OpenAIClient.java`。这些是本地源码核对，不等同外部模型服务实测。

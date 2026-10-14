@@ -81,7 +81,7 @@ cd demo/cross-border-commerce
 | --- | --- | --- |
 | 11 Workspace | 多次通过 | 两份文件写入并回读；重复发布复用 revision 1；实验 Agent 的绑定版本与 digest 一致 |
 | 12 Environment | 真实执行通过 | 回读默认 local；控制面把 sandbox 环境直配为阿里云沙箱（E2B 兼容端点 + `config.apiKey`，Dataplane 零配置）；实验 Agent 绑定后新会话在云沙箱内 write/read 随机标记成功回读；第二个新会话读同路径确认 SESSION 隔离；超时回收与快照恢复留作手动观察 |
-| 13 模型定义 | 通过读取与保存 | 用原模型 ID 保存实验 Agent，回读 definition version 2；Workspace、工具与环境字段保持一致；未切换通道 |
+| 13 模型定义 | 通过读取与保存 | 用原模型 ID 保存实验 Agent，回读 definition version 2；Workspace、工具与环境字段保持一致。会话级模型切换（--session-model，internal 通道）已实测：切 `dashscope:qwen-turbo` 下一 Turn 生效，切不存在模型即报 `Model not exist`，`-` 清除后回到 definition.model |
 | 11–13 执行入口 | 通过 | `./run-all.sh --from 11`；12/13 默认不发模型请求 |
 | 原隔离步骤 | 9 项通过 | 增加实验 Agent 后仍验证原业务角色齐全、namespace 归属及跨商家拒绝访问 |
 | 静态检查 | 通过 | 全部 Bash 语法、13 篇步骤 frontmatter、本地 Markdown 链接与 `git diff --check` |
@@ -90,7 +90,7 @@ cd demo/cross-border-commerce
 
 新增资源：Workspace `ws_1f00115de267`，实验 Agent `64582f1d-6afc-4dcc-a670-c0b5eb326835`，沙箱环境登记 `env_9eabd64e9e27`（后经控制面 PATCH 为阿里云沙箱配置并真实执行）。Workspace revision 1 的 digest 为 `f91d28ea116cd9f4fc3d3d4a69e7ca6a3d882def54da68e73d6b716bf4aa674f`。
 
-仍待具备凭据和额度后验收：工作区运行期文件投影与工具读取、沙箱超时回收与快照恢复、自有模型通道文本/工具/流式调用、自定义 Dataplane 部署与新 Chat 端到端执行。E2B 实例启动与 SESSION 文件隔离已于 2026-10-14 用阿里云沙箱实测通过（见上表 Step 12）。本轮未修改相邻 Service 源码；沙箱验证期间为绕开免费额度耗尽，将实验 Agent 模型从 `deepseek-v4-flash-0731` 临时切换为 `qwen-flash`。
+仍待具备凭据和额度后验收：工作区运行期文件投影与工具读取、沙箱超时回收与快照恢复、自有模型通道文本/工具/流式调用（会话级切换已用 DashScope 官方模型实测，自定义网关链路仍待接通）、自定义 Dataplane 部署与新 Chat 端到端执行。E2B 实例启动与 SESSION 文件隔离已于 2026-10-14 用阿里云沙箱实测通过（见上表 Step 12）。本轮未修改相邻 Service 源码；沙箱验证期间为绕开免费额度耗尽，将实验 Agent 模型从 `deepseek-v4-flash-0731` 临时切换为 `qwen-flash`。
 
 ### 连续编号调整验证
 

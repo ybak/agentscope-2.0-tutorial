@@ -50,7 +50,7 @@ flowchart TD
 | 10 | [Automation](steps/step-10-automation.md) | cron 预览、测试工单、异步终态与幂等 |
 | 11 | [Workspace](steps/step-11-workspace.md) | 资料文件、发布 revision、Agent 版本绑定与升级方法 |
 | 12 | [Environment 与沙箱](steps/step-12-sandbox.md) | local/E2B/remote/Worker 区别、控制面初始化阿里云沙箱与真实执行隔离验收 |
-| 13 | [自有模型通道](steps/step-13-model-channel.md) | Dataplane 适配类、网关参数、模型别名、可选探针 |
+| 13 | [自有模型通道](steps/step-13-model-channel.md) | Dataplane 适配类、网关参数、模型别名、可选探针、会话级模型切换 |
 
 ```mermaid
 flowchart LR
@@ -76,7 +76,7 @@ flowchart LR
 | --- | --- |
 | 公司的售后规则放哪里，更新后会不会直接影响所有 Agent？ | 11：草稿 → 发布 → 固定版本；附资料文件与回滚方法 |
 | 文件和命令运行在我的电脑、服务容器还是云沙箱？ | 12：查询当前 Environment，用阿里云沙箱（E2B 兼容）真实执行并验证会话隔离 |
-| 已有公司模型网关，怎么替换示例中的 DashScope？ | 13：扩展依赖、Java 注册类、YAML、配置回读与上游探针 |
+| 已有公司模型网关，怎么替换示例中的 DashScope？对话时怎么按需选模型？ | 13：扩展依赖、Java 注册类、YAML、配置回读、上游探针与会话级模型切换 |
 
 先完成 01–03，再执行 11 → 12/13。Step 11 创建独立 `xbd-workspace-lab` Agent，不替换主线的 4 个角色；Step 12/13 默认只读核对，Step 12 的 `--create/--bind/--run` 才会初始化沙箱环境并真实执行（需在 `demo/.env` 配置沙箱四项与可用模型 Key）。三个步骤可以绕过尚有额度阻塞的 04–08 单独学习。
 
@@ -128,7 +128,7 @@ cp .env.example .env
 | Endpoint invocation | 固定幂等键复用已有会话结果 |
 | Automation 测试运行 | 固定幂等键复用同一运行与工单 |
 | Workspace 实验 | 按名称复用 Workspace/实验 Agent，相同内容重复发布复用版本；实验会恢复样例文件 |
-| 沙箱与模型通道 | 默认只读；显式 --create/--bind/--run、--set-model、--probe-* 才执行相应操作 |
+| 沙箱与模型通道 | 默认只读；显式 --create/--bind/--run、--set-model、--session-model、--probe-* 才执行相应操作 |
 
 `.state.env` 含 JWT 与 Endpoint secret，已被 Git 忽略；不要输出或提交它。Endpoint secret 只在签发时返回，删除本地状态可能需要重新签发凭据。
 
@@ -142,7 +142,7 @@ cp .env.example .env
 - Step 09 验证审批中心与评论，不执行真实退款，也没有验证敏感工具暂停/恢复。
 - Step 10 验证排程计算与测试触发，不抓取真实价格；规则默认停用，没有等待次日 cron 到点触发。
 - Agent 没有接入真实订单、物流或市场数据，本例模型回复不能作为真实业务事实。
-- Step 11 已验证文件、发布与绑定，尚未验证模型实际读取；Step 12 已在阿里云沙箱（E2B 兼容）实测写入回读与 SESSION 隔离，超时回收与快照恢复留作手动观察；Step 13 已核对并编译适配示例，未连接用户自有网关。
+- Step 11 已验证文件、发布与绑定，尚未验证模型实际读取；Step 12 已在阿里云沙箱（E2B 兼容）实测写入回读与 SESSION 隔离，超时回收与快照恢复留作手动观察；Step 13 已核对并编译适配示例，会话级模型切换已实测（下一 Turn 生效、无效模型即报错），未连接用户自有网关。
 - API 与隔离实测覆盖 REST；不包含 Console 浏览器端验证。
 
 ## 与教程的关系
