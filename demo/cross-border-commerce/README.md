@@ -37,6 +37,8 @@ flowchart TD
 
 这些账号仅用于本地开发栈。`tenant=default` 是部署级配置，本例不是多个独立 tenant 部署。namespace 分三种 kind：`personal`（用户自动拥有）、`global`（系统预置的 `default` 公共区，对所有登录用户自动授予 member/developer/operator）、`shared`（商家租户单元，admin 创建并授予 owner）。
 
+> **看晕了先看这里**：全部领域对象（用户/Agent/definition/Session/Workspace/Environment/Team/Endpoint…）按业务域的设计说明，见[《数据库设计导览》](../../docs/database/README.md)——基于 v2.0.4 源码与 13 步实测，含七个业务域分解、实体图与"能力→域→表"速查。
+
 ## 步骤目录
 
 | 步骤 | 教程（同目录有同名 `.sh`） | 验证内容 |

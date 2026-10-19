@@ -222,4 +222,4 @@ bash steps/step-03-agent-matrix.sh
 - ☐ 跨租户单资源读取返回 404（预告 Step 05）
 - ☐ 脚本连跑两遍第二遍全部 `↺ 复用`（幂等）
 
-> **延伸阅读**：Agent 定义全字段与 Workspace/技能/子 Agent 体系见教程第 30 章。下一步 → [Step 04 Session 调用面](step-04-session-api.md)。
+> **延伸阅读**：本步涉及的 namespace / Agent / definition / Environment 等概念在[《数据库设计导览》](../../../docs/database/README.md)（§3 Agent 资产域）有完整的领域对象关系说明——"Agent 模版为什么不存在"、双面持久化架构等源码级机制也在其中。Agent 定义全字段与 Workspace/技能/子 Agent 体系见教程第 30 章。下一步 → [Step 04 Session 调用面](step-04-session-api.md)。
