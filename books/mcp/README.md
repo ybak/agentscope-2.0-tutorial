@@ -1,6 +1,6 @@
 # MCP:跨框架工具接入协议
 
-> 状态:**初稿完成(2026-10-24),待实测复核后发布**——各章附「复核清单」;Java 侧示例实测、spec 字段级复核、外部案例核实完成并升 status: published 后进站点。
+> 状态:**初稿 v2(2026-10-24)——基于官方规范原文([modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol) 2026-07-28)逐章对照重写**;TS SDK v2.4.0 双端实测。发布前按各章「复核清单」完成 Java 实测与 spec 字段级终核,升 status: published 后进站点。
 
 ## 定位
 
