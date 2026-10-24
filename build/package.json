@@ -5,9 +5,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "node build.mjs --check",
-    "html": "node build.mjs --html",
-    "pdf": "node build.mjs --pdf",
+    "check": "node build.mjs --check --book agentscope-java",
+    "html": "node build.mjs --html --book agentscope-java",
+    "pdf": "node build.mjs --pdf --book agentscope-java",
     "site": "node build.mjs --site && pagefind --site ../output/site",
     "test": "node --test books/books.test.mjs clean.test.mjs site.test.mjs"
   },

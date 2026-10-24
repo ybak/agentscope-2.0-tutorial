@@ -16,16 +16,20 @@ test('resolveBookPaths 推导子站与产物路径', () => {
   assert.equal(p.pdfPath, '/repo/output/x/x.pdf');
 });
 
-test('registry:仅 published 书持有 legacyRootChapters(旧站点根 chapters/ 所有权)', () => {
-  assert.equal(BUILDABLE_BOOKS.length, 1);
-  assert.equal(BUILDABLE_BOOKS[0].legacyRootChapters, true);
+test('registry:legacy 所有权唯一且 published 书显式声明 legacyRootChapters', () => {
+  // 旧站点根 chapters/ 路径只属于 agentscope-java;其余 published 书必须显式 false
+  const legacyOwners = BUILDABLE_BOOKS.filter((b) => b.legacyRootChapters === true);
+  assert.deepEqual(legacyOwners.map((b) => b.bookId), ['agentscope-java']);
+  for (const b of BUILDABLE_BOOKS) {
+    if (b.bookId !== 'agentscope-java') assert.equal(b.legacyRootChapters, false);
+  }
   for (const b of PLANNED_BOOKS) assert.equal('legacyRootChapters' in b, false);
 });
 
-test('registry:bookId 唯一且 agentscope-java 为唯一 published', () => {
+test('registry:bookId 唯一且 published 名单符合预期', () => {
   const ids = ALL_BOOKS.map((b) => b.bookId);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(BUILDABLE_BOOKS.map((b) => b.bookId), ['agentscope-java']);
-  for (const id of ['ragflow', 'copilotkit', 'langfuse', 'mcp'])
+  assert.deepEqual(BUILDABLE_BOOKS.map((b) => b.bookId), ['agentscope-java', 'mcp']);
+  for (const id of ['ragflow', 'copilotkit', 'langfuse', 'cli'])
     assert.ok(PLANNED_BOOKS.some((b) => b.bookId === id));
 });

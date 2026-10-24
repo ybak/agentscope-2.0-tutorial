@@ -11,9 +11,10 @@
  */
 
 import { book as agentscopeJava } from './agentscope-java.mjs';
+import { book as mcp } from './mcp.mjs';
 
 /** 可构建书（status: 'published'） */
-export const BUILDABLE_BOOKS = [agentscopeJava];
+export const BUILDABLE_BOOKS = [agentscopeJava, mcp];
 
 /** 规划中书（status: 'planned'），仅元数据，不参与构建 */
 export const PLANNED_BOOKS = [
@@ -34,12 +35,6 @@ export const PLANNED_BOOKS = [
     status: 'planned',
     title: 'Langfuse:LLM 可观测与评估',
     tagline: 'LLM 应用的追踪、评估与 Prompt 管理',
-  },
-  {
-    bookId: 'mcp',
-    status: 'planned',
-    title: 'MCP:跨框架工具接入协议',
-    tagline: 'Model Context Protocol,统一工具接入的跨框架标准',
   },
   {
     bookId: 'cli',
