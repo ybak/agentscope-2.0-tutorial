@@ -29,15 +29,19 @@ Model Context Protocol,统一工具接入的跨框架标准。本书讲两件事
 
 | 章节 | 内容一句话 | 分量 |
 |------|-----------|------|
-| [第 1 章 初识 MCP](chapters/01-overview.md) | N×M 集成爆炸 → N+M;与 function calling/插件的对比;生态与版本演进概览 | 薄(最后写) |
-| [第 2 章 协议核心概念](chapters/02-core-concepts.md) | 以 **2026-07-28 无状态核心**为主线:角色模型、tools/resources/prompts 语义边界(新手最常混淆,独立一节)、JSON-RPC 消息结构 | 中 |
-| [第 3 章 协议版本演进与兼容](chapters/03-spec-versions.md) | 五个版本逐个讲:2024-11-05 → 2025-03-26(Streamable HTTP)→ 2025-06-18(OAuth 2.1、elicitation)→ 2025-11-25 → **2026-07-28(无状态核心、去握手、多轮请求、header 路由、授权重写 RFC 9207、Tasks 转扩展,含破坏性变更)**;版本协商、兼容矩阵、存量 Server 迁移 | 中 |
-| [第 4 章 快速上手](chapters/04-quickstart.md) | 官方 SDK(含 Java)最小 Server + Inspector 调试;首次工具调用全链路时序图;贯穿案例初始化 | 中 |
-| [第 5 章 工具接入实战](chapters/05-tool-authoring.md) | 参数 schema 设计、命名与描述质量(LLM 靠描述选工具)、错误处理(可重试/不可重试)、大结果分页、幂等性 | 重 |
-| [第 6 章 规模化:业务中台的 MCP 化](chapters/06-mcp-at-scale.md) | **接口 ≠ 工具**(任务粒度聚合);OpenAPI/Swagger → MCP 工具自动生成管线;域拆分 + MCP Gateway 聚合;工具检索与动态发现(search+load、分页、按角色挂载);命名规范与目录治理 | **最重** |
-| [第 7 章 跨框架客户端接入](chapters/07-client-integrations.md) | 框架 × MCP 支持矩阵;agentscope-java 为主例(细节引其第 26 章),ragflow/copilotkit/AI CLI 交叉引用;贯穿案例多框架收尾 | 中 |
-| [第 8 章 部署与安全](chapters/08-deploy-security.md) | stdio vs Streamable HTTP 选型;鉴权与 2026-07-28 授权框架;多租户工具可见性;tool poisoning、描述注入、Server 供应链可信、最小权限;生产监控(→ langfuse 书) | 重 |
-| [第 9 章 企业落地路线图](chapters/09-adoption-roadmap.md) | Pilot(高频场景)→ 域 Server 试点 → 网关+检索规模化 → 常态治理;中台团队与业务团队分工;成本模型;与现有微服务治理体系融合;反模式清单 | 中 |
+| [第 1 章 初识 MCP](chapters/13-intro.md)* | 问题域、生态、三个时代判断 | 薄(全书引子,暂存 13 号位) |
+| [第 2 章 协议核心概念](chapters/02-core-concepts.md) | 无状态模型、resultType、_meta、错误码分区、discover、MRTR | 中 |
+| [第 3 章 协议版本演进与兼容](chapters/03-spec-versions.md) | 五版本主线、九大变更、官方七格矩阵、迁移八步 | 中 |
+| [第 4 章 快速上手](chapters/04-quickstart.md) | SDK 选型、最小 Server、四行为实测、贯穿案例骨架 | 中 |
+| [第 5 章 构建完整的 Server](chapters/05-build-server.md) | 真实 API 依赖、降级路径、日志红线、Host 测试 | 中 |
+| [第 6 章 工具接入实战](chapters/06-tool-authoring.md) | schema/描述质量/两类错误/句柄模式/MRTR 流转 | 重 |
+| [第 7 章 规模化:业务中台的 MCP 化](chapters/07-mcp-at-scale.md) | 接口≠工具、生成管线、域拆分+Gateway、检索发现、目录治理 | 最重 |
+| [第 8 章 构建 Client 与跨框架接入](chapters/08-client-integrations.md) | 支持矩阵、双端实测、client 能力弃用影响 | 中 |
+| [第 9 章 调试与 Inspector](chapters/09-debugging.md) | 官方调试工具箱:Inspector web/TUI/CLI、协议时代、安全审计 | 中 |
+| [第 10 章 部署与安全](chapters/10-deploy-security.md) | 头体系、OAuth 栈、多租户、威胁清单、部署清单 | 重 |
+| [第 11 章 Agent Skills 与扩展生态](chapters/11-extensions.md) | build-with-agent-skills;扩展四系:apps/auth/skills/tasks | 中 |
+| [第 12 章 企业落地路线图](chapters/12-adoption-roadmap.md) | 四阶段、组织分工、成本模型、反模式、决策树 | 中 |
+| [第 13 章 引子](chapters/13-intro.md) | 全书导览(与第 1 章合并前的暂存位) | 薄 |
 
 > 九章初稿已全部完成(2026-10-24),写作顺序(4→2→5→6→7→8→3→9→1)按计划执行;发布前按各章复核清单收尾。
 
