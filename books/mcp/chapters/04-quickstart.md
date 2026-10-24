@@ -84,6 +84,29 @@ await serveStdio(() => server);
 
 任一环节失败,优先怀疑描述缺失——模型(和 Inspector 的一些调用路径)依赖 description 决定"要不要用这个工具",这是第 5 章的主题,这里先埋个种子。
 
+### server/discover:一次请求认识对方
+
+规范要求每个 Server 实现 `server/discover`(第 2.6 节)。v2.4.0 实测——喂一行:
+
+```json
+{ "jsonrpc": "2.0", "id": 9, "method": "server/discover",
+  "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+    "io.modelcontextprotocol/clientCapabilities": {} } } }
+```
+
+得到:
+
+```json
+{ "result": { "resultType": "complete",
+    "supportedVersions": ["2026-07-28"],
+    "capabilities": { "tools": { "listChanged": true } },
+    "ttlMs": 0, "cacheScope": "private",
+    "_meta": { "io.modelcontextprotocol/serverInfo": { "name": "after-sales", "version": "0.1.0" } } },
+  "jsonrpc": "2.0", "id": 9 }
+```
+
+版本清单、能力、身份、缓存提示一次拿全——接入新 Server 时,先 discover 再干活,出错信息都会少一半。
+
 ## 4.4 首次工具调用:全链路时序
 
 ```mermaid
@@ -133,7 +156,7 @@ after-sales-mcp/
 
 ## 实测清单(发布前必须逐项完成)
 
-- [x] TypeScript 示例:v2.4.0 实测通过(分包名、McpServer/registerTool 签名、serveStdio、无握手 tools/list、tools/call、legacy initialize 兼容)——2026-10-24
+- [x] TypeScript 示例:v2.4.0 实测通过(分包名、McpServer/registerTool 签名、serveStdio、无握手 tools/list、tools/call、legacy initialize 兼容、server/discover)——2026-10-24
 - [ ] Java 示例:mcp-core 2.0.1 实测(坐标、modern 包 API 签名、Streamable HTTP 启动)
 - [ ] Python SDK 行:补查 2026-07-28 支持现状并填表
 - [ ] Inspector 对 v2/2026-07-28 的支持状态核实
