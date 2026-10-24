@@ -6,7 +6,34 @@ source: https://modelcontextprotocol.io/specification/2026-07-28 (basic/index, a
 
 # 第 2 章 协议核心概念
 
-> 本章对照 2026-07-28 官方规范原文(basic/index、versioning、server/discover)逐节展开;消息示例均取自规范或经 TypeScript SDK v2.4.0 实测。
+> 本章导读：一次售后查询，Agent 底层发生了什么？「模型选了工具」之前的目录从哪来？「无状态」的 Server 怎么知道该按哪个协议版本处理请求？本章对照 2026-07-28 官方规范原文（basic/index、versioning、server/discover），把协议核心拆开讲透：七个组件的分层地图、JSON-RPC 三种消息形态与 resultType 多态、三种消息模式、无状态的精确语义（每请求 `_meta` 元数据）、能力发现（server/discover）。消息示例均取自规范或经 TypeScript SDK v2.4.0 实测。读完本章，你能：画出一次调用的分层地图；读懂任意一条 MCP 消息的每个字段；说出三类能力的建模边界；用协议语言解释「为什么这版没有握手」。
+
+```mermaid
+flowchart LR
+    A["疑问<br/>一次调用的底层是什么?"] --> B["协议核心概念<br/>分层 · 消息 · 无状态 · 发现"]
+    B --> C["分层地图<br/>必读三层 + 按需选装"]
+    B --> D["消息<br/>JSON-RPC 三形态 + resultType"]
+    B --> E["三种模式<br/>请求响应 / MRTR / 订阅通知"]
+    B --> F["无状态<br/>_meta 每请求声明"]
+    B --> G["发现<br/>server/discover 能力名片"]
+    C --> H["收益<br/>读懂任意 MCP 消息<br/>为后续章节建好概念地图"]
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+```
+
+*本章导览图*
+
+## 你什么时候需要它
+
+**要读懂或手写一条 MCP 消息**——2.3(消息)与 2.5(`_meta`)是字典:每个字段的含义、哪些必填、缺了会怎样(-32602/400)。
+
+**在「工具、资源、提示」之间拿不定建模方式**——2.3 的决策表 + 三条经验法则,一分钟出结论。
+
+**要向团队解释「为什么 2026-07-28 没有 initialize 了」**——2.5 的无状态四规则与实测印证,就是答案。
+
+前置:无。本章是全书概念地基,后续每章都引用这里的编号。
 
 先看一次真实的调用。用户对 agentscope-java 客服 Agent 说:「我的售后单 T-2026-1031 到哪一步了?」Agent 决定调用售后工具,底层发生了什么?
 
@@ -222,6 +249,36 @@ async with Client(stdio_client(server_config)) as client:
 | 交互 | `input_required` + 自含续接 |
 
 → 有了这层概念地图,下一站可以选:**第 4 章**动手(推荐,30 分钟跑通双端),或**第 3 章**先弄清"我们怎么走到无状态"。
+
+## 验收清单
+
+读到这里，你应该能：
+
+- ☐ 画出七组件分层地图，并指出哪些「必须实现」；
+- ☐ 手写一条带完整 `_meta` 的 `tools/list` 请求，说出每个必填字段缺失时的服务端行为；
+- ☐ 解释 `resultType` 的多态设计，以及「缺失视为 complete」为谁而设；
+- ☐ 用决策表把一个新能力正确建模为 tool、resource 或 prompt；
+- ☐ 说出 MRTR 三步流转，并指出重试时哪两个字段有特殊要求；
+- ☐ 调用 `server/discover` 并解读 `supportedVersions`/`capabilities`/`instructions`。
+
+## 参考速查
+
+| 项 | 值 |
+|----|----|
+| 必填 `_meta` | `io.modelcontextprotocol/protocolVersion` + `/clientCapabilities`；建议带 `/clientInfo` |
+| resultType | `complete`（完成）/ `input_required`（待补输入）；缺省视为 complete |
+| 规范保留错误码 | -32020 HeaderMismatch / -32021 MissingRequiredClientCapability / -32022 UnsupportedProtocolVersion |
+| 三种模式 | 请求响应 / MRTR / 订阅通知（subscriptions/listen） |
+| 无状态四规则 | 不依赖连接上下文；多任务并发；不要求同连接；跨请求状态用显式标识符 |
+| 发现 | `server/discover`（Server 必须实现）：supportedVersions + capabilities + serverInfo + instructions |
+| JSON Schema | 默认 2020-12；`$ref` 不自动解引用网络 URI |
+
+## 延伸阅读
+
+- **第 4 章（快速上手）**——本章概念的 30 分钟可运行版：四行为实测 + 双端调用。
+- **第 3 章（版本演进）**——Modern 模型的来龙去脉与 Legacy 兼容。
+- **第 5 章（工具接入实战）**——2.3 的 tool 建模 + 本章 schema 语义的完整手艺。
+- **官方 learn/architecture 教程**——2.8 三层视角的原文 walkthrough（568 行）。
 
 ## 复核清单(发布前)
 
