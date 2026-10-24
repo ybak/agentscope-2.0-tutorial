@@ -1,53 +1,74 @@
 ---
 chapter: 4
 title: 快速上手
-source: https://modelcontextprotocol.io/docs/2026-07-28/sdk
+source: https://modelcontextprotocol.io/docs/2026-07-28/sdk 与 TypeScript SDK v2.4.0 实测
 ---
 
 # 第 4 章 快速上手
 
-> **初稿状态(2026-10-24)**:结构与事实性表述基于已查证的 SDK 版本现状;**全部代码为结构示意,未经实测**——发布前须按本章末「实测清单」逐项跑通校正。涉及 API 细节处以 ⚠️ 标注。
+> 本章导读：中台团队的真实处境是这样的——客服 Agent 项目要接售后接口，封装一遍；前端 CopilotKit 要展示售后进度，再封装一遍；新起的数据脚本，又一遍。本章要做的，就是把「封装一次、处处调用」从口号变成你机器上跑得起来的事实：20 分钟内，搭起第一个 MCP Server，并用一个真实的 Client 调用它。本章同时初始化贯穿全书的案例——**中台售后域 Server**，后续每一章都在它身上生长。读完本章，你能：选对 SDK 大版本并说明理由；写出最小 Server 并逐行解释每个部分；用裸 JSON-RPC 验证无状态协议的三个关键行为；说清一次工具调用在网络上的完整旅程。
 
-中台团队的真实处境:每个 Agent 项目都要把订单、物流、商品接口重新封装一遍——agentscope 项目封装一次,前端 CopilotKit 再封装一次,新起的 CLI 工具流又来一次。本章目标:20 分钟内,你把第一个 MCP Server 跑起来,让这个"封装一次、处处调用"的假设落地为可运行的事实,并初始化贯穿全书的案例——**中台售后域 Server**。
-
-## 4.1 环境准备与 SDK 选型
-
-2026-07-28 是一次断裂式升级:**v1 时代的 SDK 不会支持它**(官方明确 v1.x 不做 2026-07-28 支持),所以选型的第一原则是认准大版本:
-
-| SDK | 2026-07-28 支持 | 关键事实(2026-10 查证) | 适用读者 |
-| --- | --- | --- | --- |
-| TypeScript `@modelcontextprotocol/*` | **v2.x 起**(当前 ~2.3.1) | v2 拆分为独立包(client/server),新增 stateless transport | 生态最大,前端同构场景 |
-| Java `io.modelcontextprotocol.sdk:mcp-core` | **2.0.x 起**(当前 2.0.1,2026-10-17 发布) | 新 Server 在 `io.modelcontextprotocol.modern` 包,与 legacy `McpSchema` 并存;通过全部 37 个 2026-07-28 一致性场景 | **agentscope-java 读者主线** |
-| Python `modelcontextprotocol` | ⚠️ 待核对 | 动笔实测时以官方 SDK 列表页为准 | 数据侧脚本 |
-
-> ⚠️ 各 SDK 的"分层支持"官方口径见 [SDK 列表页](https://modelcontextprotocol.io/docs/2026-07-28/sdk)——它按 completeness / protocol support / maintenance 给每个 SDK 分级,选型前先看这一页。
-
-**本书主线**:Java(贯穿案例的 Server 用 Java 写,与 agentscope-java 读者群一致),TypeScript 作为对照。
-
-## 4.2 最小 MCP Server
-
-### Java(mcp-core 2.0.x,`io.modelcontextprotocol.modern` 包)
-
-```java
-// ⚠️ 结构示意:方法签名以 mcp-core 2.0.x javadoc 实测为准
-// build.gradle: implementation("io.modelcontextprotocol.sdk:mcp-core:2.0.1")
-var server = McpServer.toolServer()                       // modern 包的 Server 构建入口(示意)
-    .tool("echo", "原样返回输入文本,用于验证链路", (args) -> {
-        return Map.of("text", args.get("text"));
-    })
-    .inputSchema("echo", """
-        {"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}
-        """)
-    .build();
-
-server.startStreamableHttp(8080);                          // ⚠️ 2026-07-28 header 路由下的服务化入口(示意)
+```mermaid
+flowchart LR
+    A["你的处境<br/>每个项目重复封装同一批接口"] --> B["快速上手<br/>SDK 选型 · 最小 Server · 双端实测"]
+    B --> C["选型<br/>认准 2026-07-28 支持的大版本"]
+    B --> D["Server 侧<br/>声明工具 → 描述 → 挂传输"]
+    B --> E["协议行为实证<br/>无握手 · discover · legacy 兼容"]
+    B --> F["Client 侧<br/>三步连接并调用"]
+    C --> G["收益<br/>贯穿案例售后域 Server 就位<br/>全书后续章节的生长基座"]
+    D --> G
+    E --> G
+    F --> G
 ```
 
-### TypeScript(v2.x,实测于 2026-10-24,`@modelcontextprotocol/server@2.4.0`)
+*本章导览图*
+
+## 你什么时候需要它
+
+三种典型处境，对应本章三种读法。
+
+**第一次接触 MCP，想先跑起来再理解**——按顺序通读。4.2 的最小 Server 十行以内，4.3 的四个实测每个都是一条命令，跑完你对「无状态」的理解会从名词变成体感。
+
+**要为团队选定 SDK**——直接看 4.1 的选型表与论证。关键结论提前剧透：2026-07-28 是一次断裂式升级，**v1 时代的 SDK 不会获得支持**，选型第一原则是认准大版本。
+
+**要给团队搭一个可复用的 Server 底座**——重点看 4.2 与 4.6。4.6 的售后域骨架（目录结构、工具文件的组织方式）就是底座的形状，后面的章节都在它上面生长。
+
+前置条件：Node.js ≥ 20（实测环境）、npm 可用。Java 侧示例需要 JDK 17+ 与 Gradle，本章给出对照结构，实测补充见章末复核清单。
+
+## 概述
+
+本章围绕三个动作展开，它们也是所有 MCP Server 的共同骨架：
+
+| 动作 | 做什么 | 对应小节 |
+|------|--------|----------|
+| **声明工具** | 把业务能力注册为带名字的工具 | 4.2 |
+| **描述** | 用 JSON Schema 与 description 告诉模型「这是什么、怎么用」 | 4.2（深入在第 5 章） |
+| **挂传输** | 选 stdio 或 Streamable HTTP，让请求进得来、结果出得去 | 4.2、4.3 |
+
+SDK 怎么选？规范自身不断演进（第 3 章），SDK 按对规范版本的支持度分层。本书写作时的实况（2026-10 查证）：
+
+| SDK | 2026-07-28 支持 | 关键事实 | 适用读者 |
+|-----|-----------------|----------|----------|
+| TypeScript `@modelcontextprotocol/*` | **v2.x 起**（实测 2.4.0） | v1.x 明确不会支持 2026-07-28；v2 拆分为独立包（client / server），新增 stateless transport | 生态最大，前端同构场景 |
+| Java `io.modelcontextprotocol.sdk:mcp-core` | **2.0.x 起**（查证 2.0.1，2026-10-17 发布） | 新 Server 在 `io.modelcontextprotocol.modern` 包，与 legacy `McpSchema` 并存；通过全部 37 项 2026-07-28 一致性场景 | **agentscope-java 读者主线** |
+| Python `modelcontextprotocol` | ⚠️ 待核对 | 动笔实测时以官方 SDK 列表页为准 | 数据侧脚本 |
+
+各 SDK 的官方分层口径见 [SDK 列表页](https://modelcontextprotocol.io/docs/2026-07-28/sdk)——它按完整性、协议支持、维护承诺给每个 SDK 分级，选型前先看这一页。本书主线用 **Java** 写贯穿案例（与 agentscope-java 读者群一致），**TypeScript** 作对照与实测载体。
+
+先看 TypeScript 侧，因为它能在五分钟内从安装跑到调用。
+
+## 先跑通：十行最小 Server
+
+在任意目录初始化并安装两个包：
+
+```bash
+npm init -y
+npm i @modelcontextprotocol/server zod
+```
+
+新建 `server.mjs`（ESM 格式，零构建配置）：
 
 ```typescript
-// npm i @modelcontextprotocol/server zod
-// 运行:node server.mjs(书稿示例用 ESM + stdio,零额外配置)
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { z } from "zod";
@@ -56,7 +77,7 @@ const server = new McpServer({ name: "after-sales", version: "0.1.0" });
 
 server.registerTool("echo", {
   title: "回声",
-  description: "原样返回输入文本,用于验证链路",
+  description: "原样返回输入文本，用于验证链路",
   inputSchema: z.object({ text: z.string().describe("要回显的文本") }),
 }, async ({ text }) => ({
   content: [{ type: "text", text }],
@@ -65,100 +86,196 @@ server.registerTool("echo", {
 await serveStdio(() => server);
 ```
 
-实测记录(书稿可信度依据,均在 v2.4.0 下验证):
+逐行拆开看，每一行都对应一个协议概念（第 2 章的概念在这里全部落地）：
 
-- **无握手直发 `tools/list`**:stdin 喂一行 `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,直接返回工具清单——2026-07-28 无状态语义坐实,不需要任何 initialize
-- **`tools/call` 正常**:`params: { name: "echo", arguments: { text: "你好 MCP" } }` → `result.content[0].text` 原样返回
-- **legacy 兼容是活的**:向同一 Server 发 2025-06-18 的 `initialize`,默认(legacy: 'serve')返回 `protocolVersion: "2025-06-18"` 的握手结果——同一份代码同时服务新旧两代 client(`serveStdio` 的 `legacy: 'reject'` 可改为拒绝并报支持的现代版本;细节第 3 章展开)
-- zod 的 `.describe()` 会原样进入 `inputSchema.properties.*.description`——描述质量的工程抓手(第 5 章主线)
+| 代码 | 协议语义 |
+|------|----------|
+| `new McpServer({ name, version })` | Server 身份。回应答的 `_meta.serverInfo` 自报家门（第 2.5 节） |
+| `registerTool("echo", ...)` | 注册一个 model-controlled 的工具（第 5 章），名字是调用凭据 |
+| `title` / `description` | title 给人（目录、审批界面），description 给模型（选择依据）——受众不同，都写 |
+| `inputSchema: z.object(...)` | 参数 schema；`.describe()` 原样进入 JSON Schema 的 `description` 字段（实测印证） |
+| `async ({ text }) => ...` | 工具处理器：入参是 schema 校验后的参数对象，返回 `content` 数组 |
+| `serveStdio(() => server)` | 挂 stdio 传输；工厂形态是为 Dual-era 兼容留的口子（第 3 章） |
 
-两个 SDK 的共同骨架:**声明工具 → 描述(schema + description)→ 挂传输启动**。2026-07-28 的无状态化让"启动"比 v1 时代轻得多——没有会话保持,天然适配容器水平扩缩容,这也是第 8 章部署选型的伏笔。TS 侧的 HTTP 服务化走 `@modelcontextprotocol/express` / `fastify` / `hono` 适配器或 per-request 无状态传输(第 8 章部署实测)。
+启动后它就是一个标准 MCP Server 了。接下来不做任何「连接」动作，直接用裸 JSON-RPC 和它说话——这正是 2026-07-28 与旧版协议最直观的差别。
 
-## 4.3 用 Inspector 调试
+## 不发握手，直接调用：三个行为的实证
 
-⚠️ MCP Inspector 对 2026-07-28 / v2 SDK 的支持状态以官方仓库现况为准(待实测核对)。调试要验证三件事,对应三类最常见的第一坑:
+2026-07-28 移除了协议级会话与 `initialize` 握手（第 3 章）。「无握手」不是文档上的一句话，它是可以被一行命令验证的行为。以下四个实测都在 v2.4.0 下完成（2026-10-24），命令即证据。
 
-1. **连得上**:传输选型(stdio vs Streamable HTTP)与地址/头信息正确
-2. **列得出**:`tools/list` 返回你的工具,schema 校验通过
-3. **调得动**:手动 `tools/call` 返回结构化结果
+### 实测一：无握手直发 `tools/list`
 
-任一环节失败,优先怀疑描述缺失——模型(和 Inspector 的一些调用路径)依赖 description 决定"要不要用这个工具",这是第 5 章的主题,这里先埋个种子。
+Server 跑起来后，向 stdin 喂一行 JSON-RPC——注意，**没有发过任何 initialize**：
 
-### server/discover:一次请求认识对方
-
-规范要求每个 Server 实现 `server/discover`(第 2.6 节)。v2.4.0 实测——喂一行:
-
-```json
-{ "jsonrpc": "2.0", "id": 9, "method": "server/discover",
-  "params": { "_meta": { "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-    "io.modelcontextprotocol/clientCapabilities": {} } } }
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node server.mjs
 ```
 
-得到:
-
 ```json
-{ "result": { "resultType": "complete",
-    "supportedVersions": ["2026-07-28"],
-    "capabilities": { "tools": { "listChanged": true } },
-    "ttlMs": 0, "cacheScope": "private",
-    "_meta": { "io.modelcontextprotocol/serverInfo": { "name": "after-sales", "version": "0.1.0" } } },
-  "jsonrpc": "2.0", "id": 9 }
+{"result":{"tools":[{"name":"echo","title":"回声","description":"原样返回输入文本，用于验证链路",
+"inputSchema":{"type":"object","$schema":"https://json-schema.org/draft/2020-12/schema",
+"properties":{"text":{"type":"string","description":"要回显的文本"}},"required":["text"]}}]},
+"jsonrpc":"2.0","id":1}
 ```
 
-版本清单、能力、身份、缓存提示一次拿全——接入新 Server 时,先 discover 再干活,出错信息都会少一半。
+工具清单直接返回。v1 时代的教程会先教你握手——在这里那一步不存在了。zod 的 `.describe()` 出现在了输出的 `description` 字段里：**描述质量的工程抓手，从第一行代码就生效**（第 5 章的主线）。
 
-## 4.4 首次工具调用:全链路时序
+### 实测二：`tools/call` 拿到结构化结果
+
+```bash
+echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"text":"你好 MCP"}}}' | node server.mjs
+```
+
+```json
+{"result":{"content":[{"type":"text","text":"你好 MCP"}]},"jsonrpc":"2.0","id":2}
+```
+
+参数经 schema 校验后进入处理器，结果按 `content` 数组返回。如果处理器抛出业务异常，返回形态会变成 `isError: true` 的正常 result（第 5 章的两类错误模型，此处先埋个种子）。
+
+### 实测三：`server/discover`，一次请求认识对方
+
+规范要求每个 Server 实现 `server/discover`（第 2.6 节）——接入一个陌生 Server 时，先问它「你是谁、支持什么版本、有什么能力」：
+
+```bash
+echo '{"jsonrpc":"2.0","id":9,"method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}' | node server.mjs
+```
+
+```json
+{"result":{"supportedVersions":["2026-07-28"],
+"capabilities":{"tools":{"listChanged":true}},
+"resultType":"complete","ttlMs":0,"cacheScope":"private",
+"_meta":{"io.modelcontextprotocol/serverInfo":{"name":"after-sales","version":"0.1.0"}}},
+"jsonrpc":"2.0","id":9}
+```
+
+版本清单、能力、身份、缓存提示一次拿全。接入新 Server 时先 discover 再干活，联调出错信息会少一半。注意 `tools.listChanged: true`——这个能力声明意味着 Server 会在工具目录变化时发通知（第 6 章的「活目录」机制，源头在这里）。
+
+### 实测四：legacy 兼容是活的
+
+最有趣的一个：向同一个 Server 发一个 2025-06-18 时代的 `initialize` 握手：
+
+```bash
+echo '{"jsonrpc":"2.0","id":3,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"old-client","version":"1.0"}}}' | node server.mjs
+```
+
+```json
+{"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":true}},
+"serverInfo":{"name":"after-sales","version":"0.1.0"}},"jsonrpc":"2.0","id":3}
+```
+
+它**被正常应答了**——Server 返回了 `protocolVersion: "2025-06-18"` 的标准握手结果。这就是规范说的 **Dual-era Server**（第 3 章）：按 client 的开场自动分流，现代 client 走无状态路径，legacy client 走旧握手语义，一份代码同时服务两代。`serveStdio` 的 `legacy: 'reject'` 选项可以反过来硬切旧版（拒绝并报出支持的现代版本），灰度迁移时有用。
+
+四个实测拼出的图景：**无状态协议把「连接」从协议语义中抽走了**——每个请求自含，Server 无状态可任意扩缩，新旧 client 的差异被入口分流吸收。这就是第 2 章概念的体感版本。
+
+## 首次调用的全链路时序
+
+把实测拼回真实场景。用户对 agentscope-java 客服 Agent 说「我的售后单到哪一步了」，底层旅程如下：
 
 ```mermaid
 sequenceDiagram
-    participant H as Host(agentscope-java Agent)
+    participant H as Host（agentscope-java Agent）
     participant C as MCP Client
-    participant S as 售后域 Server(8080)
+    participant S as 售后域 Server（8080）
 
-    H->>C: 用户提问「我的售后单到哪一步了」
-    C->>S: tools/list(header 路由到售后域)
-    S-->>C: 工具清单(6 个工具的 name/description/schema)
+    H->>C: 用户提问「售后单 T-2026-1031 到哪一步了」
+    C->>S: tools/list（header 路由到售后域）
+    S-->>C: 工具清单（6 个工具的 name/description/schema）
     C-->>H: 工具目录注入模型上下文
-    H->>H: 模型选择 query_ticket 工具
-    C->>S: tools/call(query_ticket, {ticket_id: "..."})
-    S->>S: 调用中台售后接口(聚合逻辑)
+    H->>H: 模型选择 query_ticket 工具并填参
+    C->>S: tools/call（query_ticket，带参数）
+    S->>S: 调用中台售后接口（聚合逻辑）
     S-->>C: 结构化结果
     C-->>H: 工具结果回填模型上下文
     H-->>H: 模型生成自然语言答复
 ```
 
-注意与 v1 教材的差异:**没有 initialize 握手环节**——2026-07-28 移除了协议级会话,每次交互自含。这个差异在第 3 章版本演进里系统展开。
+三个观察点：
 
-## 4.5 贯穿案例初始化:售后域 Server 骨架
+1. **`tools/list` 与 `tools/call` 是两次独立请求**——无状态语义下没有「先建立再复用」的隐含关系，目录本身可缓存（Server 响应里的 `ttlMs` 就是给这个用的）
+2. **「模型选择工具」发生在 Host 侧**——Server 只提供目录与执行，把哪些工具放进模型上下文是 Host 的治理动作（第 6 章规模化治理的落点）
+3. **HTTP 场景下每次请求都带 `MCP-Protocol-Version` 等标准头**（第 8 章）——本图省略，联调排查时先查头
 
-从本章起,全书围绕它展开(第 5 章完善工具、第 6 章规模化、第 7 章多框架消费):
+## 贯穿案例：售后域 Server 骨架
+
+从本章起，全书围绕这个案例生长：第 5 章充实工具、第 6 章规模化、第 7 章多框架消费。骨架先行：
 
 ```
 after-sales-mcp/
 ├── src/main/java/.../AfterSalesServer.java   # Server 入口与工具注册
-├── tools/                                     # 工具定义(一个任务级工具一个文件)
+├── tools/                                     # 工具定义（一个任务级工具一个文件）
 │   ├── query-ticket.json                      # 查询售后单进度
-│   ├── create-ticket.json                     # 创建售后单(第 5 章实现)
+│   ├── create-ticket.json                     # 创建售后单（第 5 章实现）
 │   └── ...
-├── openapi/after-sales.yaml                   # 中台售后域 OpenAPI 原始资产(20 接口)
+├── openapi/after-sales.yaml                   # 中台售后域 OpenAPI 原始资产（20 接口）
 └── README.md                                  # 域归属、负责人、工具目录
 ```
 
-第一个真实工具 `query_ticket`:封装中台「售后单查询」接口(该域 20 个接口之一)。⚠️ 它的完整实现(参数 schema、错误处理、对模型友好的错误消息)放在第 5 章——本章只放 echo 级占位跑通链路。
+三个设计决定值得说明：
 
-## 4.6 小结与衔接
+- **工具定义外置为文件**（`tools/*.json`）：工具是「目录条目 + 执行逻辑」的组合，定义外置让目录治理（第 6 章）不必碰代码
+- **OpenAPI 原样入库**（`openapi/`）：它是第 6 章生成管线的输入，也是接口变更 diff 的基准
+- **echo 级占位先行**：`query_ticket` 的完整实现（schema 设计、错误消息、幂等）是第 5 章的内容——本章只求链路通，不求工具好
 
-- 认准 SDK 大版本:TS v2.x / Java mcp-core 2.0.x(modern 包),v1 时代材料(包括网上大量教程)对 2026-07-28 已失效
-- 2026-07-28 无状态核心:无握手、无会话,Server 天然可水平扩缩容
-- 贯穿案例骨架就位,下一章把 echo 占位换成真正"模型爱用"的工具
+Java 侧的对照结构（mcp-core 2.0.x，`io.modelcontextprotocol.modern` 包）：构建入口同样遵循「声明工具 → 描述 → 挂传输」，具体 API 签名以 javadoc 实测为准（章末复核清单第一项）。
 
-→ **第 5 章 工具接入实战**:schema 设计、描述质量、错误处理——把"能调通"做成"生产可靠"。
+## 常见第一坑
 
-## 实测清单(发布前必须逐项完成)
+| 坑 | 现象 | 解法 |
+|----|------|------|
+| SDK 装错大版本 | TS 装成 v1 的 `@modelcontextprotocol/sdk`，无 2026-07-28 行为 | 认准 v2 分包：`@modelcontextprotocol/server` / `client`（第 3 章） |
+| 传输不通 | Client 连不上 stdio 进程 | 检查 command/args 指向的启动方式；stdio 的 stdin/stdout 被日志污染也会坏——日志走 stderr |
+| schema 校验失败 | 调用返回 Invalid Params | 参数与 inputSchema 逐字段对照；必填缺失、类型不符是两大主因 |
+| 模型不选工具 | 工具能调通，但 Agent 从不选它 | description 缺失或太弱——第 5 章的描述质量工程就是为此准备的 |
+| 手写裸请求缺 `_meta` | 服务端返回 -32602 Invalid Params | 每个请求必须带 `protocolVersion` 与 `clientCapabilities`（第 2.5 节）；SDK 便捷方法已自动拼装 |
 
-- [x] TypeScript 示例:v2.4.0 实测通过(分包名、McpServer/registerTool 签名、serveStdio、无握手 tools/list、tools/call、legacy initialize 兼容、server/discover)——2026-10-24
-- [ ] Java 示例:mcp-core 2.0.1 实测(坐标、modern 包 API 签名、Streamable HTTP 启动)
-- [ ] Python SDK 行:补查 2026-07-28 支持现状并填表
-- [ ] Inspector 对 v2/2026-07-28 的支持状态核实
-- [ ] 4.4 时序图与真实消息流对照(tools/list、tools/call 已对照;Host→Client 环节待 agentscope 侧联调时复核)
-- [ ] SDK 列表页的分层支持口径复核(标注核实日期)
+## 本章小结
+
+1. **选型看大版本**：2026-07-28 是断裂式升级——TS v2.x 分包（实测 2.4.0）、Java mcp-core 2.0.x（modern 包，37 项一致性通过）；v1 时代 SDK 与教程不再适用。
+2. **Server 骨架三动作**：声明工具、描述（schema + description）、挂传输——十行以内可以起步。
+3. **无握手是可验证的行为**：直发 `tools/list`、`tools/call` 立即生效（实测）；`server/discover` 一次拿到版本、能力、身份。
+4. **legacy 兼容是活的**：同一 Server 应答 2025-06-18 的握手（Dual-era，实测），灰度期一份代码服务两代 client。
+5. **贯穿案例骨架就位**：售后域目录结构（工具定义外置 + OpenAPI 入库）是后续所有章节的生长基座。
+
+下一步把「能调通」升级为「模型爱用、生产可靠」：第 5 章讲 schema 设计、描述质量与错误处理——工具建模的手艺决定 Agent 成功率。
+
+## 验收清单
+
+读到这里，你应该能：
+
+- ☐ 说明 2026-07-28 下 TS 与 Java SDK 的版本要求，并为团队选定主线；
+- ☐ 从零写出 echo 级最小 Server 并启动；
+- ☐ 用裸 JSON-RPC 完成无握手的 `tools/list` 与 `tools/call`；
+- ☐ 调用 `server/discover` 并解释返回的四个部分；
+- ☐ 向 Server 发 2025-06-18 握手并解释应答结果说明了什么；
+- ☐ 画出一次工具调用的全链路时序，指出「模型选择」发生在哪一侧；
+- ☐ 说出售后域骨架三个设计决定的理由。
+
+## 参考速查
+
+本节收拢本章实测命令与版本事实，供操作时对照。
+
+| 操作 | 命令 / 值 |
+|------|-----------|
+| 初始化 | `npm init -y && npm i @modelcontextprotocol/server zod` |
+| 启动 Server | `node server.mjs` |
+| 无握手列目录 | `echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \| node server.mjs` |
+| 调用工具 | `echo '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"echo","arguments":{"text":"hi"}}}' \| node server.mjs` |
+| 能力发现 | `method: "server/discover"`（`_meta` 带协议版本与 clientCapabilities） |
+| legacy 握手 | `method: "initialize"`，`protocolVersion: "2025-06-18"` |
+| 实测版本 | `@modelcontextprotocol/server@2.4.0`、`@modelcontextprotocol/client@2.x`（2026-10-24） |
+
+## 延伸阅读
+
+- **第 3 章（版本演进）**——四个实测行为背后的协议变更史：为什么握手被移除、Dual-era 从哪来。
+- **第 5 章（工具接入实战）**——echo 占位的下一步：schema 设计与描述质量决定 Agent 成功率。
+- **第 2 章（协议核心概念）**——`_meta` 每请求元数据与 `resultType` 的完整语义。
+- **agentscope-java 书第 26 章**——Host 侧（agentscope-java）如何接入 MCP Server。
+
+## 复核清单（发布前）
+
+- [x] TypeScript 示例：v2.4.0 实测通过（分包名、McpServer/registerTool 签名、serveStdio、无握手 tools/list、tools/call、legacy initialize 兼容、server/discover）——2026-10-24
+- [ ] Java 示例：mcp-core 2.0.1 实测（坐标、modern 包 API 签名、Streamable HTTP 启动），并替换 4.6 的对照描述
+- [ ] Python SDK 行：补查 2026-07-28 支持现状并填表
+- [ ] Inspector 对 v2 / 2026-07-28 的支持状态核实
+- [ ] 4.5 时序图的 Host→Client 环节待 agentscope 侧联调时复核
+- [ ] SDK 列表页的分层支持口径复核（标注核实日期）
