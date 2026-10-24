@@ -43,21 +43,36 @@ var server = McpServer.toolServer()                       // modern 包的 Serve
 server.startStreamableHttp(8080);                          // ⚠️ 2026-07-28 header 路由下的服务化入口(示意)
 ```
 
-### TypeScript(v2.x 分包)
+### TypeScript(v2.x,实测于 2026-10-24,`@modelcontextprotocol/server@2.4.0`)
 
 ```typescript
-// ⚠️ 结构示意:以 ts.sdk.modelcontextprotocol.io 的 v2 文档实测为准
-// npm i @modelcontextprotocol/server@^2
+// npm i @modelcontextprotocol/server zod
+// 运行:node server.mjs(书稿示例用 ESM + stdio,零额外配置)
 import { McpServer } from "@modelcontextprotocol/server";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
+import { z } from "zod";
 
 const server = new McpServer({ name: "after-sales", version: "0.1.0" });
-server.tool("echo", { text: z.string() }, async ({ text }) => ({
+
+server.registerTool("echo", {
+  title: "回声",
+  description: "原样返回输入文本,用于验证链路",
+  inputSchema: z.object({ text: z.string().describe("要回显的文本") }),
+}, async ({ text }) => ({
   content: [{ type: "text", text }],
 }));
-// stateless transport 启动(示意)——2026-07-28 下无需会话保持
+
+await serveStdio(() => server);
 ```
 
-两个 SDK 的共同骨架:**声明工具 → 描述(schema + description)→ 挂传输启动**。2026-07-28 的无状态化让"启动"比 v1 时代轻得多——没有会话保持,天然适配容器水平扩缩容,这也是第 8 章部署选型的伏笔。
+实测记录(书稿可信度依据,均在 v2.4.0 下验证):
+
+- **无握手直发 `tools/list`**:stdin 喂一行 `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,直接返回工具清单——2026-07-28 无状态语义坐实,不需要任何 initialize
+- **`tools/call` 正常**:`params: { name: "echo", arguments: { text: "你好 MCP" } }` → `result.content[0].text` 原样返回
+- **legacy 兼容是活的**:向同一 Server 发 2025-06-18 的 `initialize`,默认(legacy: 'serve')返回 `protocolVersion: "2025-06-18"` 的握手结果——同一份代码同时服务新旧两代 client(`serveStdio` 的 `legacy: 'reject'` 可改为拒绝并报支持的现代版本;细节第 3 章展开)
+- zod 的 `.describe()` 会原样进入 `inputSchema.properties.*.description`——描述质量的工程抓手(第 5 章主线)
+
+两个 SDK 的共同骨架:**声明工具 → 描述(schema + description)→ 挂传输启动**。2026-07-28 的无状态化让"启动"比 v1 时代轻得多——没有会话保持,天然适配容器水平扩缩容,这也是第 8 章部署选型的伏笔。TS 侧的 HTTP 服务化走 `@modelcontextprotocol/express` / `fastify` / `hono` 适配器或 per-request 无状态传输(第 8 章部署实测)。
 
 ## 4.3 用 Inspector 调试
 
@@ -118,9 +133,9 @@ after-sales-mcp/
 
 ## 实测清单(发布前必须逐项完成)
 
+- [x] TypeScript 示例:v2.4.0 实测通过(分包名、McpServer/registerTool 签名、serveStdio、无握手 tools/list、tools/call、legacy initialize 兼容)——2026-10-24
 - [ ] Java 示例:mcp-core 2.0.1 实测(坐标、modern 包 API 签名、Streamable HTTP 启动)
-- [ ] TypeScript 示例:v2.x 实测(分包名、McpServer API、stateless transport 用法)
 - [ ] Python SDK 行:补查 2026-07-28 支持现状并填表
 - [ ] Inspector 对 v2/2026-07-28 的支持状态核实
-- [ ] 4.4 时序图与真实消息流对照(抓包或 SDK 日志)
+- [ ] 4.4 时序图与真实消息流对照(tools/list、tools/call 已对照;Host→Client 环节待 agentscope 侧联调时复核)
 - [ ] SDK 列表页的分层支持口径复核(标注核实日期)
