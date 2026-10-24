@@ -9,7 +9,7 @@
     "html": "node build.mjs --html",
     "pdf": "node build.mjs --pdf",
     "site": "node build.mjs --site && pagefind --site ../output/site",
-    "test": "node --test clean.test.mjs site.test.mjs"
+    "test": "node --test books/books.test.mjs clean.test.mjs site.test.mjs"
   },
   "dependencies": {
     "highlight.js": "^11.12.0",
