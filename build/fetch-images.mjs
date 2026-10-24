@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * fetch-images.mjs — 把 chapters/*.md 中的远程图片（微信图床等）下载到本地，
+ * fetch-images.mjs — 把书内章节（books/<bookId>/chapters/*.md）中的远程图片（微信图床等）下载到本地，
  * 让 PDF/HTML 离线可渲染。
  *
  * 行为：
- *   1. 扫描 chapters/*.md 中的 `![alt](http…)` 与 `<img src="http…">`（只处理 http/https 外链，
+ *   1. 扫描 books/agentscope-java/chapters/*.md 中的 `![alt](http…)` 与 `<img src="http…">`（只处理 http/https 外链，
  *      相对路径 ../assets/images/ 的本地引用跳过）。
- *   2. 去重后下载到 <仓库根>/assets/images/<sha1(url) 前 12 位>.<扩展名>；扩展名优先取 Content-Type，
+ *   2. 去重后下载到 books/agentscope-java/assets/images/<sha1(url) 前 12 位>.<扩展名>；扩展名优先取 Content-Type，
  *      其次按文件头魔数嗅探（微信图床可能返回 webp），再退回 URL 的 wx_fmt 参数。
  *   3. 请求头带 User-Agent + Referer: https://mp.weixin.qq.com/（微信图床防盗链）；
  *      并发 5；单张失败重试 2 次（间隔 2s）；响应为 HTML 错误页时按失败处理。
- *   4. 成功 → 章节稿中的 URL 替换为相对路径 ../assets/images/<file>（相对 output/book.html 解析到仓库 assets/）；
- *      失败 → 记入 assets/images/_failed.txt，并把该图引用替换为
+ *   4. 成功 → 章节稿中的 URL 替换为相对路径 ../assets/images/<file>（相对书内 assets/ 解析，产物侧镜像同级）；
+ *      失败 → 记入 books/agentscope-java/assets/images/_failed.txt，并把该图引用替换为
  *      `> **图**（原 alt 文案）：图片未能本地化，请参考在线版文档` 引用块；
  *      引用块上方保留一条 HTML 注释（渲染不可见）记录原始 URL/alt，供下次运行重试恢复。
  *   5. 幂等：已本地化的（../assets/images/ 引用）天然跳过；_failed 对应引用每次运行重试，
@@ -28,8 +28,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, '..'); // 仓库根
-const CHAPTERS_DIR = path.join(ROOT_DIR, 'chapters');
-const IMAGES_DIR = path.join(ROOT_DIR, 'assets', 'images');
+const CHAPTERS_DIR = path.join(ROOT_DIR, 'books', 'agentscope-java', 'chapters');
+const IMAGES_DIR = path.join(ROOT_DIR, 'books', 'agentscope-java', 'assets', 'images');
 const FAILED_LIST = path.join(IMAGES_DIR, '_failed.txt');
 
 const CONCURRENCY = 5;
@@ -63,7 +63,7 @@ const CT_EXT = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** 列出 chapters/ 下全部 .md（不递归，篇导读/序言/附录同样处理） */
+/** 列出书内 chapters/ 下全部 .md（不递归，篇导读/序言/附录同样处理） */
 function listChapters() {
   return fs
     .readdirSync(CHAPTERS_DIR, { withFileTypes: true })
@@ -291,7 +291,7 @@ async function main() {
   console.log(`[fetch-images] 引用处理：成功替换 ${okRefs} 处｜失败占位 ${failRefs} 处`);
   console.log(`[fetch-images] 文件类型分布：${JSON.stringify(extStats)}`);
   if (failedLines.length > 0) {
-    console.log(`[fetch-images] 失败清单已写入: assets/images/_failed.txt（下次运行自动重试）`);
+    console.log(`[fetch-images] 失败清单已写入: books/agentscope-java/assets/images/_failed.txt（下次运行自动重试）`);
     for (const line of failedLines.slice(0, 10)) console.log(`[fetch-images]   - ${line}`);
     if (failedLines.length > 10) console.log(`[fetch-images]   - ……其余 ${failedLines.length - 10} 条见清单文件`);
   }

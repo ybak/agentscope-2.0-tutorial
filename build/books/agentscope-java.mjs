@@ -26,8 +26,8 @@ export const book = {
   subtitle: '由浅入深的智能体开发教程',
   date: '2026-10-11',
   tagline: '7 篇 44 章,从第一个 Agent 到生产级 Agent 平台',
-  chaptersDir: 'chapters',            // T7 搬迁后改为 'books/agentscope-java/chapters'
-  assetsDir: 'assets',                // T7 搬迁后改为 'books/agentscope-java/assets'
+  chaptersDir: 'books/agentscope-java/chapters',
+  assetsDir: 'books/agentscope-java/assets',
   demoGithubBase: 'https://github.com/ybak/ai-tutorial/blob/main/books/agentscope-java/demo/',
   srcDir: '../agentscope-java/docs/v2/zh',
   pdfFileName: 'AgentScope-Java-2.0-从入门到进阶.pdf',

@@ -8,7 +8,7 @@ add_outline.py — 给构建出的 PDF 写侧边栏书签（outline/TOC）与元
 用法：
     python build/add_outline.py <pdf_path> <outline.json>
 
-outline.json 由 build.mjs 从 manifest 生成，形如：
+outline.json 由 build.mjs 从书配置的章节映射（book.PARTS，books/<bookId>.mjs）生成，形如：
     [{"level": 1, "title": "序言", "key": "preface"},
      {"level": 1, "title": "第一篇 起步", "key": "part:第一篇 起步"},
      {"level": 2, "title": "第 1 章 初识 AgentScope 2.0", "key": "ch:1"},
@@ -93,7 +93,7 @@ def key_pattern(key):
         return re.compile(rf"第\s*{m.group(1)}\s*章")
     m = re.fullmatch(rf"part:(第({CN_NUM})篇.*)", key)
     if m:
-        # 优先按「第 X 篇」中文数字匹配扉页，篇标题文字可能与 manifest 略异
+        # 优先按「第 X 篇」中文数字匹配扉页，篇标题文字可能与 book.PARTS 配置略异
         return re.compile(rf"第\s*{m.group(2)}\s*篇")
     fail(f"无法识别的大纲 key: {key!r}")
 

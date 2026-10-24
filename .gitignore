@@ -19,5 +19,5 @@ output/
 .page_*.png
 
 # 跨境电商 demo 本地状态
-demo/cross-border-commerce/.env
-demo/cross-border-commerce/.state.env
+books/agentscope-java/demo/cross-border-commerce/.env
+books/agentscope-java/demo/cross-border-commerce/.state.env

@@ -172,10 +172,10 @@ test("runSite 产出旧路径 stub 且清场重建无残留", async () => {
   const fs = await import("node:fs");
   const os = await import("node:os");
   const path = await import("node:path");
-  // runSite 需要书源目录(chapters/assets)存在;章节文件缺失仅 warn,不影响 stub
+  // runSite 需要书源目录(books/agentscope-java/{chapters,assets})存在;章节文件缺失仅 warn,不影响 stub
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "site-run-"));
-  fs.mkdirSync(path.join(tmp, "chapters"), { recursive: true });
-  fs.mkdirSync(path.join(tmp, "assets"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "books", "agentscope-java", "chapters"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "books", "agentscope-java", "assets"), { recursive: true });
   const stubPath = path.join(tmp, "output", "site", "chapters", "01-overview.html");
 
   runSite(tmp);
