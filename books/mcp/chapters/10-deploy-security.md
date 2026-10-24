@@ -25,11 +25,11 @@ flowchart LR
 
 ## 你什么时候需要它
 
-**Server 要对真实用户开放**——通读。8.1 的头体系与 8.2 的授权架构是合规底线，8.6 的部署清单就是上线评审表。
+**Server 要对真实用户开放**——通读。10.1 的头体系与 10.2 的授权架构是合规底线，10.6 的部署清单就是上线评审表。
 
 **多租户要隔离工具与数据**——直接看 10.4:「工具集随请求授权变化」是协议原生语义，配合目录过滤与租户上下文三层落地。
 
-**评审时有人问「MCP 的安全风险」**——把 8.3 的九项攻击清单摊开，每项都有形态与缓解；加上第 5 章的工具层防线，两层一起过。
+**评审时有人问「MCP 的安全风险」**——把 10.3 的九项攻击清单摊开，每项都有形态与缓解；加上第 5 章的工具层防线，两层一起过。
 
 前置：第 5 章（工具层安全清单）、第 6 章（Gateway 拓扑）、第 3 章（版本协商——头一致性校验的前提）。
 
@@ -39,7 +39,7 @@ flowchart LR
 | --- | --- | --- |
 | 场景 | 本机工具、CLI 内嵌、个人开发 | 服务化域 Server、多消费端、生产 |
 | 生命周期 | 随 Host 进程起停 | 常驻独立服务 |
-| 授权规范 | **不适用**——凭据从环境取 | 应遵循本章 8.3 框架 |
+| 授权规范 | **不适用**——凭据从环境取 | 应遵循本章 10.2 框架 |
 | 与无状态的关系 | 连接不是会话(第 2 章),legacy 兼容靠 discover 探针(第 3 章) | 无状态 + header 路由的完全体 |
 
 规则一句话:**本地与个人工具 stdio,进生产 Streamable HTTP**。
@@ -91,7 +91,7 @@ Mcp-Name: get_weather
 3. **MCP Server 必须实现 RFC 9728**(Protected Resource Metadata);**client 必须用它做 AS 发现**——Server 告诉 client"去哪里拿 token"
 4. HTTP 传输**应**遵循本框架;stdio **不应**(凭据走环境变量);其他传输必须遵循对应协议的安全最佳实践
 
-**CIMD 是什么**:client 不再"预注册"或"动态注册"拿 client_id,而是托管一份 URL 可访问的元数据文档,client_id 就是这个 URL。对中台的意义:每个新消费端(新 Agent 项目、新前端)上线,不需要在 AS 上走注册审批流——托管文档即接入。DCR 降级弃用的原因是实现层安全缺陷泛滥(CIMD 的信任模型更收敛,见 8.5)。
+**CIMD 是什么**:client 不再"预注册"或"动态注册"拿 client_id,而是托管一份 URL 可访问的元数据文档,client_id 就是这个 URL。对中台的意义:每个新消费端(新 Agent 项目、新前端)上线,不需要在 AS 上走注册审批流——托管文档即接入。DCR 降级弃用的原因是实现层安全缺陷泛滥(CIMD 的信任模型更收敛,见 10.3)。
 
 ## 10.3 安全威胁清单:规范点名的每一项
 
@@ -100,12 +100,12 @@ Mcp-Name: get_weather
 | 威胁 | 要点 | 防线 |
 | --- | --- | --- |
 | **Token audience 绑定** | RFC 8707:token 只对声明资源有效 | AS 签发时绑定;RS 校验 audience——跨服务重放被拒 |
-| **Token 被盗** | token 泄露即冒用 | 短时效、传输安全(8.2)、最小 scope |
+| **Token 被盗** | token 泄露即冒用 | 短时效、传输安全(10.2)、最小 scope |
 | **授权码保护** | code 截获风险 | PKCE(OAuth 2.1 强制)、`iss` 校验(RFC 9207,防 mix-up) |
 | **开放重定向** | redirect_uri 操纵 | 严格注册与精确匹配 |
 | **CIMD 特有风险** | AS 滥用(client 让 AS 向任意 URL 发请求)、localhost redirect 抢注、信任策略 | CIMD 文档域与 client 的归属校验;trust policy 明确"信任哪些 client 域" |
 | **Confused Deputy** | 恶意 client 借合法 client 的凭据/身份做事 | 每消费端独立身份;audience 绑定 |
-| **Access token 特权** | token 超范围 | 最小 scope;RS 按 scope 收窄工具可见性(→ 8.4) |
+| **Access token 特权** | token 超范围 | 最小 scope;RS 按 scope 收窄工具可见性(→ 10.4) |
 
 工具层(第 5 章)的攻击面并行存在:annotations 不可信、`$ref` 不解引用、结果视为数据非指令、敏感参数禁用 `x-mcp-header`。**两层防线一起过评审,缺一不可。**
 
@@ -131,7 +131,7 @@ Mcp-Name: get_weather
 
 官方授权教程(tutorials/security/authorization,1201 行)给出完整可复现实操:**Keycloak 作为 AS 的搭建**(realm/client/凭据)→ **MCP Server 侧接入**(RS 配置:auth server 位置、OAuth client 凭据、全局配置)→ **测试验证** → 常见坑。中台落地时照教程演练一遍并留档,比读十遍规范扎实——本节不复制其千行配置。
 
-## 本地 Server 安全:十条检查清单
+### 本地 Server 安全:十条检查清单
 
 域 Server 服务化之前,团队还会大量使用**本地 stdio Server**(个人工具、开发辅助)。官方本地安全指南(tutorials/security/local-server-security)的信任模型一句话:**运行一个本地 Server ≈ 在你机器上运行任意程序**——它能碰你的文件、凭据、网络。十条检查清单:
 
@@ -156,7 +156,7 @@ Mcp-Name: get_weather
 
 翻译成中台架构:租户 A 的 Agent 拿着租户 A 的 token 调 `tools/list`,售后域 Server 只返回租户 A 已开通的工具——**这是协议原生语义,不是黑科技**。配合:
 
-- 目录层过滤(6.5)决定"开通了什么";scope 校验(8.3)决定"这个 token 能看什么"
+- 目录层过滤(6.5)决定"开通了什么";scope 校验(10.3)决定"这个 token 能看什么"
 - 调用层:租户上下文经 `x-mcp-header` 租户头(5.7)或 token claims 传入,Server 侧所有中台查询带租户条件
 - 审计:每 `tools/call` 记录(租户、工具、参数摘要、状态),`Mcp-Name` 头让网关审计无需解析 body
 
@@ -167,7 +167,7 @@ Mcp-Name: get_weather
 - **可观测**:`_meta` 的 `traceparent`/`tracestate`/`baggage` 是规范保留键(W3C Trace Context)——trace 从 Host 贯穿到中台接口是协议内建能力;OTel MCP 语义约定已有官方文档
 - **日志**:Logging 特性已弃用——stderr(stdio)或 OTel;按请求级别走 `_meta.logLevel`
 
-## 8.6 部署清单(上线评审直接用)
+## 10.6 部署清单(上线评审直接用)
 
 - [ ] 传输:生产走 Streamable HTTP;三件头齐(`MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name`)
 - [ ] 授权:RS 实现 RFC 9728;AS 为 OAuth 2.1;消费端走 CIMD;client 实现 `iss` 校验
@@ -178,7 +178,7 @@ Mcp-Name: get_weather
 - [ ] 可观测:traceparent 贯穿;三指标(命中率/失败率/重试率)埋点
 - [ ] 描述评审:第 5 章标准的"差 vs 好"评审留档
 
-## 8.7 小结
+## 10.7 小结
 
 - 头体系让网络中间件成为协议参与者——MCP 为基础设施设计
 - 授权 = 标准 OAuth 拓扑:Server 是 RS,消费端走 CIMD 自述身份,发现靠 RFC 9728
@@ -196,7 +196,7 @@ Mcp-Name: get_weather
 - ☐ 说明 CIMD 与 DCR 的关系，以及为什么 DCR 被弃用；
 - ☐ 为多租户场景配置「目录过滤 + 调用上下文 + 审计」三层隔离；
 - ☐ 对照九项攻击清单逐项给出当前架构的缓解措施；
-- ☐ 拿着 8.6 部署清单完成一次上线评审。
+- ☐ 拿着 10.6 部署清单完成一次上线评审。
 
 ## 参考速查
 
