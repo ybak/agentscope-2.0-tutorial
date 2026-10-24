@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 /**
- * build.mjs — AgentScope Java 2.0 中文书籍构建脚本
+ * build.mjs — 多书构建脚本（--book 参数化）
  *
  * 链路：Markdown → HTML → Edge headless PDF →（PyMuPDF 补写书签/元数据）
- * 结构来源：manifest.mjs（Task 3 全书映射）；清洗体检用 clean.mjs（Task 2）。
+ * 结构来源：books/<bookId>.mjs 的 book 配置（PARTS/buildLinkMap/EXCLUDED_SOURCES
+ * 收敛在 book 上）；清洗体检用 clean.mjs。
  *
  * 用法（在 build/ 下执行）：
- *   node build.mjs --html           只产出 output/book.html（含 Paged.js 分页）
- *   node build.mjs --pdf            产出 HTML 与 output/AgentScope-Java-2.0-从入门到进阶.pdf
- *   node build.mjs --pdf-fallback   退化方案：不用 Paged.js，Edge 默认分页 + 默认页脚页码
- *   node build.mjs --check          全源清洗体检（JSX 残留 / 内链 / 图片 / mermaid / 覆盖率）
+ *   node build.mjs --html                          产出 output/<bookId>/book.html（含 Paged.js 分页）与 assets/
+ *   node build.mjs --pdf                           产出 HTML 与 output/<bookId>/<book.pdfFileName>
+ *   node build.mjs --pdf-fallback                  退化方案：不用 Paged.js，Edge 默认分页 + 默认页脚页码
+ *   node build.mjs --site                          静态站点全站总装（书无关，忽略 --book）
+ *   node build.mjs --check                         全源清洗体检（JSX 残留 / 内链 / 图片 / mermaid / 覆盖率）
+ *   --book <bookId> 可与任一模式混排；缺省时仅一本可构建书则取之，
+ *   多于一本则报错要求显式指定（见 pickBook）。
  *
  * 打印链路（--pdf / --pdf-fallback）：Edge headless + CDP Page.printToPDF。
  * 不用 --print-to-pdf CLI 的原因：CLI 恒按 Letter 纸出图且不支持 preferCSSPageSize，
@@ -23,23 +27,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { BOOK, PARTS, buildLinkMap, EXCLUDED_SOURCES } from './manifest.mjs';
+import { BOOK } from './books/agentscope-java.mjs';
+import { BUILDABLE_BOOKS } from './books/registry.mjs';
+import { resolveBookPaths } from './books/paths.mjs';
 import { cleanMarkdown } from './clean.mjs';
 import { runSite } from './site.mjs';
 import {
-  escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets, toPosix,
+  VENDOR_SCRIPTS, escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets, toPosix,
 } from './lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = __dirname;                   // .../build（构建工具链目录）
 const ROOT_DIR = path.resolve(BUILD_DIR, '..'); // 仓库根（chapters/、assets/、output/ 在此）
-const OUTPUT_DIR = path.join(ROOT_DIR, 'output');
-const HTML_PATH = path.join(OUTPUT_DIR, 'book.html'); // output/ 下的 book.html 使章节里的 ../assets/images/ 恰好解析到仓库 assets/
-const PDF_PATH = path.join(OUTPUT_DIR, 'AgentScope-Java-2.0-从入门到进阶.pdf');
-const SRC_DIR = path.join(ROOT_DIR, '..', 'agentscope-java', 'docs', 'v2', 'zh'); // 源文档（只读，位于仓库外同级目录）
 
-// PDF 后处理（书签/元数据）：add_outline.py 消费的大纲 JSON 与脚本本体
-const OUTLINE_PATH = path.join(OUTPUT_DIR, '.outline.json');
+// PDF 后处理（书签/元数据）：add_outline.py 消费的大纲 JSON 随书落在 output/<bookId>/.outline.json
 const ADD_OUTLINE_PY = path.join(BUILD_DIR, 'add_outline.py');
 
 const EDGE_PATH = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
@@ -69,10 +70,10 @@ function renderColophon() {
 </section>`;
 }
 
-/** 总目录：从 manifest 生成，篇分组、章链接 #ch-N，页码由 Paged.js target-counter 填充 */
-function renderToc() {
+/** 总目录：从 book.PARTS 生成，篇分组、章链接 #ch-N，页码由 Paged.js target-counter 填充 */
+function renderToc(parts) {
   const rows = [];
-  for (const part of PARTS) {
+  for (const part of parts) {
     rows.push(`<p class="toc-part">${escapeHtml(part.title)}</p>`);
     for (const ch of part.chapters) {
       const anchor = ch.chapter != null ? `ch-${ch.chapter}` : path.basename(ch.file, '.md');
@@ -97,9 +98,10 @@ ${rows.join('\n')}
  * 退化模式（usePaged=false）：无 Paged.js，DOMContentLoaded 后直接 mermaid.run()，完成即置 READY。
  */
 function renderTailScripts(usePaged) {
-  // book.html 落在 output/，vendor 脚本在 build/assets/vendor/，故引用带 ../build/ 前缀
-  if (!usePaged) return renderMermaidScripts('../build/assets/vendor/');
-  return `<script src="../build/assets/vendor/mermaid.min.js"></script>
+  // book.html 落在 output/<bookId>/，vendor 脚本镜像在同目录 build/assets/vendor/ 下（自包含产物），引用不带 ../
+  const vendor = 'build/assets/vendor/';
+  if (!usePaged) return renderMermaidScripts(vendor);
+  return `<script src="${vendor}mermaid.min.js"></script>
 <script>
 window.__BOOK_ERRORS=[];
 mermaid.initialize({ startOnLoad: false, theme: "neutral", flowchart: { htmlLabels: false } });
@@ -117,45 +119,69 @@ window.PagedConfig = {
   after: () => { window.__BOOK_READY = true; },
 };
 </script>
-<script src="../build/assets/vendor/paged.polyfill.js"></script>`;
+<script src="${vendor}paged.polyfill.js"></script>`;
 }
 
 /**
- * 渲染整本书为 book.html，返回其绝对路径。
- * 结构：封面 → 出版说明 → 总目录 → 按 PARTS 顺序渲染篇导读（part.intro → chapters/<intro>，
+ * 渲染单章正文：md → HTML，并把章节相对引用 `../assets/…` 适配为 `assets/…`。
+ * chapters/ 里的 `../assets/images/` 是相对 chapters/ 目录的源稿形态；产物 book.html
+ * 与镜像的 assets/ 同目录（output/<bookId>/ 下），token 级改写属性值（不碰源稿、
+ * 不误伤代码块内的示例文本）。
+ */
+function renderBody(body) {
+  const tokens = md.parse(body, {});
+  const fix = (ts) => {
+    for (const t of ts) {
+      if (t.attrs) {
+        for (const a of t.attrs) {
+          if ((a[0] === 'src' || a[0] === 'href') && a[1].startsWith('../assets/')) a[1] = a[1].slice(3);
+        }
+      }
+      if (t.children) fix(t.children);
+    }
+  };
+  fix(tokens);
+  return md.renderer.render(tokens, md.options, {});
+}
+
+/**
+ * 渲染整本书为 book.html（output/<bookId>/ 自包含产物），返回其绝对路径。
+ * 结构：封面 → 出版说明 → 总目录 → 按 book.PARTS 顺序渲染篇导读（part.intro → chapters/<intro>，
  * 含篇名扉页标题）与各章（chapters/<file>）；文件缺失时跳过并记 warn。
+ * 产物自包含（与站点 buildSite 镜像同款）：assets/ ← book.assetsDir 整目录 cp，
+ * build/assets/vendor/ ← mermaid/pagedjs cp，book.html 内相对引用零 ../ 即可解析。
  * 注意：chapters/*.md 已是人工整理稿，此处不跑 cleanMarkdown（clean 只用于 --check 体检源文件）。
  * @param {boolean} usePaged true=Paged.js 分页版（默认）；false=退化版（Edge 默认分页）
  */
-function renderBook(usePaged = true, manifest = { BOOK, PARTS }) {
-  const chaptersDir = path.join(ROOT_DIR, 'chapters');
+function renderBook(book, paths, usePaged = true) {
+  const outDir = path.dirname(paths.htmlPath);
   const sections = [];
   const warns = [];
 
-  for (const part of manifest.PARTS) {
+  for (const part of book.PARTS) {
     // 篇导读；part-0 的 intro 即序言章文件本身，此时只按章渲染一次
     if (part.intro && !part.chapters.some((c) => c.file === part.intro)) {
-      const introPath = path.join(chaptersDir, part.intro);
+      const introPath = path.join(paths.chaptersAbs, part.intro);
       if (fs.existsSync(introPath)) {
         const { meta, body } = splitFrontMatter(fs.readFileSync(introPath, 'utf8'));
         sections.push(
-          `<section class="part-intro" id="${part.id}">\n<h1 class="part-title">${escapeHtml(meta.title ?? part.title)}</h1>\n<hr class="part-rule">\n${md.render(body)}\n</section>`,
+          `<section class="part-intro" id="${part.id}">\n<h1 class="part-title">${escapeHtml(meta.title ?? part.title)}</h1>\n<hr class="part-rule">\n${renderBody(body)}\n</section>`,
         );
       } else {
-        warns.push(`[build][warn] 篇导读缺失，跳过: chapters/${part.intro}（${part.title}）`);
+        warns.push(`[build][warn] 篇导读缺失，跳过: ${book.chaptersDir}/${part.intro}（${part.title}）`);
       }
     }
 
     for (const ch of part.chapters) {
-      const chapterPath = path.join(chaptersDir, ch.file);
+      const chapterPath = path.join(paths.chaptersAbs, ch.file);
       if (!fs.existsSync(chapterPath)) {
-        warns.push(`[build][warn] 章节文件缺失，跳过: chapters/${ch.file}（${ch.title}）`);
+        warns.push(`[build][warn] 章节文件缺失，跳过: ${book.chaptersDir}/${ch.file}（${ch.title}）`);
         continue;
       }
       const { meta, body } = splitFrontMatter(fs.readFileSync(chapterPath, 'utf8'));
       const anchor = ch.chapter != null ? `ch-${ch.chapter}` : path.basename(ch.file, '.md');
       sections.push(
-        `<section class="chapter" id="${anchor}" data-title="${escapeHtml(meta.title ?? ch.title)}">\n${md.render(body)}\n</section>`,
+        `<section class="chapter" id="${anchor}" data-title="${escapeHtml(meta.title ?? ch.title)}">\n${renderBody(body)}\n</section>`,
       );
     }
   }
@@ -175,7 +201,7 @@ function renderBook(usePaged = true, manifest = { BOOK, PARTS }) {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(manifest.BOOK.title)}</title>
+<title>${escapeHtml(BOOK.title)}</title>
 <style>
 ${style}
 </style>
@@ -187,7 +213,7 @@ ${hljsTheme}
 <body>
 ${renderCover()}
 ${renderColophon()}
-${renderToc()}
+${renderToc(book.PARTS)}
 <div id="book">
 ${sections.join('\n')}
 </div>
@@ -195,9 +221,17 @@ ${renderTailScripts(usePaged)}
 </body>
 </html>
 `;
-  fs.mkdirSync(path.dirname(HTML_PATH), { recursive: true });
-  fs.writeFileSync(HTML_PATH, html, 'utf8');
-  return HTML_PATH;
+  // 产物自包含：书 assets 与 vendor 脚本镜像进 output/<bookId>/
+  fs.cpSync(paths.assetsAbs, path.join(outDir, 'assets'), { recursive: true });
+  syncVendorAssets();
+  const vendorDir = path.join(outDir, 'build', 'assets', 'vendor');
+  fs.mkdirSync(vendorDir, { recursive: true });
+  for (const v of VENDOR_SCRIPTS) {
+    fs.copyFileSync(path.join(BUILD_DIR, ...v.to.split('/')), path.join(vendorDir, path.basename(v.to)));
+  }
+  fs.mkdirSync(path.dirname(paths.htmlPath), { recursive: true });
+  fs.writeFileSync(paths.htmlPath, html, 'utf8');
+  return paths.htmlPath;
 }
 
 /** 递归收集 dir 下全部 .md 的相对路径（正斜杠，按名排序） */
@@ -214,13 +248,15 @@ function walkMarkdown(dir, prefix = '') {
 
 /**
  * --check：全源内链体检。
- * 遍历 manifest 全部 sources → cleanMarkdown(src, { linkMap: buildLinkMap() }) →
+ * 遍历 book.PARTS 全部 sources → cleanMarkdown(src, { linkMap: book.buildLinkMap() }) →
  * 汇总打印 JSX 残留 / 未解析站内链接（分三类：指向排除文件、目标存在但未入书、真未解析）/
- * 图片总数 / mermaid 总数 / 未被 manifest 覆盖的源文件清单（对照源目录全量 .md）。
+ * 图片总数 / mermaid 总数 / 未被 book.PARTS 覆盖的源文件清单（对照源目录全量 .md）。
+ * 源目录 = book.srcDir（相对仓库根；源文档只读，位于仓库外同级目录）。
  */
-function runCheck() {
-  const linkMap = buildLinkMap();
-  const sources = [...new Set(PARTS.flatMap((p) => p.chapters.flatMap((c) => c.sources)))].sort();
+function runCheck(book) {
+  const srcDir = path.resolve(ROOT_DIR, book.srcDir);
+  const linkMap = book.buildLinkMap();
+  const sources = [...new Set(book.PARTS.flatMap((p) => p.chapters.flatMap((c) => c.sources)))].sort();
 
   let jsxTotal = 0;
   const jsxSamples = [];
@@ -232,7 +268,7 @@ function runCheck() {
   const missingSources = [];
 
   for (const src of sources) {
-    const file = path.join(SRC_DIR, ...src.split('/'));
+    const file = path.join(srcDir, ...src.split('/'));
     if (!fs.existsSync(file)) {
       missingSources.push(src);
       continue;
@@ -252,15 +288,15 @@ function runCheck() {
     }
   }
 
-  // 未被 manifest 覆盖的源文件（对照源目录全量 .md）
-  const allFiles = walkMarkdown(SRC_DIR);
+  // 未被 book.PARTS 覆盖的源文件（对照源目录全量 .md）
+  const allFiles = walkMarkdown(srcDir);
   const covered = new Set(sources);
   const uncovered = allFiles.filter((f) => !covered.has(f));
-  const excluded = new Set(EXCLUDED_SOURCES);
+  const excluded = new Set(book.EXCLUDED_SOURCES);
   const extra = uncovered.filter((f) => !excluded.has(f)); // 未覆盖且不在排除清单 → 需人工裁决
 
   // 未解析链接分类（href 去锚点/尾斜杠/.md 后比对相对路径）
-  const excludedNoMd = new Set(EXCLUDED_SOURCES.map((s) => s.replace(/\.md$/, '')));
+  const excludedNoMd = new Set(book.EXCLUDED_SOURCES.map((s) => s.replace(/\.md$/, '')));
   const toExcluded = [];
   const targetExists = [];
   const broken = [];
@@ -271,12 +307,12 @@ function runCheck() {
       .replace(/^\/v2\/zh\//, '')
       .replace(/\.md$/, '');
     if (excludedNoMd.has(rel)) toExcluded.push(href);
-    else if (fs.existsSync(`${path.join(SRC_DIR, ...rel.split('/'))}.md`)) targetExists.push(href);
+    else if (fs.existsSync(`${path.join(srcDir, ...rel.split('/'))}.md`)) targetExists.push(href);
     else broken.push(href);
   }
 
   console.log('[check] === 清洗体检报告 ===');
-  console.log(`[check] manifest sources: ${sources.length} 个（已读 ${readCount}，磁盘缺失 ${missingSources.length}）`);
+  console.log(`[check] book.PARTS sources: ${sources.length} 个（已读 ${readCount}，磁盘缺失 ${missingSources.length}）`);
   for (const s of missingSources) console.log(`[check]   - 磁盘缺失: ${s}`);
   console.log(`[check] JSX 残留: ${jsxTotal} 处`);
   for (const s of jsxSamples) console.log(`[check]   - ${s}`);
@@ -289,9 +325,9 @@ function runCheck() {
     for (const href of hrefs) console.log(`[check]     - ${href}  ← ${[...new Set(unresolved.get(href))].join(', ')}`);
   };
   group('指向排除文件（预期内，不算失败）', toExcluded);
-  group('目标存在但未入 manifest（网站可解析）', targetExists);
+  group('目标存在但未入 book.PARTS（网站可解析）', targetExists);
   group('真未解析（目标文件不存在）', broken);
-  console.log(`[check] 未被 manifest 覆盖的源文件: ${uncovered.length} 个（源目录共 ${allFiles.length} 个 .md）`);
+  console.log(`[check] 未被 book.PARTS 覆盖的源文件: ${uncovered.length} 个（源目录共 ${allFiles.length} 个 .md）`);
   for (const f of uncovered) {
     console.log(`[check]   - ${f}${excluded.has(f) ? '（排除清单内）' : '（不在排除清单！）'}`);
   }
@@ -451,15 +487,15 @@ async function printViaCdp(htmlPath, pdfPath, { paged }) {
 }
 
 /**
- * 从 manifest 生成两级书签大纲（文档顺序）：
+ * 从 book.PARTS 生成两级书签大纲（文档顺序）：
  *   level 1：序言 / 第一篇…第七篇（篇扉页）/ 附录（无独立扉页，锚在附录 A 页）
  *   level 2：第 1…44 章；附录 A / 附录 B
  * 序言部的章条目即序言自身（与 level 1 同页），不重复出书签。
  * key 由 add_outline.py 解释：preface / part:<标题> / ch:<N> / appendix / appendix-a|b。
  */
-function buildOutline() {
+function buildOutline(book) {
   const outline = [];
-  for (const part of PARTS) {
+  for (const part of book.PARTS) {
     if (part.id === 'part-0') {
       outline.push({ level: 1, title: '序言', key: 'preface' });
     } else if (part.id === 'appendix') {
@@ -482,65 +518,114 @@ function buildOutline() {
 
 /**
  * PDF 后处理：写侧边栏书签与元数据（Edge 打印不生成 outline）。
- * manifest → output/.outline.json → spawnSync python build/add_outline.py；
+ * book.PARTS → output/<bookId>/.outline.json → spawnSync python build/add_outline.py；
  * 任何失败（python 不可用 / 章节页定位失败 / PyMuPDF 异常）都抛错，
  * 使整体构建以非零码退出（与 %%EOF 守卫同标准）。
  */
-function addPdfOutline(pdfPath) {
-  const outline = buildOutline();
-  fs.writeFileSync(OUTLINE_PATH, `${JSON.stringify(outline, null, 2)}\n`, 'utf8');
-  const res = spawnSync('python', [ADD_OUTLINE_PY, pdfPath, OUTLINE_PATH], { stdio: 'inherit' });
+function addPdfOutline(book, pdfPath, outlinePath) {
+  const outline = buildOutline(book);
+  fs.writeFileSync(outlinePath, `${JSON.stringify(outline, null, 2)}\n`, 'utf8');
+  const res = spawnSync('python', [ADD_OUTLINE_PY, pdfPath, outlinePath], { stdio: 'inherit' });
   if (res.error) throw new Error(`无法启动 python（PyMuPDF 写书签）: ${res.error.message}`);
   if (res.status !== 0) throw new Error(`add_outline.py 退出码 ${res.status}——PDF 书签写入失败`);
   console.log(`[build] PDF 书签已写入（${outline.length} 条）+ 元数据: ${pdfPath}`);
 }
 
+/**
+ * CLI 解析：模式 flag（--html 等，至多一个）与 `--book <bookId>` 混排，顺序不限。
+ * 未识别的参数、重复模式、--book 缺值均抛错（错误信息带用法示例）。
+ */
+function parseArgs(argv) {
+  const MODES = new Set(['--html', '--pdf', '--pdf-fallback', '--site', '--check']);
+  let mode = null;
+  let bookId = null;
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (MODES.has(arg)) {
+      if (mode) throw new Error(`模式重复：${mode} 与 ${arg} 只能指定一个`);
+      mode = arg;
+    } else if (arg === '--book') {
+      const val = argv[i + 1];
+      if (val == null || val.startsWith('--')) {
+        throw new Error('--book 需要一个 bookId 值，例如： node build.mjs --html --book agentscope-java');
+      }
+      bookId = val;
+      i += 1;
+    } else {
+      throw new Error(`未知参数： ${arg}（用法: node build.mjs <--html|--pdf|--pdf-fallback|--site|--check> [--book <bookId>]）`);
+    }
+  }
+  return { mode, bookId };
+}
+
+/**
+ * 解析本书：显式 --book 则在 BUILDABLE_BOOKS 中查找（不存在/不可构建即报错）；
+ * 缺省时仅一本可构建书则取之，多于一本则报错要求显式指定。
+ */
+function pickBook(bookId) {
+  if (bookId != null) {
+    const book = BUILDABLE_BOOKS.find((b) => b.bookId === bookId);
+    if (!book) {
+      throw new Error(`--book '${bookId}' 不是可构建的书。可用的 bookId： ${BUILDABLE_BOOKS.map((b) => b.bookId).join(', ')}`);
+    }
+    return book;
+  }
+  if (BUILDABLE_BOOKS.length === 1) return BUILDABLE_BOOKS[0];
+  throw new Error(`当前有 ${BUILDABLE_BOOKS.length} 本可构建书（${BUILDABLE_BOOKS.map((b) => b.bookId).join(', ')}），需用 --book <bookId> 显式指定`);
+}
+
 async function main() {
-  const flag = process.argv[2];
-  switch (flag) {
+  const { mode, bookId } = parseArgs(process.argv.slice(2));
+  if (!mode) {
+    console.error('用法: node build/build.mjs <--html|--pdf|--pdf-fallback|--site|--check> [--book <bookId>]');
+    process.exitCode = 1;
+    return;
+  }
+  // --site 是全站总装（书架 + 各书子站），书无关，忽略 --book
+  if (mode === '--site') {
+    runSite(ROOT_DIR);
+    console.log(`[build] 站点已生成: ${path.join(ROOT_DIR, 'output', 'site')}（搜索索引: cd build && npm run site）`);
+    return;
+  }
+  const book = pickBook(bookId);
+  const paths = resolveBookPaths(book, ROOT_DIR);
+  const outDir = path.dirname(paths.pdfPath); // output/<bookId>/（pdfPath 与 htmlPath 同目录）
+  switch (mode) {
     case '--html': {
       syncVendorAssets();
-      const html = renderBook(true);
+      const html = renderBook(book, paths, true);
       console.log(`[build] HTML 已生成（Paged.js 版）: ${html}`);
       break;
     }
     case '--pdf': {
       syncVendorAssets();
-      const html = renderBook(true);
+      const html = renderBook(book, paths, true);
       console.log(`[build] HTML 已生成（Paged.js 版）: ${html}`);
-      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-      await printViaCdp(html, PDF_PATH, { paged: true });
-      if (!fs.existsSync(PDF_PATH)) {
+      fs.mkdirSync(outDir, { recursive: true });
+      await printViaCdp(html, paths.pdfPath, { paged: true });
+      if (!fs.existsSync(paths.pdfPath)) {
         throw new Error('打印结束但未生成 PDF（请检查 Edge 路径与参数）');
       }
-      addPdfOutline(PDF_PATH); // 打印成功后补写书签/元数据；失败 → 构建失败
-      console.log(`[build] PDF 已生成: ${PDF_PATH}`);
+      addPdfOutline(book, paths.pdfPath, path.join(outDir, '.outline.json')); // 打印成功后补写书签/元数据；失败 → 构建失败
+      console.log(`[build] PDF 已生成: ${paths.pdfPath}`);
       break;
     }
     case '--pdf-fallback': {
       syncVendorAssets();
-      const html = renderBook(false);
+      const html = renderBook(book, paths, false);
       console.log(`[build] HTML 已生成（退化版，无 Paged.js）: ${html}`);
-      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-      await printViaCdp(html, PDF_PATH, { paged: false });
-      if (!fs.existsSync(PDF_PATH)) {
+      fs.mkdirSync(outDir, { recursive: true });
+      await printViaCdp(html, paths.pdfPath, { paged: false });
+      if (!fs.existsSync(paths.pdfPath)) {
         throw new Error('打印结束但未生成 PDF（请检查 Edge 路径与参数）');
       }
-      addPdfOutline(PDF_PATH); // 打印成功后补写书签/元数据；失败 → 构建失败
-      console.log(`[build] PDF 已生成（退化方案）: ${PDF_PATH}`);
-      break;
-    }
-    case '--site': {
-      runSite(ROOT_DIR);
-      console.log(`[build] 站点已生成: ${path.join(OUTPUT_DIR, 'site')}（搜索索引: cd build && npm run site）`);
+      addPdfOutline(book, paths.pdfPath, path.join(outDir, '.outline.json')); // 打印成功后补写书签/元数据；失败 → 构建失败
+      console.log(`[build] PDF 已生成（退化方案）: ${paths.pdfPath}`);
       break;
     }
     case '--check':
-      runCheck();
+      runCheck(book);
       break;
-    default:
-      console.error('用法: node build/build.mjs --html | --pdf | --pdf-fallback | --site | --check');
-      process.exitCode = 1;
   }
 }
 

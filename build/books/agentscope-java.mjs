@@ -3,17 +3,20 @@
  *
  * 单一职责：数据。本书的全部构建参数集中于此：
  * - book：书级元数据（bookId/status/title/tagline/目录约定/PDF 文件名等），
- *   供 registry 注册与后续构建参数化任务（路径推导、多书构建）使用。
- * - BOOK/PARTS：7 篇 44 章 + 序言 + 附录 2 的「章节文件 ← 源文件」映射
+ *   供 registry 注册与构建参数化（路径推导、--book CLI）使用；构建映射类
+ *   字段（PARTS/buildLinkMap/EXCLUDED_SOURCES）也收敛在其上（Ruling-4），
+ *   消费方一律从 book 出发：book.PARTS / book.buildLinkMap() / book.EXCLUDED_SOURCES。
+ * - BOOK：渲染层书名元数据（title 为全角冒号排版形态），供封面/<title>。
+ * - book.PARTS：7 篇 44 章 + 序言 + 附录 2 的「章节文件 ← 源文件」映射
  *   （`sources` 相对 `agentscope-java/docs/v2/zh/`，正斜杠）。
- * - buildLinkMap()：由全部 sources 生成站内链接 → 章节引用查找表。
+ * - book.buildLinkMap()：由全部 sources 生成站内链接 → 章节引用查找表。
  *   源文档里链接前缀格式是 `/v2/zh/<path>`（无 .md），对应源路径
  *   `agentscope-java/docs/v2/zh/<path>.md`。
- * - EXCLUDED_SOURCES：Global Constraints 排除清单（刻意不收录的源文件），
+ * - book.EXCLUDED_SOURCES：Global Constraints 排除清单（刻意不收录的源文件），
  *   供 build.mjs --check 区分「指向排除文件的链接」与真未解析链接。
  *
  * BOOK（title/subtitle/date，供渲染层）与 book（title/subtitle/date，供书架页）
- * 刻意共存、不合并：两者消费方不同，字段值也可各自演化。
+ * 刻意共存、不合并：两者消费方不同，字段值也可各自演化（冒号形态即不同）。
  */
 
 export const book = {
@@ -31,7 +34,8 @@ export const book = {
   // 旧站点根 chapters/ 路径的所有权标记（本书专用）：后续任务据此决定旧路径重定向 stub 的生成归属。
   legacyRootChapters: true,
 
-  // ↓↓ 原 manifest.mjs 的 BOOK/PARTS/sources、buildLinkMap、EXCLUDED_SOURCES，原样迁入 ↓↓
+  // 构建映射类字段（原 manifest.mjs 的 PARTS/EXCLUDED_SOURCES/buildLinkMap）
+  // 定义在本对象之后（数据段较长，保持原位），文件末尾统一挂载到 book 上。
 };
 
 export const BOOK = {
@@ -40,7 +44,7 @@ export const BOOK = {
   date: "2026-10-11",
 };
 
-export const PARTS = [
+const PARTS = [
   { id: "part-0", title: "序言", intro: "preface.md", chapters: [
     { file: "preface.md", chapter: null, title: "序言：AgentScope 2.0 与如何使用本书", sources: ["intro.md", "docs/index.md"] },
   ]},
@@ -110,7 +114,7 @@ export const PARTS = [
 ];
 
 /** Global Constraints 排除清单（相对 docs/v2/zh/，含 .md 后缀） */
-export const EXCLUDED_SOURCES = [
+const EXCLUDED_SOURCES = [
   // 第 43 章改为本仓库 Demo 综合实战，原行业博客不再收录。
   "blogs/usecases/logistics.md",
   "blogs/usecases/finxscope.md",
@@ -138,7 +142,7 @@ export const EXCLUDED_SOURCES = [
  *
  * @returns {Map<string, string>} "/v2/zh/xxx" → "第 N 章"
  */
-export function buildLinkMap() {
+function buildLinkMap() {
   const map = new Map();
   for (const part of PARTS) {
     for (const ch of part.chapters) {
@@ -152,3 +156,7 @@ export function buildLinkMap() {
   }
   return map;
 }
+
+// Ruling-4：构建映射类字段收敛为 book 字段——所有消费方从 book 出发
+// （book.PARTS / book.buildLinkMap() / book.EXCLUDED_SOURCES），模块级直引清零。
+Object.assign(book, { PARTS, EXCLUDED_SOURCES, buildLinkMap });

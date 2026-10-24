@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { BOOK, PARTS } from './books/agentscope-java.mjs';
+import { BOOK } from './books/agentscope-java.mjs';
 import { ALL_BOOKS, BUILDABLE_BOOKS } from './books/registry.mjs';
 import { resolveBookPaths } from './books/paths.mjs';
 import { escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets } from './lib.mjs';
@@ -252,7 +252,7 @@ function renderChapterPage(body, currentHref, flat, idx, githubBase, book) {
     title: flat[idx].title,
     content: rewriteMarkdownLinks(md.render(body), githubBase) + renderPager(flat, idx),
     rootPrefix: '../',
-    sidebar: renderSidebar(PARTS, currentHref),
+    sidebar: renderSidebar(book.PARTS, currentHref),
     needMermaid: true,
     searchHref: '../../search.html',
     pagefindFilter: `书: ${book.title}`,
@@ -293,9 +293,9 @@ export function buildSite(book, rootDir) {
   const githubBase = book.demoGithubBase.replace(/demo\/$/, '');
 
   // 章节/篇导读页(顺序即 flattenPages;书配置中缺文件 → warn 跳过)
-  const flat = flattenPages(PARTS);
+  const flat = flattenPages(book.PARTS);
   const bodies = new Map();
-  for (const part of PARTS) {
+  for (const part of book.PARTS) {
     const files = [part.intro, ...part.chapters.map((c) => c.file)].filter(Boolean);
     for (const file of files) {
       const abs = path.join(chaptersAbs, file);
@@ -334,7 +334,7 @@ function writeLegacyRedirectStubs(siteRoot) {
   for (const b of BUILDABLE_BOOKS) {
     if (b.legacyRootChapters !== true) continue;
     fs.mkdirSync(path.join(siteRoot, 'chapters'), { recursive: true });
-    for (const p of flattenPages(PARTS)) {
+    for (const p of flattenPages(b.PARTS)) {
       fs.writeFileSync(path.join(siteRoot, p.href), renderRedirectPage(`${b.bookId}/${p.href}`), 'utf8');
     }
   }

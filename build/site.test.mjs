@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { flattenPages, renderIndexPage, renderPager, renderRedirectPage, renderSearchPage, renderShelfPage, renderShell, renderSidebar, rewriteMarkdownLinks, runSite } from "./site.mjs";
-import { book, PARTS } from "./books/agentscope-java.mjs";
+import { book } from "./books/agentscope-java.mjs";
 
 // 与 buildSite 内的推导一致:rewriteMarkdownLinks 的第二参数是「demo/ 目录的上级」blob 前缀
 const demoBase = book.demoGithubBase.replace(/demo\/$/, "");
@@ -28,7 +28,7 @@ test("其他 ../ 链接与外链、非 .md href 原样保留", () => {
 });
 
 test("flattenPages 全书序列:54 项、首尾与篇导读位置正确", () => {
-  const pages = flattenPages(PARTS);
+  const pages = flattenPages(book.PARTS);
   assert.equal(pages.length, 54); // 47 章文件(含序言/附录) + 7 个篇导读
   assert.equal(pages[0].href, "chapters/preface.html");
   assert.equal(pages[0].kind, "part-intro"); // 序言即 part-0 导读
