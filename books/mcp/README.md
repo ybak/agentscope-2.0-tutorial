@@ -1,6 +1,7 @@
 # MCP:跨框架工具接入协议
 
-> 状态:**初稿 v2(2026-10-24)——基于官方规范原文([modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol) 2026-07-28)逐章对照重写**;TS SDK v2.4.0 双端实测。发布前按各章「复核清单」完成 Java 实测与 spec 字段级终核,升 status: published 后进站点。
+> 状态:**初稿 v2(2026-10-24)——基于官方规范原文([modelcontextprotocol/modelcontextprotocol](https://github.com/modelcontextprotocol/modelcontextprotocol) 2026-07-28)逐章对照重写**;TS SDK v2.4.0 双端实测。
+> ⚠️ 形态欠账:当前各章为"规范对照 + 实测记录"形态(100-160 行/章),**尚未达到书稿标准**(≥500 行/章,骨架见[编写规范](../../docs/book-writing-guide.md))。下一步:按规范逐章扩充——补章首导读与导览图、"你什么时候需要它"、验收清单等骨架,内容厚度向 agentscope-java 书对齐。完成后按各章「复核清单」终核,升 status: published 进站点。
 
 ## 定位
 

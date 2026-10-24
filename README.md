@@ -39,7 +39,7 @@
 发现错别字、内容过时、链接失效，或希望补充某章内容，欢迎提 Issue / PR：
 
 1. Fork 本仓库 → 新建分支 → 修改对应书籍章节
-2. 注意保持各书章节 frontmatter（如 agentscope-java 的 `chapter` / `title` / `source`）与图片相对路径规范
+2. **章节编写遵循统一规范：[docs/book-writing-guide.md](docs/book-writing-guide.md)**（章节骨架、厚度标准、图表与标点、贯穿案例、质量门槛）
 3. 提交 PR 并说明修改动机
 
 ## 📣 关于作者 / 交流
