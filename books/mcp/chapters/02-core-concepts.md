@@ -189,7 +189,28 @@ basic/index 里这段话值得整段读(本书译述,语义以原文为准):
 
 关键在 ③:**续接不靠 Server 记忆,靠请求自带上下文**。每一跳都是独立、完整、可被任意副本处理的请求。对比 v1 的会话内 server→client 请求:交互性保留,状态外置。SDK 层面(TS v2.4.0),工具处理器返回 `inputRequired` 对象即可,内嵌请求的构造器覆盖 elicit(表单)、createMessage(借模型推理)、listRoots 三类 client 能力。
 
-## 2.8 小结
+## 2.8 同一调用的三层视角
+
+官方架构教程（learn/architecture）用一个贯穿示例把「一次工具调用」在三个抽象层级上各走一遍——这个视角切换是理解 MCP 的捷径：
+
+**① 数据层（协议视角）**：一切是 JSON-RPC 消息。discover、tools/list、tools/call 每一步都带 `_meta` 必填字段（协议版本、clientCapabilities、建议带 clientInfo）；响应带 `resultType` 与缓存字段（`ttlMs`/`cacheScope`）。教程逐步展开的四步——发现 → 工具发现 → 工具执行 → 通知——每步的请求/响应 JSON 都值得手抄一遍，第 4 章的实测命令就是这一层的可运行版。
+
+**② SDK 层（开发者视角）**：`_meta` 拼装、schema 校验、通知分发被 SDK 吸收。教程的伪代码展示了 AI 应用的典型集成形态：
+
+```python
+async with Client(stdio_client(server_config)) as client:
+    if client.server_capabilities.tools:          # discover 的结果挂在 client 对象上
+        app.register_mcp_server(client, supports_tools=True)
+    app.set_server_ready(client)
+```
+
+**③ AI 应用层（产品视角）**：应用聚合所有已连 Server 的工具为「统一工具注册表」交给模型；模型在对话中产生工具调用，应用执行后回填——第 8.3 节的 Agent 循环正是这一层的最小实现。
+
+三个视角的分工：排查协议问题回到 ①，写业务代码停在 ②，理解产品行为看 ③。本书章节也按此组织——第 3/5/8 章深入 ①，第 4/6 章居 ②，第 7/12 章在 ③。
+
+另外，规范特性自身有生命周期三态（Active / Deprecated / Removed，弃用窗最少 12 个月，learn/versioning 与第 3 章）——读规范时先看特性处于哪一态，Deprecated 的能力不要进新代码。
+
+## 2.9 小结
 
 | 概念 | 一句话 |
 | --- | --- |
