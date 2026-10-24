@@ -120,6 +120,17 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | node server.mjs
 
 工具清单直接返回。v1 时代的教程会先教你握手——在这里那一步不存在了。zod 的 `.describe()` 出现在了输出的 `description` 字段里：**描述质量的工程抓手，从第一行代码就生效**（第 5 章的主线）。
 
+逐字段读懂这个响应，四个细节各有含义：
+
+| 响应片段 | 含义 | 关联章节 |
+|----------|------|----------|
+| `"name": "echo"` + `required` | 名字与必填参数——模型填参的硬约束 | 5.1 |
+| `"$schema": ".../draft/2020-12/schema"` | JSON Schema 方言默认 2020-12，可显式声明其他方言 | 5.2 |
+| `"description"`（工具级与字段级） | 模型选工具、填参数的双层依据——两层都是「描述质量」 | 5.3 |
+| `"title": "回声"` | 人类可读名，给目录与审批界面，不给模型 | 5.1 |
+
+注意响应里**没有** `ttlMs`/`cacheScope`——`tools/list` 规范要求带缓存提示（第 3 章），SDK 会补齐；裸手写实验时看到不一致，先怀疑是实验脚本没走 SDK 的完整路径。
+
 ### 实测二：`tools/call` 拿到结构化结果
 
 ```bash
@@ -210,11 +221,57 @@ after-sales-mcp/
 └── README.md                                  # 域归属、负责人、工具目录
 ```
 
+Java 侧的对照结构（mcp-core 2.0.x，`io.modelcontextprotocol.modern` 包）。⚠️ 以下为结构示意——方法签名以 javadoc 实测为准（章末复核清单第一项），但四个组成部分与 TS 严格对应：
+
+```java
+// build.gradle: implementation("io.modelcontextprotocol.sdk:mcp-core:2.0.1")
+var server = McpServer.toolServer()                    // ① Server 构建入口（modern 包）
+    .tool("echo",                                      // ② 声明工具：名字即调用凭据
+        "原样返回输入文本，用于验证链路",                 // ③ description：给模型的选择依据
+        Map.of("text", stringParam("要回显的文本")),     // ④ 参数 schema（JSON Schema 同款语义）
+        (args) -> Map.of("text", args.get("text")))    // ⑤ 处理器：入参→出参
+    .build();
+
+server.startStreamableHttp(8080);                      // ⑥ 挂 Streamable HTTP（生产形态）
+```
+
+| TS 侧 | Java 侧 | 协议语义（两侧一致） |
+|--------|---------|----------------------|
+| `new McpServer({ name, version })` | `McpServer.toolServer()...build()` | Server 身份，自报于 `_meta.serverInfo` |
+| `registerTool(name, config, cb)` | `.tool(name, desc, schema, handler)` | 工具注册；名字唯一性 scope 为单 Server |
+| `serveStdio(...)` | `startStreamableHttp(8080)` | 传输挂载；stdio 本地、HTTP 生产（第 8 章） |
+
+两张表对照着看，你会看到一个事实：**「声明工具 → 描述 → 挂传输」的三动作与语言无关**——这正是第 7 章「跨框架通用」的微观基础。选择主语言的判断依据也在这里：Java 读者群（agentscope-java 生态）直接用 mcp-core，与业务代码同构部署；原型验证与前端同构场景用 TS；两者都过时的教程不要参考（第 3 章）。
+
 三个设计决定值得说明：
 
 - **工具定义外置为文件**（`tools/*.json`）：工具是「目录条目 + 执行逻辑」的组合，定义外置让目录治理（第 6 章）不必碰代码
 - **OpenAPI 原样入库**（`openapi/`）：它是第 6 章生成管线的输入，也是接口变更 diff 的基准
 - **echo 级占位先行**：`query_ticket` 的完整实现（schema 设计、错误消息、幂等）是第 5 章的内容——本章只求链路通，不求工具好
+
+骨架里的两个关键文件，现在就能填出雏形。工具定义文件（`tools/query-ticket.json`）——它同时是「给模型看的目录条目」与「给开发者的实现契约」：
+
+```json
+{
+  "name": "after_sales_query_ticket",
+  "title": "查询售后单",
+  "description": "按售后单号查询售后单当前进度（审核/维修/退款/完结）。单号格式 T-YYYY-NNNN。查物流轨迹用 logistics 域工具，不要用本工具。",
+  "domain": "after-sales",
+  "aggregates": ["GET /api/v1/tickets/{id}", "GET /api/v1/tickets/{id}/timeline"],
+  "status": "draft",
+  "owner": "售后域团队"
+}
+```
+
+四个字段就是第 6 章目录治理的雏形：`name` 带域前缀（聚合消歧）、`description` 含任务语义与边界声明（第 5 章）、`aggregates` 记录聚合了哪些中台接口（变更影响面的依据）、`owner` 明确描述质量的责任人。域 README（`README.md`）则是 Server 级的目录：
+
+```markdown
+# after-sales 域 Server
+- 域归属：售后（中台售后中心）
+- 工具目录：6 个任务级工具（查询/创建/试算/撤销/催办/评价），聚合 20 个中台接口
+- 对应 OpenAPI：openapi/after-sales.yaml（v2026.1）
+- 负责人：售后域团队 · 升级路径：#after-sales-mcp
+```
 
 Java 侧的对照结构（mcp-core 2.0.x，`io.modelcontextprotocol.modern` 包）：构建入口同样遵循「声明工具 → 描述 → 挂传输」，具体 API 签名以 javadoc 实测为准（章末复核清单第一项）。
 
