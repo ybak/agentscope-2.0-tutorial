@@ -1,5 +1,5 @@
 {
-  "name": "agentscope-2.0-tutorial-build",
+  "name": "ai-tutorial-build",
   "version": "1.0.0",
   "description": "AgentScope Java 2.0 中文教程构建工具链（Markdown → HTML → PDF）",
   "private": true,

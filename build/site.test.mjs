@@ -102,7 +102,7 @@ test("renderIndexPage:封面随书配置,每篇一张卡片,搜索指向站点�
 test("auditPage:相对 .md 残留被抓,GitHub 降级链接不报", async (t) => {
   const { auditPage } = await import("./site.mjs");
   const warns = [];
-  const html = '<a href="30-x.md#s">a</a><a href="https://github.com/ybak/agentscope-2.0-tutorial/blob/main/demo/x.md">b</a>';
+  const html = '<a href="30-x.md#s">a</a><a href="https://github.com/ybak/ai-tutorial/blob/main/demo/x.md">b</a>';
   auditPage(html, "/tmp/nonexistent-site", "t.html", warns);
   assert.equal(warns.length, 1);
   assert.ok(warns[0].includes('30-x.md#')); // matchAll 的 m[0] 在 # 处截断
