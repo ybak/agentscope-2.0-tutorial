@@ -1,16 +1,39 @@
 ---
-chapter: 8
+chapter: 10
 title: 部署与安全
 source: https://modelcontextprotocol.io/specification/2026-07-28 (basic/transports/streamable-http, basic/authorization/*)
 ---
 
-# 第 8 章 部署与安全
+# 第 10 章 部署与安全
 
-> 本章对照规范 basic/transports/streamable-http 与 basic/authorization 系列原文;安全威胁清单(8.5)依据规范 security-considerations 与 server/tools 的安全节。
+> 本章导读：域 Server 在你机器上跑通了，离「敢上生产」还差四层：传输怎么选、每个请求的头怎么管、调用者的身份怎么信、攻击面堵在哪里。本章对照规范 basic/transports/streamable-http 与 basic/authorization 系列原文，把第 6 章的 Gateway 拓扑落成可上线的配置：三件标准头与三个状态码、OAuth 2.1 三角色栈与 CIMD、多租户可见性、九项攻击的缓解清单、本地 Server 十条检查、一页部署清单。读完本章，你能：为域 Server 选对传输并配齐标准头；走通「AS—RS—client」的授权拓扑；按租户配置工具可见性；拿着部署清单过上线评审。
 
-第 6 章的拓扑(Gateway + 域 Server)要变成敢上生产的东西,需要回答四层问题:传输怎么选、请求头怎么管、身份怎么信、攻击面在哪。这一章按规范原文把这些落死。
+```mermaid
+flowchart LR
+    A["目标<br/>域 Server 敢上生产"] --> B["部署与安全<br/>传输 · 授权 · 租户 · 攻击面"]
+    B --> C["传输<br/>生产即 Streamable HTTP<br/>三件标准头"]
+    B --> D["授权<br/>OAuth 2.1 三角色<br/>CIMD + iss 校验"]
+    B --> E["多租户<br/>可见性即权限<br/>scope 过滤 tools/list"]
+    B --> F["攻击面<br/>九项攻击缓解<br/>+ 工具层防线"]
+    C --> G["收益<br/>一页部署清单过评审<br/>生产可靠"]
+    D --> G
+    E --> G
+    F --> G
+```
 
-## 8.1 传输:stdio 与 Streamable HTTP 的分工
+*本章导览图*
+
+## 你什么时候需要它
+
+**Server 要对真实用户开放**——通读。8.1 的头体系与 8.2 的授权架构是合规底线，8.6 的部署清单就是上线评审表。
+
+**多租户要隔离工具与数据**——直接看 10.4:「工具集随请求授权变化」是协议原生语义，配合目录过滤与租户上下文三层落地。
+
+**评审时有人问「MCP 的安全风险」**——把 8.3 的九项攻击清单摊开，每项都有形态与缓解；加上第 5 章的工具层防线，两层一起过。
+
+前置：第 5 章（工具层安全清单）、第 6 章（Gateway 拓扑）、第 3 章（版本协商——头一致性校验的前提）。
+
+## 10.1 传输:stdio 与 Streamable HTTP 的分工
 
 | | stdio | Streamable HTTP |
 | --- | --- | --- |
@@ -51,7 +74,7 @@ Mcp-Name: get_weather
 
 另外:`tools/list` 等结果必须带 `ttlMs`/`cacheScope`(第 3 章),网关据此决定目录缓存策略。
 
-## 8.2 授权架构:三角色与标准栈
+## 10.2 授权架构:三角色与标准栈
 
 规范的授权模型是标准 OAuth 拓扑:
 
@@ -70,7 +93,7 @@ Mcp-Name: get_weather
 
 **CIMD 是什么**:client 不再"预注册"或"动态注册"拿 client_id,而是托管一份 URL 可访问的元数据文档,client_id 就是这个 URL。对中台的意义:每个新消费端(新 Agent 项目、新前端)上线,不需要在 AS 上走注册审批流——托管文档即接入。DCR 降级弃用的原因是实现层安全缺陷泛滥(CIMD 的信任模型更收敛,见 8.5)。
 
-## 8.3 安全威胁清单:规范点名的每一项
+## 10.3 安全威胁清单:规范点名的每一项
 
 规范 security-considerations 逐项列了威胁,中台评审逐条过:
 
@@ -123,9 +146,9 @@ Mcp-Name: get_weather
 9. **定期复审**——版本更新与权限漂移
 10. **下线即清理**——配置与凭据一并回收
 
-(第 8.4 的企业审计与这份个人清单是两套尺度:前者管平台,后者管个人开发机。)
+(第 10.4 的企业审计与这份个人清单是两套尺度:前者管平台,后者管个人开发机。)
 
-## 8.4 多租户:可见性即权限
+## 10.4 多租户:可见性即权限
 
 多租户平台里,"哪些工具对哪些租户可见"本身是权限。规范给了准确的抓手——**`tools/list` 的返回集可以随请求的授权变化**:
 
@@ -137,7 +160,7 @@ Mcp-Name: get_weather
 - 调用层:租户上下文经 `x-mcp-header` 租户头(5.7)或 token claims 传入,Server 侧所有中台查询带租户条件
 - 审计:每 `tools/call` 记录(租户、工具、参数摘要、状态),`Mcp-Name` 头让网关审计无需解析 body
 
-## 8.5 生产运维
+## 10.5 生产运维
 
 - **健康与容量**:无状态 Server = 普通 HTTP 服务探针;`tools/list` 强缓存(ttlMs + 确定性排序 → prompt cache 命中率,第 3 章)
 - **限流**:网关按(租户 × `Mcp-Name`)两维限流;工具超时 < 下游中台接口熔断窗口——否则模型拿着必然失败的调用反复重试
@@ -163,6 +186,36 @@ Mcp-Name: get_weather
 - 安全清单两层:传输/授权层(8.3 表)+ 工具层(第 5 章)
 
 → **第 9 章**跳出技术:组织与路线。
+
+## 验收清单
+
+读到这里，你应该能：
+
+- ☐ 说出 Streamable HTTP 的三件标准头与各自来源，解释头与 body 版本不一致时的响应；
+- ☐ 画出 AS—RS—client 三角色拓扑，并指出 MCP Server 与 MCP Client 各自的 OAuth 角色；
+- ☐ 说明 CIMD 与 DCR 的关系，以及为什么 DCR 被弃用；
+- ☐ 为多租户场景配置「目录过滤 + 调用上下文 + 审计」三层隔离；
+- ☐ 对照九项攻击清单逐项给出当前架构的缓解措施；
+- ☐ 拿着 8.6 部署清单完成一次上线评审。
+
+## 参考速查
+
+| 项 | 值 |
+|----|----|
+| 传输选择 | 本地 stdio；生产 Streamable HTTP |
+| 必带头 | `MCP-Protocol-Version`(与 _meta 一致)/`Mcp-Method`/`Mcp-Name` |
+| 状态码 | 头不一致 400+(-32020);版本不支持 400+(-32022);未知方法 404+(-32601) |
+| 授权标准栈 | OAuth 2.1 + RFC 6750/8414/7591(弃)/8707/9728/9207 + CIMD + OIDC Discovery |
+| 发现 | MCP Server 必须实现 RFC 9728;client 必须用它做 AS 发现 |
+| 租户 | 目录层 scope 过滤 + 调用层租户上下文 + 审计 |
+| 本地 Server | 十条检查清单(10.3 末) |
+
+## 延伸阅读
+
+- **第 6 章(规模化)**——Gateway 拓扑:本章安全机制在架构中的位置。
+- **第 5 章(工具接入实战)**——工具层安全清单(Server MUST / Client SHOULD)。
+- **第 3 章(版本演进)**——授权相关变更(RFC 9207/CIMD/DCR 降级)的来龙去脉。
+- **官方 tutorials/security 三篇**——本章的教程层素材源(授权实操 1201 行/最佳实践 984 行/本地安全 453 行)。
 
 ## 复核清单(发布前)
 
