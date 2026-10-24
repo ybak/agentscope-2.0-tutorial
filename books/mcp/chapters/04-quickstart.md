@@ -176,6 +176,12 @@ echo '{"jsonrpc":"2.0","id":3,"method":"initialize","params":{"protocolVersion":
 
 它**被正常应答了**——Server 返回了 `protocolVersion: "2025-06-18"` 的标准握手结果。这就是规范说的 **Dual-era Server**（第 3 章）：按 client 的开场自动分流，现代 client 走无状态路径，legacy client 走旧握手语义，一份代码同时服务两代。`serveStdio` 的 `legacy: 'reject'` 选项可以反过来硬切旧版（拒绝并报出支持的现代版本），灰度迁移时有用。
 
+读懂这个应答，注意它说明的三件事：
+
+1. **Server 侧保留了完整的 legacy 执行路径**——不是「勉强兼容一个错误应答」，而是按旧协议语义正常工作（能力声明、serverInfo 一应俱全）
+2. **分流依据是 client 的开场形态**——现代 client 直发业务请求（带 `_meta`），legacy client 发 `initialize`；Server 按消息形态判定走哪条路径，client 无需声明自己是谁
+3. **这是灰度迁移的机制基础**——升级 Server 不要求所有消费端同步升级；第 3 章的七格兼容矩阵就是这张分流表的全景
+
 四个实测拼出的图景：**无状态协议把「连接」从协议语义中抽走了**——每个请求自含，Server 无状态可任意扩缩，新旧 client 的差异被入口分流吸收。这就是第 2 章概念的体感版本。
 
 ## 首次调用的全链路时序
@@ -204,7 +210,19 @@ sequenceDiagram
 
 1. **`tools/list` 与 `tools/call` 是两次独立请求**——无状态语义下没有「先建立再复用」的隐含关系，目录本身可缓存（Server 响应里的 `ttlMs` 就是给这个用的）
 2. **「模型选择工具」发生在 Host 侧**——Server 只提供目录与执行，把哪些工具放进模型上下文是 Host 的治理动作（第 6 章规模化治理的落点）
-3. **HTTP 场景下每次请求都带 `MCP-Protocol-Version` 等标准头**（第 8 章）——本图省略，联调排查时先查头
+3. **HTTP 场景下每次请求都带标准头**——本图省略了,真实请求长这样(细节第 8 章展开):
+
+```http
+POST /mcp HTTP/1.1
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: after_sales_query_ticket
+
+{ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { ... } }
+```
+
+`Mcp-Name` 让网关不解析 body 就能按工具名限流与审计;`MCP-Protocol-Version` 必须与 body 里 `_meta` 的版本一致,不一致返回 `400 + HeaderMismatch`。stdIO 实测时看不到这些头——它们是 Streamable HTTP 传输的合规要求,本地 stdio 不涉及。
 
 ## 贯穿案例：售后域 Server 骨架
 
@@ -274,6 +292,21 @@ server.startStreamableHttp(8080);                      // ⑥ 挂 Streamable HTT
 ```
 
 Java 侧的对照结构（mcp-core 2.0.x，`io.modelcontextprotocol.modern` 包）：构建入口同样遵循「声明工具 → 描述 → 挂传输」，具体 API 签名以 javadoc 实测为准（章末复核清单第一项）。
+
+## 从 echo 到真实工具：还差什么
+
+echo 验证了链路，但它离「模型爱用、生产可靠」还有明确的差距清单——每一条对应后续一章：
+
+| 差距 | 现状 | 去哪补 |
+|------|------|--------|
+| 描述只是占位 | "原样返回输入文本"没有任务语义 | 第 5 章:任务语义重写、边界声明、格式示例 |
+| 参数无约束 | `text` 是裸 string | 第 5 章:正则、枚举、范围写进 schema(校验层执行) |
+| 没有错误处理 | 处理器不会失败 | 第 5 章:两类错误两条路,消息写给模型看 |
+| 无真实业务 | echo 不接中台 | 第 6 章:从 OpenAPI 聚合出任务级工具 |
+| 单一消费端 | 只有手写 JSON-RPC 验证 | 第 7 章:agentscope-java 与前端双端接入 |
+| 裸奔上线 | 无鉴权、无限流 | 第 8 章:授权框架与部署清单 |
+
+这份清单也是本书的结构图——每一章填一行。下一章从最有杠杆的填起:**描述质量与错误处理**。
 
 ## 常见第一坑
 
