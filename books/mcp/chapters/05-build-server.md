@@ -160,7 +160,32 @@ if __name__ == "__main__":
 
 教程的测试环节不是写单测，而是把 Server 接进 **Claude for Desktop**：配置 Host 的 MCP Server 清单（指向本 Server 的启动命令），重启 Host，然后用自然语言问：「What's the weather in New York? 」——观察模型选中 `get_forecast`、填对经纬度、把结果转述成人话。
 
-这一步的工程意义，是把第 4 章的「裸 JSON-RPC 实测」升级为**真实消费端的端到端验证**：
+### 配置文件与启动命令
+
+配置文件位置因平台而异（不存在则创建）：
+
+| 平台 | 路径 |
+|------|------|
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Linux | `~/.config/Claude/claude_desktop_config.json` |
+| Windows | `%AppData%\Claude\claude_desktop_config.json` |
+
+在 `mcpServers` 键下登记 Server——本质是告诉 Host 两件事：「有个叫 weather 的 Server」「用这条命令启动它」：
+
+```json
+{
+  "mcpServers": {
+    "weather": {
+      "command": "uv",
+      "args": ["--directory", "/ABSOLUTE/PATH/TO/weather", "run", "weather.py"]
+    }
+  }
+}
+```
+
+三个官方点名的排错点：`command` 可能需要**可执行文件全路径**（`which uv` 获取）；路径必须**绝对路径**；Windows 的 JSON 路径用双反斜杠或正斜杠。保存后**重启 Host** 生效——Host 只在启动时读取 Server 清单。
+
+### 端到端验证什么
 
 | 验证层 | 第 4 章 | 本章 |
 |--------|---------|------|
