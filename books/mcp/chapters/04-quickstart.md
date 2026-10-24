@@ -35,6 +35,8 @@ flowchart LR
 
 前置条件：Node.js ≥ 20（实测环境）、npm 可用。Java 侧示例需要 JDK 17+ 与 Gradle，本章给出对照结构，实测补充见章末复核清单。
 
+**环境与可复现性**：本章所有实测在以下环境完成——macOS（darwin）、Node 20+、`@modelcontextprotocol/server@2.4.0`、`@modelcontextprotocol/client@2.x`、zod 4.x,日期 2026-10-24。全部命令原样可复现;若你读到这里时 SDK 已有更新的小版本,行为以官方 changelog 为准(协议行为不受小版本影响,仅 API 细节可能调整)。
+
 ## 概述
 
 本章围绕三个动作展开，它们也是所有 MCP Server 的共同骨架：
@@ -317,6 +319,8 @@ echo 验证了链路，但它离「模型爱用、生产可靠」还有明确的
 | schema 校验失败 | 调用返回 Invalid Params | 参数与 inputSchema 逐字段对照；必填缺失、类型不符是两大主因 |
 | 模型不选工具 | 工具能调通，但 Agent 从不选它 | description 缺失或太弱——第 5 章的描述质量工程就是为此准备的 |
 | 手写裸请求缺 `_meta` | 服务端返回 -32602 Invalid Params | 每个请求必须带 `protocolVersion` 与 `clientCapabilities`（第 2.5 节）；SDK 便捷方法已自动拼装 |
+| 结果里找不到 structuredContent | echo 只返回 content | 只有定义了 `outputSchema` 且处理器返回 `structuredContent` 才有——第 5 章实测演示 |
+| 版本不支持报错 | `-32022` + supported 清单 | 按清单选双方都支持的版本重试;不要盲改配置(第 3 章矩阵) |
 
 ## 本章小结
 
