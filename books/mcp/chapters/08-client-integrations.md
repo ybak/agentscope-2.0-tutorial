@@ -1,5 +1,5 @@
 ---
-chapter: 7
+chapter: 8
 title: 跨框架客户端接入
 source: https://modelcontextprotocol.io/specification/2026-07-28/client + 各书交叉引用
 ---
