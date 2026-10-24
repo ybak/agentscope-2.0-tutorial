@@ -126,25 +126,6 @@ pandoc chapters/*.md -o book.pdf --pdf-engine=xelatex -V CJKmainfont="Microsoft 
 
 > 本书的 900+ 页 PDF 版本由一条 Markdown → HTML → Edge 打印的构建管线生成；如你需要该管线，欢迎提 Issue 交流。
 
-## 🤝 参与贡献
-
-发现错别字、内容过时、链接失效，或希望补充某章内容，欢迎提 Issue / PR：
-
-1. Fork 本仓库 → 新建分支 → 修改对应章节
-2. 注意保持章节 frontmatter（`chapter` / `title` / `source`）与图片相对路径规范
-3. 提交 PR 并说明修改动机
-
-## 📣 关于作者 / 交流
-
-- **GitHub**：[github.com/ybak](https://github.com/ybak)
-- **交流群**：打开小红书扫码加入「AgentScopeJava 学习群」 👇
-
-<p align="center">
-  <img src="assets/images/chatgroup/rednote-asj.jpg" alt="小红书「AgentScopeJava 学习群」二维码" width="360" />
-</p>
-
-如果这本书对你有帮助，欢迎点一个 ⭐ Star，或分享给身边正在做 Agent 开发的同学——这是我持续整理更新的最大动力。
-
 ## 📄 声明
 
 本书基于 [AgentScope Java](https://github.com/agentscope-ai/agentscope-java) 官方文档（Apache License 2.0）整理而成，包含大量重组与增补，**非官方文档**，与原项目及其维护者无隶属关系。技术内容以[官方文档](https://github.com/agentscope-ai/agentscope-java/tree/main/docs/v2/zh)为准。完整的来源、许可与用途声明见 [NOTICE.md](../../NOTICE.md)。本书仅供学习与技术分享，禁止用于商业用途。

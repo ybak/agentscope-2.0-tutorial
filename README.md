@@ -34,6 +34,25 @@
 
 站点与 PDF 的构建说明见 [build/README.md](build/README.md)：`npm run site` 产出书架 + 各书子站 + 全局搜索，`node build.mjs --pdf --book agentscope-java` 出单书 PDF。
 
+## 🤝 参与贡献
+
+发现错别字、内容过时、链接失效，或希望补充某章内容，欢迎提 Issue / PR：
+
+1. Fork 本仓库 → 新建分支 → 修改对应书籍章节
+2. 注意保持各书章节 frontmatter（如 agentscope-java 的 `chapter` / `title` / `source`）与图片相对路径规范
+3. 提交 PR 并说明修改动机
+
+## 📣 关于作者 / 交流
+
+- **GitHub**：[github.com/ybak](https://github.com/ybak)
+- **交流群**：打开小红书扫码加入「AgentScopeJava 学习群」 👇
+
+<p align="center">
+  <img src="books/agentscope-java/assets/images/chatgroup/rednote-asj.jpg" alt="小红书「AgentScopeJava 学习群」二维码" width="360" />
+</p>
+
+如果这些书对你有帮助，欢迎点一个 ⭐ Star，或分享给身边正在做 Agent 开发的同学——这是我持续整理更新的最大动力。
+
 ## 📄 声明
 
 各书的来源、许可与用途声明见 [NOTICE.md](NOTICE.md)。书架内容仅供学习与技术分享，禁止用于商业用途。
