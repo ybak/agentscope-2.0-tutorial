@@ -72,7 +72,19 @@ agentscope-java 是本书读者群的日常框架,它的 MCP 接入方式与最�
 
 (本节在 agentscope-java 书第 26 章成稿/本书出版前,以该章内容为准回补具体配置示例。)
 
-## 7.4 多框架消费:贯穿案例收尾
+## 7.4 client 能力现状:elicitation 活跃,Sampling/Roots 弃用
+
+规范把"Server 反向使用 client 能力"定义为三件:elicitation(向用户收集输入)、sampling(借 Host 的模型推理)、roots(告知可访问目录)。**2026-07-28 的弃用清单改变了集成决策**(第 3 章):
+
+| client 能力 | 状态 | Host 集成建议 |
+| --- | --- | --- |
+| **elicitation** | ✅ 活跃,且经 MRTR 成为交互主通道(`inputRequests` 内嵌) | 实现:表单/确认 UI 是生产 Host 的标配 |
+| **Sampling** | ⚠️ 已弃用 | 不再为 MCP 实现 sampling;需要模型推理时直连 LLM provider API |
+| **Roots** | ⚠️ 已弃用 | 目录/文件经工具参数或资源 URI 传入 |
+
+给集成者的判断:评估一个 Host 框架,先看它的 **elicitation/MRTR 支持**(决定交互能力),不必再为 sampling/roots 支持 TAB 加分。Logging 同理(已弃用,stderr 或 OTel)。
+
+## 7.5 多框架消费:贯穿案例收尾
 
 贯穿案例的终局验证——**同一个售后域 Server,两个异构消费端**:
 
@@ -88,14 +100,14 @@ agentscope-java 是本书读者群的日常框架,它的 MCP 接入方式与最�
 
 同一份工具定义(`inputSchema` + `description`),TS Host 与 Java Host 拿到的目录一致、调用协议一致、结果语义一致——**第 5 章打磨的描述质量只投入一次,所有框架受益**。这就是书架里 mcp 书存在的理由。
 
-## 7.5 客户端侧的常见坑
+## 7.6 客户端侧的常见坑
 
 - **传输交集**:Server 只支持 stdio、前端 Host 只能 HTTP——接入前先对传输清单,别到联调才发现。
 - **版本协商失败**:legacy client 连现代 Server(或反之)的报错形态,两端 SDK 都有明确错误(如 `UnsupportedProtocolVersionError`)——按第 3 章兼容矩阵定位,而不是盲改配置。
 - **目录刷新**:Server 的 `tools/list_changed` 通知到达后,Host 需重新 `listTools`——长驻 Host(如 CLI 会话)忽略此通知会拿着过期目录选工具。
 - **描述截断**:个别 Host 对工具描述做长度截断,再好的描述被截也就失效了——接入新框架时检查它的截断策略。
 
-## 7.6 小结
+## 7.7 小结
 
 - 双端调用三步:transport → connect → listTools/callCall(TS v2.4.0 实测)
 - Host 侧可见性过滤是治理的落点
