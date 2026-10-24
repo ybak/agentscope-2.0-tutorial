@@ -133,6 +133,24 @@ test("rewriteMarkdownLinks 使用注入的 githubBase", () => {
   assert.ok(out.includes('https://github.com/o/r/blob/main/demo/a.md'));
 });
 
+test("章节页 body 携带按书 filter 属性", () => {
+  // renderShell 增加可选 pagefindFilter 参数
+  const html = renderShell({ title: 't', content: 'c', rootPrefix: '../',
+    searchHref: '../../search.html', pagefindFilter: '书: AgentScope Java 2.0:从入门到进阶' });
+  assert.ok(html.includes('<body data-pagefind-filter="书: AgentScope Java 2.0:从入门到进阶">'));
+});
+
+test("filter 属性缺省时不输出,书架页/搜索页不带 filter", () => {
+  const plain = renderShell({ title: 't', content: 'c', rootPrefix: '' });
+  assert.ok(plain.includes("<body>"));
+  assert.ok(!plain.includes("data-pagefind-filter"));
+  assert.ok(!renderShelfPage([{ bookId: 'a', status: 'published', title: 'A' }]).includes("data-pagefind-filter"));
+  assert.ok(!renderSearchPage().includes("data-pagefind-filter"));
+  // 书首页:封面正文随书,整页归属该书 filter
+  const home = renderIndexPage(book, flattenPages(twoParts));
+  assert.ok(home.includes(`<body data-pagefind-filter="书: ${book.title}">`));
+});
+
 test("renderShelfPage:published 卡片有链接,planned 卡片无 <a>", () => {
   const html = renderShelfPage([
     { bookId: 'a', status: 'published', title: 'A', tagline: 'ta' },

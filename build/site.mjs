@@ -41,9 +41,11 @@ const readBuildAsset = (...seg) => fs.readFileSync(path.join(BUILD_DIR, ...seg),
  * 整页外壳。rootPrefix:站点根相对前缀(章节页 '../',根页面 '');
  * needMermaid:引 mermaid 页尾脚本(章节页);searchUi:引 pagefind UI(仅搜索页);
  * searchHref:搜索框 action 显式覆盖(多书后搜索页固定在站点根,书子站页面
- * 需按自身层级回指,缺省回退旧语义 `${rootPrefix}search.html`)。
+ * 需按自身层级回指,缺省回退旧语义 `${rootPrefix}search.html`);
+ * pagefindFilter:非空时 <body> 输出 data-pagefind-filter 属性,整页归入该 filter
+ * 值(供全局搜索按书过滤;书架页/搜索页不传)。
  */
-export function renderShell({ title, content, rootPrefix, sidebar = null, needMermaid = false, searchUi = false, searchHref = null }) {
+export function renderShell({ title, content, rootPrefix, sidebar = null, needMermaid = false, searchUi = false, searchHref = null, pagefindFilter = null }) {
   const style = readBuildAsset('assets', 'style.css');
   const siteStyle = readBuildAsset('assets', 'site.css');
   const hljsTheme = readBuildAsset('node_modules', 'highlight.js', 'styles', 'github.css');
@@ -81,7 +83,7 @@ ${hljsTheme}
 ${siteStyle}
 </style>
 </head>
-<body>
+<body${pagefindFilter ? ` data-pagefind-filter="${escapeHtml(pagefindFilter)}"` : ''}>
 <header class="site-header">
 <button class="nav-toggle" aria-label="打开目录">☰</button>
 <a class="site-title" href="${rootPrefix}index.html">${escapeHtml(BOOK.title)}</a>
@@ -152,10 +154,12 @@ ${items.map((p) => `<a href="${p.href}">${escapeHtml(p.title)}</a>`).join('\n')}
 <div class="home-cards">
 ${cards}
 </div>`;
-  return renderShell({ title: BOOK.title, content, rootPrefix: '', searchHref: '../search.html' });
+  return renderShell({ title: BOOK.title, content, rootPrefix: '', searchHref: '../search.html', pagefindFilter: `书: ${book.title}` });
 }
 
-/** 搜索页:pagefind UI 挂载点;data-pagefind-ignore 防止自身入索引。固定位于站点根 */
+/** 搜索页:pagefind UI 挂载点;data-pagefind-ignore 防止自身入索引。固定位于站点根。
+ * PagefindUI 1.5 自动发现索引中的 filter 并渲染多选面板(无需构造参数),
+ * 章节页/书首页 body 的 data-pagefind-filter 即其数据来源。 */
 export function renderSearchPage() {
   return renderShell({
     title: '搜索',
@@ -222,9 +226,10 @@ export function flattenPages(parts) {
 /**
  * 章节页渲染:正文(含链接重写,demo 链接按书配置降级 GitHub) + 侧边栏 + 翻页 + mermaid。
  * body 由调用方按 flattenPages 顺序对齐(flat[idx] 与 currentHref 同页);
- * githubBase 为该书 demo/ 目录上级的 GitHub blob 前缀。
+ * githubBase 为该书 demo/ 目录上级的 GitHub blob 前缀;
+ * 整页以 `书: <book.title>` 作为 pagefind filter,供全局搜索按书过滤。
  */
-function renderChapterPage(body, currentHref, flat, idx, githubBase) {
+function renderChapterPage(body, currentHref, flat, idx, githubBase, book) {
   return renderShell({
     title: flat[idx].title,
     content: rewriteMarkdownLinks(md.render(body), githubBase) + renderPager(flat, idx),
@@ -232,6 +237,7 @@ function renderChapterPage(body, currentHref, flat, idx, githubBase) {
     sidebar: renderSidebar(PARTS, currentHref),
     needMermaid: true,
     searchHref: '../../search.html',
+    pagefindFilter: `书: ${book.title}`,
   });
 }
 
@@ -286,7 +292,7 @@ export function buildSite(book, rootDir) {
   for (let i = 0; i < flat.length; i++) {
     const body = bodies.get(flat[i].href);
     if (body == null) continue; // 缺文件已 warn
-    const html = renderChapterPage(body, flat[i].href, flat, i, githubBase);
+    const html = renderChapterPage(body, flat[i].href, flat, i, githubBase, book);
     auditPage(html, siteDir, flat[i].href, warns);
     fs.writeFileSync(path.join(siteDir, flat[i].href), html, 'utf8');
     rendered++;
