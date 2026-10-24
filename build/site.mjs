@@ -1,31 +1,29 @@
 /**
- * site.mjs — --site 模式的静态站点构建器。
- * 纯函数(链接重写/页面序列)可单测;buildSite() 负责文件总装。
+ * site.mjs — --site 模式的静态站点构建器(多书版)。
+ * 纯函数(链接重写/页面序列)可单测;buildSite(book) 负责单本书子站总装,
+ * runSite() 总装全部书子站 + 站点根的书架首页与搜索页。
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { BOOK, PARTS } from './manifest.mjs';
+import { BOOK, PARTS } from './books/agentscope-java.mjs';
+import { ALL_BOOKS, BUILDABLE_BOOKS } from './books/registry.mjs';
+import { resolveBookPaths } from './books/paths.mjs';
 import { escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets } from './lib.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = __dirname;
-const ROOT_DIR = path.resolve(BUILD_DIR, '..');
-const SITE_DIR = path.join(ROOT_DIR, 'output', 'site');
-const CHAPTERS_DIR = path.join(ROOT_DIR, 'chapters');
-
-/** demo 目录链接在站点内无对应页面,统一降级到 GitHub 源文件 */
-const GITHUB_BASE = 'https://github.com/ybak/agentscope-2.0-tutorial/blob/main/';
 
 /**
  * 站点链接重写:相对 .md 链接 → .html(保留锚点);
- * ../demo/…md → GitHub blob 地址;绝对 URL/协议相对链接与其余 ../ 路径原样。
+ * ../demo/…md → GitHub blob 地址(githubBase 为「demo/ 目录上级」的 blob 前缀);
+ * 绝对 URL/协议相对链接与其余 ../ 路径原样。
  */
-export function rewriteMarkdownLinks(html) {
+export function rewriteMarkdownLinks(html, githubBase) {
   return html.replace(/href="([^"]+\.md)(#[^"]*)?"/g, (full, target, hash = '') => {
     if (target.startsWith('../demo/')) {
-      return `href="${GITHUB_BASE}${target.replace(/^\.\.\//, '')}${hash}"`;
+      return `href="${githubBase}${target.replace(/^\.\.\//, '')}${hash}"`;
     }
     if (target.startsWith('../')) return full;
     if (/^[a-z][a-z0-9+.-]*:/.test(target) || target.startsWith('//')) return full; // 外链
@@ -41,9 +39,11 @@ const readBuildAsset = (...seg) => fs.readFileSync(path.join(BUILD_DIR, ...seg),
 
 /**
  * 整页外壳。rootPrefix:站点根相对前缀(章节页 '../',根页面 '');
- * needMermaid:引 mermaid 页尾脚本(章节页);searchUi:引 pagefind UI(仅搜索页)。
+ * needMermaid:引 mermaid 页尾脚本(章节页);searchUi:引 pagefind UI(仅搜索页);
+ * searchHref:搜索框 action 显式覆盖(多书后搜索页固定在站点根,书子站页面
+ * 需按自身层级回指,缺省回退旧语义 `${rootPrefix}search.html`)。
  */
-export function renderShell({ title, content, rootPrefix, sidebar = null, needMermaid = false, searchUi = false }) {
+export function renderShell({ title, content, rootPrefix, sidebar = null, needMermaid = false, searchUi = false, searchHref = null }) {
   const style = readBuildAsset('assets', 'style.css');
   const siteStyle = readBuildAsset('assets', 'site.css');
   const hljsTheme = readBuildAsset('node_modules', 'highlight.js', 'styles', 'github.css');
@@ -85,7 +85,7 @@ ${siteStyle}
 <header class="site-header">
 <button class="nav-toggle" aria-label="打开目录">☰</button>
 <a class="site-title" href="${rootPrefix}index.html">${escapeHtml(BOOK.title)}</a>
-<form class="site-search" action="${rootPrefix}search.html"><input type="search" name="q" placeholder="搜索全书…"></form>
+<form class="site-search" action="${searchHref ?? `${rootPrefix}search.html`}"><input type="search" name="q" placeholder="搜索全书…"></form>
 </header>
 <div class="site-body">
 ${sidebar ? `<aside class="site-aside">${sidebar}</aside>` : ''}
@@ -131,8 +131,8 @@ export function renderPager(flat, idx) {
   return `<nav class="pager">${prev}${next}</nav>`;
 }
 
-/** 首页:封面信息 + 篇卡片(篇标题 → 首个页面,其下页面链接)。rootPrefix 为 ''(根页面) */
-export function renderIndexPage(pages) {
+/** 书首页:封面信息(随书配置)+ 篇卡片(篇标题 → 首个页面,其下页面链接)。rootPrefix 为 '' */
+export function renderIndexPage(book, pages) {
   const byPart = new Map();
   for (const p of pages) {
     if (!byPart.has(p.part)) byPart.set(p.part, []);
@@ -143,26 +143,59 @@ export function renderIndexPage(pages) {
 ${items.map((p) => `<a href="${p.href}">${escapeHtml(p.title)}</a>`).join('\n')}
 </section>`).join('\n');
   const content = `<section class="cover">
-<h1 class="cover-title">${escapeHtml(BOOK.title)}</h1>
-<p class="cover-subtitle">${escapeHtml(BOOK.subtitle)}</p>
+<h1 class="cover-title">${escapeHtml(book.title)}</h1>
+<p class="cover-subtitle">${escapeHtml(book.subtitle)}</p>
 <hr class="cover-rule">
 <p class="cover-note">基于 AgentScope Java v2 官方文档整合 · 在线阅读版</p>
-<p class="cover-date">${escapeHtml(BOOK.date)}</p>
+<p class="cover-date">${escapeHtml(book.date)}</p>
 </section>
 <div class="home-cards">
 ${cards}
 </div>`;
-  return renderShell({ title: BOOK.title, content, rootPrefix: '' });
+  return renderShell({ title: BOOK.title, content, rootPrefix: '', searchHref: '../search.html' });
 }
 
-/** 搜索页:pagefind UI 挂载点;data-pagefind-ignore 防止自身入索引 */
+/** 搜索页:pagefind UI 挂载点;data-pagefind-ignore 防止自身入索引。固定位于站点根 */
 export function renderSearchPage() {
   return renderShell({
     title: '搜索',
     content: '<h1>搜索</h1>\n<div id="search"></div>',
     rootPrefix: '',
+    searchHref: 'search.html',
     searchUi: true,
   }).replace('<body>', '<body data-pagefind-ignore>');
+}
+
+/**
+ * 书架首页(站点根 index.html):每书一张卡片。
+ * 卡片顺序 published 优先(规格 §7 首页软着陆:书架首屏即 agentscope 大卡片);
+ * published → 链到 <bookId>/index.html,planned → 无子站,纯文本卡片 + 「规划中」徽标。
+ */
+export function renderShelfPage(books) {
+  const ordered = [
+    ...books.filter((b) => b.status === 'published'),
+    ...books.filter((b) => b.status !== 'published'),
+  ];
+  const cards = ordered.map((b) => {
+    const body = `<h3 class="shelf-title">${escapeHtml(b.title)}</h3>
+<p class="shelf-tagline">${escapeHtml(b.tagline ?? '')}</p>`;
+    return b.status === 'published'
+      ? `<section class="home-card shelf-card">
+<a class="shelf-link" href="${b.bookId}/index.html">${body}<span class="shelf-cta">进入阅读 →</span></a>
+</section>`
+      : `<section class="home-card shelf-card planned">
+${body}<span class="shelf-badge">规划中</span>
+</section>`;
+  }).join('\n');
+  const content = `<section class="cover">
+<h1 class="cover-title">AI 教程书架</h1>
+<p class="cover-subtitle">多本“从入门到进阶”完整教程,按需取阅</p>
+<hr class="cover-rule">
+</section>
+<div class="home-cards">
+${cards}
+</div>`;
+  return renderShell({ title: 'AI 教程书架', content, rootPrefix: '', searchHref: 'search.html' });
 }
 
 /**
@@ -187,16 +220,18 @@ export function flattenPages(parts) {
 // ---------- 总装 ----------
 
 /**
- * 章节页渲染:正文(含链接重写) + 侧边栏 + 翻页 + mermaid。
- * body 由调用方按 flattenPages 顺序对齐(flat[idx] 与 currentHref 同页)。
+ * 章节页渲染:正文(含链接重写,demo 链接按书配置降级 GitHub) + 侧边栏 + 翻页 + mermaid。
+ * body 由调用方按 flattenPages 顺序对齐(flat[idx] 与 currentHref 同页);
+ * githubBase 为该书 demo/ 目录上级的 GitHub blob 前缀。
  */
-function renderChapterPage(body, currentHref, flat, idx) {
+function renderChapterPage(body, currentHref, flat, idx, githubBase) {
   return renderShell({
     title: flat[idx].title,
-    content: rewriteMarkdownLinks(md.render(body)) + renderPager(flat, idx),
+    content: rewriteMarkdownLinks(md.render(body), githubBase) + renderPager(flat, idx),
     rootPrefix: '../',
     sidebar: renderSidebar(PARTS, currentHref),
     needMermaid: true,
+    searchHref: '../../search.html',
   });
 }
 
@@ -213,29 +248,33 @@ export function auditPage(html, siteDir, label, warns) {
 }
 
 /**
- * 构建 output/site/:镜像仓库目录(chapters/ + assets/ + build/assets/vendor/),
- * 章节 ../assets/images/ 引用零改动可解析。返回站点目录绝对路径。
- * 搜索索引不在此步产出,由 `npm run site` 的 pagefind 段完成。
+ * 构建单本书子站 output/site/<bookId>/:镜像书源目录(chapters/ + assets/ + build/assets/vendor/),
+ * 章节 ../assets/images/ 引用零改动可解析;demo 链接按 book.demoGithubBase 降级。
+ * 路径全部经 resolveBookPaths 推导。返回书子站目录绝对路径。
+ * 搜索索引不在此步产出,由 `npm run site` 的 pagefind 段完成;书内搜索框统一回指站点根 search.html。
  */
-export function buildSite() {
+export function buildSite(book, rootDir) {
+  const { chaptersAbs, assetsAbs, siteDir } = resolveBookPaths(book, rootDir);
   const warns = [];
-  fs.rmSync(SITE_DIR, { recursive: true, force: true });
-  fs.mkdirSync(path.join(SITE_DIR, 'chapters'), { recursive: true });
+  fs.mkdirSync(path.join(siteDir, 'chapters'), { recursive: true });
 
-  // 资源:仓库 assets 原样 + vendor(mermaid 经 syncVendorAssets;pagefind UI 由 CLI 索引产物提供)
-  fs.cpSync(path.join(ROOT_DIR, 'assets'), path.join(SITE_DIR, 'assets'), { recursive: true });
+  // 资源:书 assets 原样 + vendor(mermaid 经 syncVendorAssets;pagefind UI 由 CLI 索引产物提供)
+  fs.cpSync(assetsAbs, path.join(siteDir, 'assets'), { recursive: true });
   syncVendorAssets();
-  fs.mkdirSync(path.join(SITE_DIR, 'build', 'assets', 'vendor'), { recursive: true });
+  fs.mkdirSync(path.join(siteDir, 'build', 'assets', 'vendor'), { recursive: true });
   fs.copyFileSync(path.join(BUILD_DIR, 'assets', 'vendor', 'mermaid.min.js'),
-    path.join(SITE_DIR, 'build', 'assets', 'vendor', 'mermaid.min.js'));
+    path.join(siteDir, 'build', 'assets', 'vendor', 'mermaid.min.js'));
 
-  // 章节/篇导读页(顺序即 flattenPages;manifest 中缺文件 → warn 跳过)
+  // demo 降级基址:demoGithubBase 指向 demo/ 目录本身,重写规则需其上级前缀(拼回目标里的 demo/)
+  const githubBase = book.demoGithubBase.replace(/demo\/$/, '');
+
+  // 章节/篇导读页(顺序即 flattenPages;书配置中缺文件 → warn 跳过)
   const flat = flattenPages(PARTS);
   const bodies = new Map();
   for (const part of PARTS) {
     const files = [part.intro, ...part.chapters.map((c) => c.file)].filter(Boolean);
     for (const file of files) {
-      const abs = path.join(CHAPTERS_DIR, file);
+      const abs = path.join(chaptersAbs, file);
       if (!fs.existsSync(abs)) {
         warns.push(`[site][warn] 章节文件缺失,跳过: chapters/${file}`);
         continue;
@@ -247,17 +286,29 @@ export function buildSite() {
   for (let i = 0; i < flat.length; i++) {
     const body = bodies.get(flat[i].href);
     if (body == null) continue; // 缺文件已 warn
-    const html = renderChapterPage(body, flat[i].href, flat, i);
-    auditPage(html, SITE_DIR, flat[i].href, warns);
-    fs.writeFileSync(path.join(SITE_DIR, flat[i].href), html, 'utf8');
+    const html = renderChapterPage(body, flat[i].href, flat, i, githubBase);
+    auditPage(html, siteDir, flat[i].href, warns);
+    fs.writeFileSync(path.join(siteDir, flat[i].href), html, 'utf8');
     rendered++;
   }
 
-  // 根页面
-  fs.writeFileSync(path.join(SITE_DIR, 'index.html'), renderIndexPage(flat), 'utf8');
-  fs.writeFileSync(path.join(SITE_DIR, 'search.html'), renderSearchPage(), 'utf8');
+  // 书首页(搜索页只在站点根,由 runSite 产出)
+  fs.writeFileSync(path.join(siteDir, 'index.html'), renderIndexPage(book, flat), 'utf8');
 
   for (const w of warns) console.log(w);
-  console.log(`[site] 已渲染 ${rendered}/${flat.length} 页 → ${SITE_DIR}`);
-  return SITE_DIR;
+  console.log(`[site] ${book.bookId}: 已渲染 ${rendered}/${flat.length} 页 → ${siteDir}`);
+  return siteDir;
+}
+
+/**
+ * 总装全部站点:清空 output/site → 逐本可构建书产出子站 →
+ * 站点根放书架首页(全部书目,含 planned)与搜索页。返回站点根目录绝对路径。
+ */
+export function runSite(rootDir) {
+  const siteRoot = path.join(rootDir, 'output', 'site');
+  fs.rmSync(siteRoot, { recursive: true, force: true });
+  for (const b of BUILDABLE_BOOKS) buildSite(b, rootDir);
+  fs.writeFileSync(path.join(siteRoot, 'index.html'), renderShelfPage(ALL_BOOKS), 'utf8');
+  fs.writeFileSync(path.join(siteRoot, 'search.html'), renderSearchPage(), 'utf8');
+  return siteRoot;
 }

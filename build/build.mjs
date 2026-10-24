@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { BOOK, PARTS, buildLinkMap, EXCLUDED_SOURCES } from './manifest.mjs';
 import { cleanMarkdown } from './clean.mjs';
-import { buildSite } from './site.mjs';
+import { runSite } from './site.mjs';
 import {
   escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets, toPosix,
 } from './lib.mjs';
@@ -531,7 +531,7 @@ async function main() {
       break;
     }
     case '--site': {
-      buildSite();
+      runSite(ROOT_DIR);
       console.log(`[build] 站点已生成: ${path.join(OUTPUT_DIR, 'site')}（搜索索引: cd build && npm run site）`);
       break;
     }

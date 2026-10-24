@@ -1,27 +1,30 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { flattenPages, renderIndexPage, renderPager, renderSearchPage, renderShell, renderSidebar, rewriteMarkdownLinks } from "./site.mjs";
-import { PARTS } from "./manifest.mjs";
+import { flattenPages, renderIndexPage, renderPager, renderSearchPage, renderShelfPage, renderShell, renderSidebar, rewriteMarkdownLinks } from "./site.mjs";
+import { book, PARTS } from "./books/agentscope-java.mjs";
+
+// 与 buildSite 内的推导一致:rewriteMarkdownLinks 的第二参数是「demo/ 目录的上级」blob 前缀
+const demoBase = book.demoGithubBase.replace(/demo\/$/, "");
 
 test("同目录章链接重写为 .html", () => {
-  const out = rewriteMarkdownLinks('<a href="30-managed-agents.md">第 30 章</a>');
+  const out = rewriteMarkdownLinks('<a href="30-managed-agents.md">第 30 章</a>', demoBase);
   assert.equal(out, '<a href="30-managed-agents.html">第 30 章</a>');
 });
 
 test("重写保留锚点", () => {
-  const out = rewriteMarkdownLinks('<a href="03-concept-map.md#core-ideas">x</a>');
+  const out = rewriteMarkdownLinks('<a href="03-concept-map.md#core-ideas">x</a>', demoBase);
   assert.equal(out, '<a href="03-concept-map.html#core-ideas">x</a>');
 });
 
-test("../demo/ 链接降级为 GitHub 源文件地址", () => {
-  const out = rewriteMarkdownLinks('<a href="../demo/cross-border-commerce/steps/step-12-sandbox.md">步骤</a>');
-  assert.equal(out, '<a href="https://github.com/ybak/agentscope-2.0-tutorial/blob/main/demo/cross-border-commerce/steps/step-12-sandbox.md">步骤</a>');
+test("../demo/ 链接降级为 GitHub 源文件地址(基址随书配置)", () => {
+  const out = rewriteMarkdownLinks('<a href="../demo/cross-border-commerce/steps/step-12-sandbox.md">步骤</a>', demoBase);
+  assert.equal(out, '<a href="https://github.com/ybak/ai-tutorial/blob/main/books/agentscope-java/demo/cross-border-commerce/steps/step-12-sandbox.md">步骤</a>');
 });
 
 test("其他 ../ 链接与外链、非 .md href 原样保留", () => {
   const src = '<a href="../assets/images/a.png">图</a><a href="https://example.com/x.md">外</a><a href="index.html">内</a>';
-  assert.equal(rewriteMarkdownLinks(src), src);
+  assert.equal(rewriteMarkdownLinks(src, demoBase), src);
 });
 
 test("flattenPages 全书序列:54 项、首尾与篇导读位置正确", () => {
@@ -89,10 +92,11 @@ test("renderSearchPage:排除自身索引并引 pagefind UI", () => {
   assert.ok(page.includes("new PagefindUI"));
 });
 
-test("renderIndexPage:每篇一张卡片,章链接齐全", () => {
-  const html = renderIndexPage(flattenPages(twoParts));
+test("renderIndexPage:封面随书配置,每篇一张卡片,搜索指向站点根", () => {
+  const html = renderIndexPage(book, flattenPages(twoParts));
   assert.ok(html.includes("home-card"));
   assert.ok(html.includes('href="chapters/01-a.html"'));
+  assert.ok(html.includes(`action="../search.html"`)); // 书首页在 <bookId>/ 下,搜索在站点根
 });
 
 test("auditPage:相对 .md 残留被抓,GitHub 降级链接不报", async (t) => {
@@ -117,4 +121,24 @@ test("auditPage:缺失图片告警,存在图片不报", async (t) => {
   assert.equal(warns.length, 1);
   assert.ok(warns[0].includes("missing.png"));
   fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("renderShell 支持显式 searchHref(书子站章节页指向站点根搜索)", () => {
+  const html = renderShell({ title: 't', content: 'c', rootPrefix: '../', searchHref: '../../search.html' });
+  assert.ok(html.includes('action="../../search.html"'));
+});
+
+test("rewriteMarkdownLinks 使用注入的 githubBase", () => {
+  const out = rewriteMarkdownLinks('<a href="../demo/a.md">x</a>', 'https://github.com/o/r/blob/main/');
+  assert.ok(out.includes('https://github.com/o/r/blob/main/demo/a.md'));
+});
+
+test("renderShelfPage:published 卡片有链接,planned 卡片无 <a>", () => {
+  const html = renderShelfPage([
+    { bookId: 'a', status: 'published', title: 'A', tagline: 'ta' },
+    { bookId: 'p', status: 'planned', title: 'P', tagline: 'tp' },
+  ]);
+  assert.ok(html.includes('href="a/index.html"'));
+  assert.ok(!/href="p/.test(html));
+  assert.ok(html.includes('规划中'));
 });
