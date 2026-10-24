@@ -86,6 +86,45 @@ Mcp-Name: get_weather
 
 工具层(第 5 章)的攻击面并行存在:annotations 不可信、`$ref` 不解引用、结果视为数据非指令、敏感参数禁用 `x-mcp-header`。**两层防线一起过评审,缺一不可。**
 
+### 攻击与缓解:官方最佳实践的完整清单
+
+规范 security-considerations 之外,官方安全最佳实践教程(tutorials/security/security_best_practices,984 行)给出了更完整的攻击目录。逐项过评审:
+
+| 攻击 | 形态 | 缓解 |
+| --- | --- | --- |
+| **Confused Deputy** | 恶意 client 借合法 client(如共享的 MCP 代理)的凭据与授权,访问本不该访问的资源——代理对「为谁办事」是迷糊的 | 每消费端独立身份与注册;动态注册时校验 client 与 redirect 绑定;audience 绑定 token |
+| **Token Passthrough(令牌透传)** | MCP Server 把 client 的上游 token 原样转发给下游 API——绕过 scope 校验、审计断裂、权限放大 | Server 对下游用**自己**的凭据;不透传 client token;每跳重新授权 |
+| **SSRF** | 工具参数(URL 类)被诱导请求内网地址 | URL 白名单/出口管控;禁内网地址段;schema 约束(第 5 章) |
+| **State Handle Hijacking** | 第 5 章句柄模式的反面:句柄被猜中/窃取后冒用 | 句柄是名字不是能力——每次调用校验调用者归属;不透明 ID+足熵+限时(第 5.6) |
+| **授权 URL 操纵/开放重定向** | redirect_uri 操纵截获授权码 | 精确匹配;`iss` 校验(RFC 9207) |
+| **Mix-Up 攻击** | 伪造 AS 让 client 把授权码发给攻击者 | `iss` 参数强制校验 |
+| **Localhost redirect 模仿** | 本机端口抢占公开 client 的 localhost 回调 | CIMD 信任策略;端口绑定校验 |
+| **CIMD 信任策略缺口** | 恶意元数据文档冒充合法 client | AS 侧按信任策略审核 client 元数据域 |
+| **Scope 过宽** | token scope 大于实际需要 | 最小 scope;RS 按 scope 收窄工具可见性(8.4) |
+
+教程原文对每项攻击有完整场景推演,评审争议时回原文对照。
+
+### 授权实操:Keycloak 端到端
+
+官方授权教程(tutorials/security/authorization,1201 行)给出完整可复现实操:**Keycloak 作为 AS 的搭建**(realm/client/凭据)→ **MCP Server 侧接入**(RS 配置:auth server 位置、OAuth client 凭据、全局配置)→ **测试验证** → 常见坑。中台落地时照教程演练一遍并留档,比读十遍规范扎实——本节不复制其千行配置。
+
+## 本地 Server 安全:十条检查清单
+
+域 Server 服务化之前,团队还会大量使用**本地 stdio Server**(个人工具、开发辅助)。官方本地安全指南(tutorials/security/local-server-security)的信任模型一句话:**运行一个本地 Server ≈ 在你机器上运行任意程序**——它能碰你的文件、凭据、网络。十条检查清单:
+
+1. **先问是否必须本地跑**——能服务化(HTTP)就不本地
+2. **安装前验来源**——provenance(谁发布、仓库信誉、供应链)
+3. **工具定义视为不可信输入**——描述里可能藏指令(tool poisoning,第 5 章)
+4. **隔离环境运行**——容器/最小权限用户,不裸跑在开发机上
+5. **凭据隔离**——不共享主凭据;Server 专用低权凭据
+6. **文件系统限权**——只授权声明的目录,不开放全盘
+7. **网络出口管控**——能连哪里,白名单化
+8. **组织级管理**——团队统一批准清单,不各装各的
+9. **定期复审**——版本更新与权限漂移
+10. **下线即清理**——配置与凭据一并回收
+
+(第 8.4 的企业审计与这份个人清单是两套尺度:前者管平台,后者管个人开发机。)
+
 ## 8.4 多租户:可见性即权限
 
 多租户平台里,"哪些工具对哪些租户可见"本身是权限。规范给了准确的抓手——**`tools/list` 的返回集可以随请求的授权变化**:
