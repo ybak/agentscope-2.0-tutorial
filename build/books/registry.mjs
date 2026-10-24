@@ -41,6 +41,12 @@ export const PLANNED_BOOKS = [
     title: 'MCP:跨框架工具接入协议',
     tagline: 'Model Context Protocol,统一工具接入的跨框架标准',
   },
+  {
+    bookId: 'cli',
+    status: 'planned',
+    title: 'AI CLI:编程助手团队实战',
+    tagline: 'Claude Code 等 AI 编程 CLI 在团队工作流中的配置、技能与治理',
+  },
 ];
 
 /** 全量书目（构建中 + 规划中） */
