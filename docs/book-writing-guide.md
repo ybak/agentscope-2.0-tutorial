@@ -68,6 +68,7 @@ source: docs/building-blocks/agent.md   # 来源;依据官方文档的书写官�
 
 - 章首导览图必备(内容极简的章可免,需在评审说明)
 - 文内按需 mermaid 时序图/流程图/部署图,有名就用(数据流、生命周期、拓扑)
+- **文字过多时,优先改画成 mermaid 图提升可读性**:并列要点 ≥4 条(改 flowchart 分支)、步骤 ≥5 步(改 flowchart 或 sequenceDiagram)、状态/模式 ≥3 个(改 stateDiagram-v2)、概念间有层次或包含关系(改 classDiagram/graph)——大段"第一…第二…第三…"的枚举文字是图表化的首选对象
 - 必须在 GitHub 网页端原生渲染(mermaid 标准语法,不依赖插件)
 
 ## 5. 语言与标点
