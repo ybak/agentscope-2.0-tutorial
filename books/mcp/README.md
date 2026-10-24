@@ -29,7 +29,7 @@ Model Context Protocol,统一工具接入的跨框架标准。本书讲两件事
 
 | 章节 | 内容一句话 | 分量 |
 |------|-----------|------|
-| [第 1 章 初识 MCP](chapters/13-intro.md)* | 问题域、生态、三个时代判断 | 薄(全书引子,暂存 13 号位) |
+| [第 1 章 初识 MCP](chapters/01-overview.md) | 问题域、生态、三个时代判断 | 薄(全书引子) |
 | [第 2 章 协议核心概念](chapters/02-core-concepts.md) | 无状态模型、resultType、_meta、错误码分区、discover、MRTR | 中 |
 | [第 3 章 协议版本演进与兼容](chapters/03-spec-versions.md) | 五版本主线、九大变更、官方七格矩阵、迁移八步 | 中 |
 | [第 4 章 快速上手](chapters/04-quickstart.md) | SDK 选型、最小 Server、四行为实测、贯穿案例骨架 | 中 |
@@ -41,7 +41,6 @@ Model Context Protocol,统一工具接入的跨框架标准。本书讲两件事
 | [第 10 章 部署与安全](chapters/10-deploy-security.md) | 头体系、OAuth 栈、多租户、威胁清单、部署清单 | 重 |
 | [第 11 章 Agent Skills 与扩展生态](chapters/11-extensions.md) | build-with-agent-skills;扩展四系:apps/auth/skills/tasks | 中 |
 | [第 12 章 企业落地路线图](chapters/12-adoption-roadmap.md) | 四阶段、组织分工、成本模型、反模式、决策树 | 中 |
-| [第 13 章 引子](chapters/13-intro.md) | 全书导览(与第 1 章合并前的暂存位) | 薄 |
 
 > 九章初稿已全部完成(2026-10-24),写作顺序(4→2→5→6→7→8→3→9→1)按计划执行;发布前按各章复核清单收尾。
 
