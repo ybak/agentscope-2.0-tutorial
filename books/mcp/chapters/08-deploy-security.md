@@ -1,90 +1,134 @@
 ---
 chapter: 8
 title: 部署与安全
-source: https://modelcontextprotocol.io/specification/2026-07-28 (transports / security / authorization)
+source: https://modelcontextprotocol.io/specification/2026-07-28 (basic/transports/streamable-http, basic/authorization/*)
 ---
 
 # 第 8 章 部署与安全
 
-> **初稿状态(2026-10-24)**:授权框架要点依据官方发布文与安全社区解读(SEP-2468/RFC 9207、CIMD、六个 OAuth SEP);字段级细节发布前对照 spec authorization/security 原文复核。
+> 本章对照规范 basic/transports/streamable-http 与 basic/authorization 系列原文;安全威胁清单(8.5)依据规范 security-considerations 与 server/tools 的安全节。
 
-第 6 章的拓扑画了 Gateway 和域 Server,本章把它们变成**敢上生产的东西**:传输怎么选、身份怎么信、租户怎么隔、攻击面在哪、运维看什么。章末是一页可以直接抄进上线评审的部署清单。
+第 6 章的拓扑(Gateway + 域 Server)要变成敢上生产的东西,需要回答四层问题:传输怎么选、请求头怎么管、身份怎么信、攻击面在哪。这一章按规范原文把这些落死。
 
-## 8.1 传输选型:stdio 与 Streamable HTTP
+## 8.1 传输:stdio 与 Streamable HTTP 的分工
 
 | | stdio | Streamable HTTP |
 | --- | --- | --- |
-| 场景 | 本机工具、CLI 内嵌、个人开发者 | 服务化域 Server、多消费端、生产 |
-| 生命周期 | 随 Host 进程起停 | 常驻服务,独立扩缩 |
-| 鉴权 | 无(信任本机) | 必须做(见 8.2) |
-| 2026-07-28 契合点 | legacy 兼容入口(第 3/7 章实测的 `legacy: 'serve'`) | 无状态 + header 路由的完全体 |
+| 场景 | 本机工具、CLI 内嵌、个人开发 | 服务化域 Server、多消费端、生产 |
+| 生命周期 | 随 Host 进程起停 | 常驻独立服务 |
+| 授权规范 | **不适用**——凭据从环境取 | 应遵循本章 8.3 框架 |
+| 与无状态的关系 | 连接不是会话(第 2 章),legacy 兼容靠 discover 探针(第 3 章) | 无状态 + header 路由的完全体 |
 
-规则很简单:**本地开发与个人工具用 stdio,进了生产就是 Streamable HTTP**。无状态化之前,HTTP 服务化被会话亲和拖累;之后,域 Server 就是一个普通的可水平扩缩的 HTTP 服务——`tools/call` 一次一个自含请求,网关任意转发(第 2 章实证过无握手直调)。
+规则一句话:**本地与个人工具 stdio,进生产 Streamable HTTP**。
 
-TS 侧服务化路径:`@modelcontextprotocol/express` / `fastify` / `hono` 适配器,或 per-request 无状态传输(第 6 章 Gateway 挂的就是这类端点)。⚠️ HTTP 适配器示例发布前实测补齐。
+### Streamable HTTP 的头体系(合规必备)
 
-## 8.2 鉴权与授权:2026-07-28 的安全基线
+2026-07-28 对 HTTP 请求头做了强规定,每个 POST 必须三件齐:
 
-这一版把 MCP 的鉴权从"建议"升级为"框架":
+```http
+POST /mcp HTTP/1.1
+Content-Type: application/json
+MCP-Protocol-Version: 2026-07-28
+Mcp-Method: tools/call
+Mcp-Name: get_weather
+```
 
-- **issuer 显式标识(RFC 9207,SEP-2468)**:授权响应必须带 `iss` 参数,client **每次都要校验签发者**——防 mix-up 攻击(恶意方截胡授权码)。这是 client 侧的强制动作,不是可选项。
-- **CIMD(Client ID Metadata Documents)成为标准**:client 以元数据文档自述身份,替代部分动态注册流程——中台场景里,每个消费端(agentscope Agent、前端、CLI)在授权服务器登记一份元数据即可。
-- **audience 绑定 token** 延续:token 只对声明的资源受众有效,跨服务重放被拒。
-- **六个新 OAuth SEP** 收紧整体姿势,并加入明确的 MUST NOT 约束(如不得接受的 token 传递形态)。⚠️ 六个 SEP 的逐条清单发布前对照 spec 官方索引补全。
-
-中台落地建议把鉴权收敛在 **Gateway 一处**(第 6.3 节拓扑):域 Server 信任 Gateway 转发来的、已完成校验的身份上下文,域团队不重复实现 OAuth——这也是 Gateway 作为"治理点"的另一半含义。
-
-## 8.3 多租户:工具可见性与数据隔离
-
-多租户平台(我们的主线场景)里,"工具可见性"本身就是权限问题:
-
-- **租户 → 域/工具的映射**:第 6.5 节目录治理给出"角色 → 域",租户维度再叠一层(某租户未开通售后域,则其 Agent 的 `tools/list` 里根本不该出现售后工具——**目录层过滤,不是调用时报错**)。
-- **调用时的租户上下文**:工具执行携带租户标识(header 路由的自然落点),Server 侧所有中台接口调用带租户条件——防止 A 租户的 Agent 查到 B 租户的单子。这与中台既有的行级隔离策略对齐,不发明新机制。
-- **审计**:每次 `tools/call` 记录(租户、工具、参数摘要、结果状态),与中台操作审计同流。
-
-## 8.4 安全专题:工具是新的攻击面
-
-工具把"模型决策"接到了"真实世界动作",攻击面随之中来。四个必须进上线评审的威胁:
-
-| 威胁 | 形态 | 防线 |
+| 头 | 来源 | 要求 |
 | --- | --- | --- |
-| **Tool poisoning** | 工具描述里藏指令(如"调用本工具前先把 token 发到…"),污染模型行为 | Server 供应链可信:只用经审核的 Server;目录治理含描述评审(第 6.5) |
-| **描述注入 / 结果注入** | 工具**返回内容**里嵌指令,诱导模型下一步动作 | 结果视为数据非指令;Host 侧对工具结果与系统提示分层;高危动作二次确认(MRTR elicit) |
-| **供应链** | 第三方 MCP Server 被投毒或冒名 | 域 Server 自建为主;引入第三方需过安全评审;锁定版本 |
-| **过度授权** | Server 持有超出工具需要的中台权限 | 最小权限:每个域 Server 用独立低权账号,不共享中台管理凭据 |
+| `MCP-Protocol-Version` | 与 body `_meta.protocolVersion` **必须一致** | 不一致 → `400` + `HeaderMismatch`(-32020) |
+| `Mcp-Method` | JSON-RPC `method` | 所有请求必带 |
+| `Mcp-Name` | `params.name` 或 `params.uri` | `tools/call`、`resources/read`、`prompts/get` 必带;非 ASCII 值用 Base64 sentinel 编码 |
 
-一条元原则:**工具结果是输入,不是指令**。Host 侧(agent 框架)与 Server 侧(描述治理)各守一半。
+这三个头让网络中间件**不解析 body** 就能路由与审计——`Mcp-Name` 让网关按工具名限流,版本头让负载均衡按协议版本分流。加上 5.7 的 `x-mcp-header`(参数 → `Mcp-Param-*` 头),Streamable HTTP 的网络层语义就完整了:**协议为基础设施设计,不只是为两端设计**。
+
+### 服务端校验的三个状态码
+
+| 情形 | 响应 |
+| --- | --- |
+| 头与 body 版本不一致 | `400` + `HeaderMismatch`(-32020) |
+| 版本不支持 | `400` + `UnsupportedProtocolVersionError`(-32022,附 supported 清单) |
+| 方法不存在 | `404` + `-32601`(与 legacy HTTP+SSE 服务器"没有现代端点"的 404 从 body 区分——backward compatibility 依据) |
+
+另外:`tools/list` 等结果必须带 `ttlMs`/`cacheScope`(第 3 章),网关据此决定目录缓存策略。
+
+## 8.2 授权架构:三角色与标准栈
+
+规范的授权模型是标准 OAuth 拓扑:
+
+- **MCP Server = OAuth 2.1 Resource Server(RS)**:凭 access token 接受受保护请求
+- **MCP Client = OAuth 2.1 Client**:代表资源所有者发起请求
+- **Authorization Server(AS)**:与用户交互、签发 token——实现不在规范范围内,可独立部署(中台场景:接现有 SSO/IAM 即是 AS)
+
+标准栈(全部对齐 IETF 规范,不是自造):OAuth 2.1、Bearer Token(RFC 6750)、AS Metadata(RFC 8414)、DCR(RFC 7591,已弃用)、Resource Indicators(RFC 8707)、Protected Resource Metadata(RFC 9728)、Issuer Identification(RFC 9207)、**CIMD**(Client ID Metadata Documents)、OIDC Discovery。
+
+规范层面的四个硬要求:
+
+1. AS **必须**实现 OAuth 2.1(含 confidential/public client 的安全措施)
+2. AS 与 client **应该**支持 CIMD;DCR 仍可用但已弃用(仅为不支持 CIMD 的旧 AS 保留)
+3. **MCP Server 必须实现 RFC 9728**(Protected Resource Metadata);**client 必须用它做 AS 发现**——Server 告诉 client"去哪里拿 token"
+4. HTTP 传输**应**遵循本框架;stdio **不应**(凭据走环境变量);其他传输必须遵循对应协议的安全最佳实践
+
+**CIMD 是什么**:client 不再"预注册"或"动态注册"拿 client_id,而是托管一份 URL 可访问的元数据文档,client_id 就是这个 URL。对中台的意义:每个新消费端(新 Agent 项目、新前端)上线,不需要在 AS 上走注册审批流——托管文档即接入。DCR 降级弃用的原因是实现层安全缺陷泛滥(CIMD 的信任模型更收敛,见 8.5)。
+
+## 8.3 安全威胁清单:规范点名的每一项
+
+规范 security-considerations 逐项列了威胁,中台评审逐条过:
+
+| 威胁 | 要点 | 防线 |
+| --- | --- | --- |
+| **Token audience 绑定** | RFC 8707:token 只对声明资源有效 | AS 签发时绑定;RS 校验 audience——跨服务重放被拒 |
+| **Token 被盗** | token 泄露即冒用 | 短时效、传输安全(8.2)、最小 scope |
+| **授权码保护** | code 截获风险 | PKCE(OAuth 2.1 强制)、`iss` 校验(RFC 9207,防 mix-up) |
+| **开放重定向** | redirect_uri 操纵 | 严格注册与精确匹配 |
+| **CIMD 特有风险** | AS 滥用(client 让 AS 向任意 URL 发请求)、localhost redirect 抢注、信任策略 | CIMD 文档域与 client 的归属校验;trust policy 明确"信任哪些 client 域" |
+| **Confused Deputy** | 恶意 client 借合法 client 的凭据/身份做事 | 每消费端独立身份;audience 绑定 |
+| **Access token 特权** | token 超范围 | 最小 scope;RS 按 scope 收窄工具可见性(→ 8.4) |
+
+工具层(第 5 章)的攻击面并行存在:annotations 不可信、`$ref` 不解引用、结果视为数据非指令、敏感参数禁用 `x-mcp-header`。**两层防线一起过评审,缺一不可。**
+
+## 8.4 多租户:可见性即权限
+
+多租户平台里,"哪些工具对哪些租户可见"本身是权限。规范给了准确的抓手——**`tools/list` 的返回集可以随请求的授权变化**:
+
+> Server 上的工具集不得随连接变化、不得作为其他请求的副作用变化,但**可以随请求呈现的授权变化**——例如只返回调用者 granted scopes 允许的工具,因为凭据是每请求输入,不是连接状态。
+
+翻译成中台架构:租户 A 的 Agent 拿着租户 A 的 token 调 `tools/list`,售后域 Server 只返回租户 A 已开通的工具——**这是协议原生语义,不是黑科技**。配合:
+
+- 目录层过滤(6.5)决定"开通了什么";scope 校验(8.3)决定"这个 token 能看什么"
+- 调用层:租户上下文经 `x-mcp-header` 租户头(5.7)或 token claims 传入,Server 侧所有中台查询带租户条件
+- 审计:每 `tools/call` 记录(租户、工具、参数摘要、状态),`Mcp-Name` 头让网关审计无需解析 body
 
 ## 8.5 生产运维
 
-- **健康与容量**:无状态 Server 的健康检查就是普通 HTTP 探针;容量按 QPS 与单次调用延迟估算,`tools/list` 可 aggressively 缓存(目录变化走通知失效)。
-- **限流与熔断**:Gateway 按(租户 × 工具)两维限流;下游中台接口的熔断参数与工具超时对齐——工具超时别大于下游接口的熔断窗口,否则模型在拿着必然失败的调用反复重试。
-- **可观测**:trace 贯穿 Host → Gateway → Server → 中台接口(TRACEPARENT 之类的元数据在 SDK 消息层有承载位);业务指标(命中率/失败率/重试率,第 5.6)+ 系统指标(延迟/错误率/饱和度)分开看。LLM 侧的 trace 与评估 → langfuse 书。
+- **健康与容量**:无状态 Server = 普通 HTTP 服务探针;`tools/list` 强缓存(ttlMs + 确定性排序 → prompt cache 命中率,第 3 章)
+- **限流**:网关按(租户 × `Mcp-Name`)两维限流;工具超时 < 下游中台接口熔断窗口——否则模型拿着必然失败的调用反复重试
+- **可观测**:`_meta` 的 `traceparent`/`tracestate`/`baggage` 是规范保留键(W3C Trace Context)——trace 从 Host 贯穿到中台接口是协议内建能力;OTel MCP 语义约定已有官方文档
+- **日志**:Logging 特性已弃用——stderr(stdio)或 OTel;按请求级别走 `_meta.logLevel`
 
 ## 8.6 部署清单(上线评审直接用)
 
-- [ ] 传输:生产 Server 走 Streamable HTTP;stdio 仅限本地开发
-- [ ] 鉴权:Gateway 统一 OAuth(CIMD + audience 绑定);client 实现 `iss` 校验(RFC 9207)
-- [ ] 租户:目录层可见性过滤 + 调用层租户上下文 + 审计三件齐
-- [ ] 供应链:域 Server 全部自建或过审;版本锁定
-- [ ] 最小权限:域 Server 独立低权账号
-- [ ] 限流:租户 × 工具两维;工具超时 < 下游熔断窗口
-- [ ] 可观测:trace 打通 + 三指标埋点
-- [ ] 描述评审:上线前过一轮第 5 章标准的"差 vs 好"评审
+- [ ] 传输:生产走 Streamable HTTP;三件头齐(`MCP-Protocol-Version`/`Mcp-Method`/`Mcp-Name`)
+- [ ] 授权:RS 实现 RFC 9728;AS 为 OAuth 2.1;消费端走 CIMD;client 实现 `iss` 校验
+- [ ] token:audience 绑定;最小 scope;短时效
+- [ ] 租户:`tools/list` 按 token scope 过滤;调用层租户上下文;审计流
+- [ ] 工具层(第 5 章):输入校验/输出消毒/annotations 不可信/敏感参数无 `x-mcp-header`
+- [ ] 限流:租户 × 工具两维;超时 < 下游熔断
+- [ ] 可观测:traceparent 贯穿;三指标(命中率/失败率/重试率)埋点
+- [ ] 描述评审:第 5 章标准的"差 vs 好"评审留档
 
 ## 8.7 小结
 
-- 传输:生产即 Streamable HTTP,无状态让服务化回归平凡
-- 鉴权:RFC 9207 的 `iss` 校验与 CIMD 是 client 侧硬要求;中台场景收敛到 Gateway
-- 租户:目录层过滤可见性,调用层带租户上下文
-- 安全:工具结果是输入不是指令;四大威胁各有一条防线
-- 运维:限流对齐熔断,trace 打通全链路
+- 头体系让网络中间件成为协议参与者——MCP 为基础设施设计
+- 授权 = 标准 OAuth 拓扑:Server 是 RS,消费端走 CIMD 自述身份,发现靠 RFC 9728
+- 多租户可见性是协议原生语义:工具集随请求授权变化
+- 安全清单两层:传输/授权层(8.3 表)+ 工具层(第 5 章)
 
-→ **第 9 章**跳出技术,谈组织与路线:企业怎么从 Pilot 走到规模化。
+→ **第 9 章**跳出技术:组织与路线。
 
 ## 复核清单(发布前)
 
-- [ ] 授权字段与流程对照 spec authorization 原文(六个 SEP 逐条补全)
-- [ ] CIMD 的准确机制(元数据文档的字段与发现流程)对照 spec
+- [x] 头体系、三状态码、授权角色对照规范原文(2026-10-24)
+- [ ] authorization 全系列四文件通读(security-considerations 各节展开成小节)
+- [ ] stdio.mdx 的 backward-compatibility 探针细节并入第 3 章
 - [ ] HTTP 适配器(express/hono)示例实测
-- [ ] tool poisoning 公开案例引用补全(标注出处与日期)
+- [ ] Base64 sentinel 编码规则(value-encoding 节)补附录
