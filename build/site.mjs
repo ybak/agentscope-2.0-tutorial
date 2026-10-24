@@ -221,6 +221,24 @@ export function flattenPages(parts) {
   return pages;
 }
 
+/**
+ * 旧路径重定向 stub 页:极简 meta-refresh,不引站点 CSS/外壳,
+ * data-pagefind-ignore 防止入搜索索引,canonical 与正文链接同指新地址。
+ */
+export function renderRedirectPage(toHref) {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url=${toHref}">
+<link rel="canonical" href="${toHref}">
+<title>页面已迁移</title>
+</head>
+<body data-pagefind-ignore>本书已迁移至 <a href="${toHref}">新地址</a></body>
+</html>
+`;
+}
+
 // ---------- 总装 ----------
 
 /**
@@ -307,8 +325,25 @@ export function buildSite(book, rootDir) {
 }
 
 /**
+ * 旧路径重定向 stub(控制器裁定 Ruling-3):仅 legacyRootChapters === true 的书
+ * 拥有站点根 chapters/ 旧路径,不遍历所有 published 书(为多本同名章节书保留语义)。
+ * flattenPages 的 href 已是 chapters/<file>.html 形态,镜像写到站点根,目标 <bookId>/<href>。
+ * 须在 runSite 清场之后调用:整目录删除先清掉全部旧产物(含上次 stub),天然幂等无残留。
+ */
+function writeLegacyRedirectStubs(siteRoot) {
+  for (const b of BUILDABLE_BOOKS) {
+    if (b.legacyRootChapters !== true) continue;
+    fs.mkdirSync(path.join(siteRoot, 'chapters'), { recursive: true });
+    for (const p of flattenPages(PARTS)) {
+      fs.writeFileSync(path.join(siteRoot, p.href), renderRedirectPage(`${b.bookId}/${p.href}`), 'utf8');
+    }
+  }
+}
+
+/**
  * 总装全部站点:清空 output/site → 逐本可构建书产出子站 →
- * 站点根放书架首页(全部书目,含 planned)与搜索页。返回站点根目录绝对路径。
+ * 站点根放书架首页(全部书目,含 planned)与搜索页 → 旧路径重定向 stub。
+ * 返回站点根目录绝对路径。
  */
 export function runSite(rootDir) {
   const siteRoot = path.join(rootDir, 'output', 'site');
@@ -316,5 +351,6 @@ export function runSite(rootDir) {
   for (const b of BUILDABLE_BOOKS) buildSite(b, rootDir);
   fs.writeFileSync(path.join(siteRoot, 'index.html'), renderShelfPage(ALL_BOOKS), 'utf8');
   fs.writeFileSync(path.join(siteRoot, 'search.html'), renderSearchPage(), 'utf8');
+  writeLegacyRedirectStubs(siteRoot);
   return siteRoot;
 }

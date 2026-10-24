@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { flattenPages, renderIndexPage, renderPager, renderSearchPage, renderShelfPage, renderShell, renderSidebar, rewriteMarkdownLinks } from "./site.mjs";
+import { flattenPages, renderIndexPage, renderPager, renderRedirectPage, renderSearchPage, renderShelfPage, renderShell, renderSidebar, rewriteMarkdownLinks, runSite } from "./site.mjs";
 import { book, PARTS } from "./books/agentscope-java.mjs";
 
 // 与 buildSite 内的推导一致:rewriteMarkdownLinks 的第二参数是「demo/ 目录的上级」blob 前缀
@@ -159,4 +159,36 @@ test("renderShelfPage:published 卡片有链接,planned 卡片无 <a>", () => {
   assert.ok(html.includes('href="a/index.html"'));
   assert.ok(!/href="p/.test(html));
   assert.ok(html.includes('规划中'));
+});
+
+test("redirect stub:meta-refresh + pagefind ignore + 无站点 CSS", () => {
+  const html = renderRedirectPage('agentscope-java/chapters/01-overview.html');
+  assert.ok(html.includes('<meta http-equiv="refresh" content="0; url=agentscope-java/chapters/01-overview.html">'));
+  assert.ok(html.includes('data-pagefind-ignore'));
+  assert.ok(!html.includes('site-header')); // 不引站点外壳
+});
+
+test("runSite 产出旧路径 stub 且清场重建无残留", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  // runSite 需要书源目录(chapters/assets)存在;章节文件缺失仅 warn,不影响 stub
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "site-run-"));
+  fs.mkdirSync(path.join(tmp, "chapters"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "assets"), { recursive: true });
+  const stubPath = path.join(tmp, "output", "site", "chapters", "01-overview.html");
+
+  runSite(tmp);
+  assert.ok(fs.existsSync(stubPath));
+  const stub = fs.readFileSync(stubPath, "utf8");
+  assert.ok(stub.includes("agentscope-java/chapters/01-overview.html")); // 内容含新路径
+  assert.ok(stub.includes("http-equiv=\"refresh\""));
+
+  // 清场重建:上次构建的残留(stub 路径上的脏内容)被整目录清掉后重新生成
+  fs.writeFileSync(stubPath, "STALE-RESIDUE");
+  runSite(tmp);
+  const rebuilt = fs.readFileSync(stubPath, "utf8");
+  assert.ok(!rebuilt.includes("STALE-RESIDUE"));
+  assert.ok(rebuilt.includes('url=agentscope-java/chapters/01-overview.html'));
+  fs.rmSync(tmp, { recursive: true, force: true });
 });
