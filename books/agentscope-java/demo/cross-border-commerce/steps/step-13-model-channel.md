@@ -129,7 +129,7 @@ XBD_MODEL_API_KEY=填本地密钥
 默认只读核对：
 
 ```bash
-cd demo/cross-border-commerce
+cd books/agentscope-java/demo/cross-border-commerce
 bash steps/step-13-model-channel.sh
 ```
 

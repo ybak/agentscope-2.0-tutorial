@@ -62,7 +62,7 @@ workspace/
 直接运行完整实验：
 
 ```bash
-cd demo/cross-border-commerce
+cd books/agentscope-java/demo/cross-border-commerce
 bash steps/step-11-workspace.sh
 ```
 

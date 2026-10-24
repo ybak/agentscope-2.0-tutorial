@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { flattenPages, renderIndexPage, renderPager, renderRedirectPage, renderSearchPage, renderShelfPage, renderShell, renderSidebar, rewriteMarkdownLinks, runSite } from "./site.mjs";
+import { buildSite, flattenPages, renderIndexPage, renderPager, renderRedirectPage, renderSearchPage, renderShelfPage, renderShell, renderSidebar, rewriteMarkdownLinks, runSite } from "./site.mjs";
 import { book } from "./books/agentscope-java.mjs";
 
 // 与 buildSite 内的推导一致:rewriteMarkdownLinks 的第二参数是「demo/ 目录的上级」blob 前缀
@@ -36,7 +36,7 @@ test("flattenPages 全书序列:54 项、首尾与篇导读位置正确", () => 
   assert.equal(pages[2].href, "chapters/01-overview.html");
   assert.equal(pages[2].kind, "chapter");
   assert.equal(pages.at(-1).href, "chapters/appendix-b-glossary.html");
-  assert.ok(pages.at(-1).title.includes("附录 B")); // 冒号形态以 manifest 为准,不硬写
+  assert.ok(pages.at(-1).title.includes("附录 B")); // 冒号形态以 PARTS 为准,不硬写
   // 每篇导读都在其章之前
   for (let i = 1; i < pages.length; i++) {
     if (pages[i].kind === "part-intro" && pages[i - 1].kind === "chapter") {
@@ -191,4 +191,75 @@ test("runSite 产出旧路径 stub 且清场重建无残留", async () => {
   assert.ok(!rebuilt.includes("STALE-RESIDUE"));
   assert.ok(rebuilt.includes('url=agentscope-java/chapters/01-overview.html'));
   fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+// ---------- 反目标回归:渲染层零硬编码本书文案(BOOK 元数据收敛) ----------
+// style.css 首行注释含书名,会经 <style> 内联进每页,故按 header/title/封面分区断言。
+const region = (html, re) => html.match(re)?.[0] ?? "";
+
+const fakeBook = {
+  bookId: "fake-book", status: "published",
+  title: "测试书", subtitle: "测试副题", date: "2026-01-01",
+  sourceNote: "测试书来源说明",
+  chaptersDir: "books/fake-book/chapters", assetsDir: "books/fake-book/assets",
+  pdfFileName: "fake.pdf",
+  demoGithubBase: "https://github.com/o/r/blob/main/books/fake-book/demo/",
+  PARTS: [{ id: "p1", title: "第一篇", intro: null, chapters: [
+    { file: "01-only.md", chapter: 1, title: "唯一章", sources: [] },
+  ]}],
+};
+
+test("buildSite 假书全链路:header/title/封面零 agentscope 字样", async () => {
+  const fs = await import("node:fs");
+  const os = await import("node:os");
+  const path = await import("node:path");
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "site-fake-book-"));
+  fs.mkdirSync(path.join(tmp, "books", "fake-book", "chapters"), { recursive: true });
+  fs.mkdirSync(path.join(tmp, "books", "fake-book", "assets"), { recursive: true });
+  fs.writeFileSync(path.join(tmp, "books", "fake-book", "chapters", "01-only.md"),
+    "---\ntitle: 唯一章\n---\n\n正文。\n");
+  const siteDir = buildSite(fakeBook, tmp);
+  const home = fs.readFileSync(path.join(siteDir, "index.html"), "utf8");
+  const chapter = fs.readFileSync(path.join(siteDir, "chapters", "01-only.html"), "utf8");
+  for (const [page, html] of [["书首页", home], ["章节页", chapter]]) {
+    const header = region(html, /<header class="site-header">[\s\S]*?<\/header>/);
+    const title = region(html, /<title>[^<]*<\/title>/);
+    const cover = region(html, /<section class="cover">[\s\S]*?<\/section>/);
+    for (const [part, text] of [["header", header], ["title", title], ["封面", cover]]) {
+      assert.ok(!/agentscope/i.test(text), `${page} 的 ${part} 不应含 agentscope 字样`);
+    }
+    assert.ok(header.includes(">测试书</a>"), `${page} header 站名应为当前书名`);
+  }
+  // <title>:书首页即书名(无尾缀),章节页「章名 · 书名」
+  assert.ok(home.includes("<title>测试书</title>"));
+  assert.ok(chapter.includes("<title>唯一章 · 测试书</title>"));
+  // 封面整合说明随书 sourceNote,搜索框回指站点根,filter 按书
+  assert.ok(region(home, /<section class="cover">[\s\S]*?<\/section>/).includes("测试书来源说明"));
+  assert.ok(chapter.includes('action="../../search.html"'));
+  assert.ok(chapter.includes('<body data-pagefind-filter="书: 测试书">'));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("renderCover/renderColophon 随 book 配置:假书零 agentscope,真书文案不变", async () => {
+  const { renderCover, renderColophon } = await import("./build.mjs");
+  const fake = {
+    title: "测试书", subtitle: "测试副题", date: "2026-01-01",
+    sourceNote: "测试书来源说明",
+    sourceDescription: "某开源项目的中文文档（docs 目录）",
+    licenseNote: "原项目以 MIT 许可证发布；本书遵循同一许可证分发。",
+    trademarkNote: "相关商标归其权利人所有。",
+  };
+  const cover = renderCover(fake);
+  const colophon = renderColophon(fake);
+  assert.ok(cover.includes('<h1 class="cover-title">测试书</h1>'));
+  assert.ok(cover.includes('<p class="cover-note">测试书来源说明</p>'));
+  assert.ok(colophon.includes("本书《测试书》整理自 某开源项目的中文文档（docs 目录），整合日期 2026-01-01。"));
+  assert.ok(colophon.includes("原项目以 MIT 许可证发布；本书遵循同一许可证分发。"));
+  for (const [name, html] of [["封面", cover], ["出版说明", colophon]]) {
+    assert.ok(!/agentscope/i.test(html), `${name} 不应含 agentscope 字样`);
+  }
+  // agentscope-java 单书行为兼容:封面/出版说明沿用既有文案
+  assert.ok(renderCover(book).includes("基于 AgentScope Java v2 官方文档整合"));
+  assert.ok(renderColophon(book).includes("整理自 AgentScope 官方仓库 agentscope-java"));
+  assert.ok(renderColophon(book).includes("Apache License 2.0"));
 });

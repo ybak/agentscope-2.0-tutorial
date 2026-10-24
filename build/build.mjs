@@ -25,9 +25,8 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { BOOK } from './books/agentscope-java.mjs';
 import { BUILDABLE_BOOKS } from './books/registry.mjs';
 import { resolveBookPaths } from './books/paths.mjs';
 import { cleanMarkdown } from './clean.mjs';
@@ -48,24 +47,28 @@ const EDGE_PATH = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
 /** CDP 排版完成等待上限（毫秒）：mermaid 渲染 + Paged.js 千页级分页的保守上限 */
 const READY_TIMEOUT_MS = 540_000;
 
-/** 封面页：书名 + 副标题 + 整合说明 + 日期 */
-function renderCover() {
+/** 封面页：书名 + 副标题 + 整合说明 + 日期（文案全部随 book 配置，第二本书接入不串挂） */
+export function renderCover(book) {
   return `<section class="cover">
-<h1 class="cover-title">${escapeHtml(BOOK.title)}</h1>
-<p class="cover-subtitle">${escapeHtml(BOOK.subtitle)}</p>
+<h1 class="cover-title">${escapeHtml(book.title)}</h1>
+<p class="cover-subtitle">${escapeHtml(book.subtitle)}</p>
 <hr class="cover-rule">
-<p class="cover-note">基于 AgentScope Java v2 官方文档整合</p>
-<p class="cover-date">${escapeHtml(BOOK.date)}</p>
+<p class="cover-note">${escapeHtml(book.sourceNote)}</p>
+<p class="cover-date">${escapeHtml(book.date)}</p>
 </section>`;
 }
 
-/** 出版说明页：来源与许可证声明（按 agentscope-java 仓库实际 LICENSE：Apache License 2.0） */
-function renderColophon() {
+/**
+ * 出版说明页：来源与许可证声明。段落文案随 book 配置
+ * （sourceDescription/licenseNote/trademarkNote 各为完整一句），
+ * 结构（书名/整合日期/收尾句）为本层模板。
+ */
+export function renderColophon(book) {
   return `<section class="colophon">
 <h2 class="colophon-title">出版说明</h2>
-<p>本书《${escapeHtml(BOOK.title)}》整理自 AgentScope 官方仓库 agentscope-java 的中文文档（docs/v2/zh 目录），整合日期 ${escapeHtml(BOOK.date)}。</p>
-<p>原项目以 Apache License 2.0 许可证发布（见 agentscope-java/LICENSE）；本书作为该文档的学习整理稿，遵循同一许可证分发。</p>
-<p>AgentScope 及相关商标归其权利人所有；本书与 Apache 项目官方无隶属关系。</p>
+<p>本书《${escapeHtml(book.title)}》整理自 ${escapeHtml(book.sourceDescription)}，整合日期 ${escapeHtml(book.date)}。</p>
+<p>${escapeHtml(book.licenseNote)}</p>
+<p>${escapeHtml(book.trademarkNote)}</p>
 <p><strong>软件与文档持续演进中，本书内容以官方在线文档为准。</strong></p>
 </section>`;
 }
@@ -201,7 +204,7 @@ function renderBook(book, paths, usePaged = true) {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>${escapeHtml(BOOK.title)}</title>
+<title>${escapeHtml(book.title)}</title>
 <style>
 ${style}
 </style>
@@ -211,8 +214,8 @@ ${hljsTheme}
 </style>
 </head>
 <body>
-${renderCover()}
-${renderColophon()}
+${renderCover(book)}
+${renderColophon(book)}
 ${renderToc(book.PARTS)}
 <div id="book">
 ${sections.join('\n')}
@@ -583,6 +586,7 @@ async function main() {
   }
   // --site 是全站总装（书架 + 各书子站），书无关，忽略 --book
   if (mode === '--site') {
+    if (bookId != null) console.log(`[build] --site 忽略 --book ${bookId}，全量构建所有已发布书`);
     runSite(ROOT_DIR);
     console.log(`[build] 站点已生成: ${path.join(ROOT_DIR, 'output', 'site')}（搜索索引: cd build && npm run site）`);
     return;
@@ -629,7 +633,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error(`[build] 失败: ${err.message}`);
-  process.exitCode = 1;
-});
+// 直接执行本脚本才跑 main（被测试 import 时不触发构建，renderCover/renderColophon 可单测）
+if (process.argv[1] != null && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error(`[build] 失败: ${err.message}`);
+    process.exitCode = 1;
+  });
+}

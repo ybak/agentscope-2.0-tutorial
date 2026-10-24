@@ -96,7 +96,7 @@ flowchart LR
 | 文件和命令运行在我的电脑、服务容器还是云沙箱？ | 12：查询当前 Environment，用阿里云沙箱（E2B 兼容）真实执行并验证会话隔离 |
 | 已有公司模型网关，怎么替换示例中的 DashScope？对话时怎么按需选模型？ | 13：扩展依赖、Java 注册类、YAML、配置回读、上游探针与会话级模型切换 |
 
-先完成 01–03，再执行 11 → 12/13。Step 11 创建独立 `xbd-workspace-lab` Agent，不替换主线的 4 个租户角色；Step 12/13 默认只读核对，Step 12 的 `--create/--bind/--run` 才会初始化沙箱环境并真实执行（需在 `demo/.env` 配置沙箱四项与可用模型 Key）。三个配置实验不依赖主线模型额度（Step 12 的 `--run`、Step 13 的探针与验证 Turn 除外），不必等 04–08 全部跑通。
+先完成 01–03，再执行 11 → 12/13。Step 11 创建独立 `xbd-workspace-lab` Agent，不替换主线的 4 个租户角色；Step 12/13 默认只读核对，Step 12 的 `--create/--bind/--run` 才会初始化沙箱环境并真实执行（需在 `books/agentscope-java/demo/cross-border-commerce/.env` 配置沙箱四项与可用模型 Key）。三个配置实验不依赖主线模型额度（Step 12 的 `--run`、Step 13 的探针与验证 Turn 除外），不必等 04–08 全部跑通。
 
 ```bash
 ./run-all.sh --only 11
@@ -115,7 +115,7 @@ flowchart LR
 3. 配置并运行：
 
 ```bash
-cd demo/cross-border-commerce
+cd books/agentscope-java/demo/cross-border-commerce
 cp .env.example .env
 # 编辑 .env：BASE_URL 指向服务 Gateway；设置 DASHSCOPE_API_KEY。
 ./run-all.sh

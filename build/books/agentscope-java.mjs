@@ -6,7 +6,9 @@
  *   供 registry 注册与构建参数化（路径推导、--book CLI）使用；构建映射类
  *   字段（PARTS/buildLinkMap/EXCLUDED_SOURCES）也收敛在其上（Ruling-4），
  *   消费方一律从 book 出发：book.PARTS / book.buildLinkMap() / book.EXCLUDED_SOURCES。
- * - BOOK：渲染层书名元数据（title 为全角冒号排版形态），供封面/<title>。
+ * - book 的渲染层文案字段（sourceNote/sourceDescription/licenseNote/trademarkNote）：
+ *   封面整合说明与出版说明的来源/许可证/商标段随书取材，渲染层零硬编码
+ *   （第二本书接入不会静默错挂 agentscope 文案）。
  * - book.PARTS：7 篇 44 章 + 序言 + 附录 2 的「章节文件 ← 源文件」映射
  *   （`sources` 相对 `agentscope-java/docs/v2/zh/`，正斜杠）。
  * - book.buildLinkMap()：由全部 sources 生成站内链接 → 章节引用查找表。
@@ -15,8 +17,9 @@
  * - book.EXCLUDED_SOURCES：Global Constraints 排除清单（刻意不收录的源文件），
  *   供 build.mjs --check 区分「指向排除文件的链接」与真未解析链接。
  *
- * BOOK（title/subtitle/date，供渲染层）与 book（title/subtitle/date，供书架页）
- * 刻意共存、不合并：两者消费方不同，字段值也可各自演化（冒号形态即不同）。
+ * 渲染层（book.html 封面/<title>、站点 header/封面）的书名/副题/日期统一取
+ * book.title/subtitle/date（半角冒号形态），不再另设模块级 BOOK——避免渲染层
+ * 绕过 book 配置、第二本书接入时静默错挂。
  */
 
 export const book = {
@@ -26,6 +29,12 @@ export const book = {
   subtitle: '由浅入深的智能体开发教程',
   date: '2026-10-11',
   tagline: '7 篇 44 章,从第一个 Agent 到生产级 Agent 平台',
+  // 渲染层文案（封面整合说明 / 出版说明的来源、许可证、商标段）：随书配置，
+  // 封面与出版说明从这些字段取材，渲染层零硬编码（第二本书接入不串挂本书文案）
+  sourceNote: '基于 AgentScope Java v2 官方文档整合',
+  sourceDescription: 'AgentScope 官方仓库 agentscope-java 的中文文档（docs/v2/zh 目录）',
+  licenseNote: '原项目以 Apache License 2.0 许可证发布（见 agentscope-java/LICENSE）；本书作为该文档的学习整理稿，遵循同一许可证分发。',
+  trademarkNote: 'AgentScope 及相关商标归其权利人所有；本书与 Apache 项目官方无隶属关系。',
   chaptersDir: 'books/agentscope-java/chapters',
   assetsDir: 'books/agentscope-java/assets',
   demoGithubBase: 'https://github.com/ybak/ai-tutorial/blob/main/books/agentscope-java/demo/',
@@ -36,12 +45,6 @@ export const book = {
 
   // 构建映射类字段（原 manifest.mjs 的 PARTS/EXCLUDED_SOURCES/buildLinkMap）
   // 定义在本对象之后（数据段较长，保持原位），文件末尾统一挂载到 book 上。
-};
-
-export const BOOK = {
-  title: "AgentScope Java 2.0：从入门到进阶",
-  subtitle: "由浅入深的智能体开发教程",
-  date: "2026-10-11",
 };
 
 const PARTS = [
@@ -136,7 +139,7 @@ const EXCLUDED_SOURCES = [
  * 站内链接 → 章节引用映射（供 clean.mjs 的 ctx.linkMap 使用）。
  *
  * 每个 source 注册两条键：`/v2/zh/<path>` 与尾斜杠变体 `/v2/zh/<path>/`。
- * 同一 source 出现在多章时后注册者覆盖先者——manifest 顺序即阅读顺序，
+ * 同一 source 出现在多章时后注册者覆盖先者——PARTS 顺序即阅读顺序，
  * 正文章节（如 docs/index.md → 第 1 章）覆盖序言里的同一 source。
  * 无章号条目（序言/附录）用其标题作引用文本。
  *

@@ -7,7 +7,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { BOOK } from './books/agentscope-java.mjs';
 import { ALL_BOOKS, BUILDABLE_BOOKS } from './books/registry.mjs';
 import { resolveBookPaths } from './books/paths.mjs';
 import { escapeHtml, md, renderMermaidScripts, splitFrontMatter, syncVendorAssets } from './lib.mjs';
@@ -39,13 +38,15 @@ const readBuildAsset = (...seg) => fs.readFileSync(path.join(BUILD_DIR, ...seg),
 
 /**
  * 整页外壳。rootPrefix:站点根相对前缀(章节页 '../',根页面 '');
+ * bookTitle:当前书标题(书内页面传 book.title,header 站名与 <title> 尾缀随书;
+ * 缺省为站点级页面——书架页/搜索页——站名固定「AI 教程书架」、title 不带书名尾缀);
  * needMermaid:引 mermaid 页尾脚本(章节页);searchUi:引 pagefind UI(仅搜索页);
  * searchHref:搜索框 action 显式覆盖(多书后搜索页固定在站点根,书子站页面
  * 需按自身层级回指,缺省回退旧语义 `${rootPrefix}search.html`);
  * pagefindFilter:非空时 <body> 输出 data-pagefind-filter 属性,整页归入该 filter
  * 值(供全局搜索按书过滤;书架页/搜索页不传)。
  */
-export function renderShell({ title, content, rootPrefix, sidebar = null, needMermaid = false, searchUi = false, searchHref = null, pagefindFilter = null }) {
+export function renderShell({ title, bookTitle = null, content, rootPrefix, sidebar = null, needMermaid = false, searchUi = false, searchHref = null, pagefindFilter = null }) {
   const style = readBuildAsset('assets', 'style.css');
   const siteStyle = readBuildAsset('assets', 'site.css');
   const hljsTheme = readBuildAsset('node_modules', 'highlight.js', 'styles', 'github.css');
@@ -67,12 +68,15 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 </script>` : '',
   ].join('\n');
+  // 站名与 title 尾缀随当前书;站点级页面(bookTitle 缺省)用固定站名、不拼尾缀
+  const siteName = bookTitle ?? 'AI 教程书架';
+  const titleSuffix = bookTitle != null && title !== bookTitle ? ` · ${escapeHtml(bookTitle)}` : '';
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)}${title === BOOK.title ? '' : ` · ${escapeHtml(BOOK.title)}`}</title>
+<title>${escapeHtml(title)}${titleSuffix}</title>
 <style>
 ${style}
 </style>
@@ -86,7 +90,7 @@ ${siteStyle}
 <body${pagefindFilter ? ` data-pagefind-filter="${escapeHtml(pagefindFilter)}"` : ''}>
 <header class="site-header">
 <button class="nav-toggle" aria-label="打开目录">☰</button>
-<a class="site-title" href="${rootPrefix}index.html">${escapeHtml(BOOK.title)}</a>
+<a class="site-title" href="${rootPrefix}index.html">${escapeHtml(siteName)}</a>
 <form class="site-search" action="${searchHref ?? `${rootPrefix}search.html`}"><input type="search" name="q" placeholder="搜索全书…"></form>
 </header>
 <div class="site-body">
@@ -148,13 +152,13 @@ ${items.map((p) => `<a href="${p.href}">${escapeHtml(p.title)}</a>`).join('\n')}
 <h1 class="cover-title">${escapeHtml(book.title)}</h1>
 <p class="cover-subtitle">${escapeHtml(book.subtitle)}</p>
 <hr class="cover-rule">
-<p class="cover-note">基于 AgentScope Java v2 官方文档整合 · 在线阅读版</p>
+<p class="cover-note">${escapeHtml(book.sourceNote)} · 在线阅读版</p>
 <p class="cover-date">${escapeHtml(book.date)}</p>
 </section>
 <div class="home-cards">
 ${cards}
 </div>`;
-  return renderShell({ title: BOOK.title, content, rootPrefix: '', searchHref: '../search.html', pagefindFilter: `书: ${book.title}` });
+  return renderShell({ title: book.title, bookTitle: book.title, content, rootPrefix: '', searchHref: '../search.html', pagefindFilter: `书: ${book.title}` });
 }
 
 /** 搜索页:pagefind UI 挂载点;data-pagefind-ignore 防止自身入索引。固定位于站点根。
@@ -250,6 +254,7 @@ export function renderRedirectPage(toHref) {
 function renderChapterPage(body, currentHref, flat, idx, githubBase, book) {
   return renderShell({
     title: flat[idx].title,
+    bookTitle: book.title,
     content: rewriteMarkdownLinks(md.render(body), githubBase) + renderPager(flat, idx),
     rootPrefix: '../',
     sidebar: renderSidebar(book.PARTS, currentHref),

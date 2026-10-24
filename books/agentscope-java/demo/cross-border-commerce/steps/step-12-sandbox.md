@@ -46,11 +46,11 @@ SDK 第 18 章还提供 Docker、Kubernetes 等后端，但**SDK 支持某种沙
 ## ① 第一步：核对当前默认环境
 
 ```bash
-cd demo/cross-border-commerce
+cd books/agentscope-java/demo/cross-border-commerce
 bash steps/step-12-sandbox.sh
 ```
 
-默认只读：核对实验 Agent 当前环境、体检 `demo/.env` 的沙箱配置四项（缺项会逐条列出）、回读已登记的沙箱环境（凭据脱敏）。实测实验 Agent 当前环境的选取字段：
+默认只读：核对实验 Agent 当前环境、体检 `books/agentscope-java/demo/cross-border-commerce/.env` 的沙箱配置四项（缺项会逐条列出）、回读已登记的沙箱环境（凭据脱敏）。实测实验 Agent 当前环境的选取字段：
 
 ```json
 {"id":"env_5c1ee6f847b3","name":"default-local","type":"local","ownerId":"namespace:default:seashore-main"}
@@ -58,7 +58,7 @@ bash steps/step-12-sandbox.sh
 
 文件写入发生在 Dataplane 的执行环境中，不会落到你运行 curl 的 Mac 当前目录。即使 Dataplane 本身运行在 Docker 内，也不等于每个商家的每次执行都有独立容器。
 
-沙箱配置放在 `demo/.env`（已被 .gitignore 忽略），四项缺一不可：
+沙箱配置放在 `books/agentscope-java/demo/cross-border-commerce/.env`（已被 .gitignore 忽略），四项缺一不可：
 
 | 变量 | 含义 | 示例 |
 | --- | --- | --- |

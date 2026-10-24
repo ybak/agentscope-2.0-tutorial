@@ -64,7 +64,7 @@ failureCode: turn_failed
 先确认服务端已有可用模型额度。如果仅增加现有模型额度，可继续：
 
 ```bash
-cd demo/cross-border-commerce
+cd books/agentscope-java/demo/cross-border-commerce
 ./run-all.sh --from 7
 # 验证原计划的两遍全量：
 ./run-all.sh
